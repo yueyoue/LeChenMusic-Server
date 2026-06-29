@@ -16,3 +16,5 @@ services:
       - ./data:/app/data
       # ↓↓↓ 改成你的音乐文件夹路径 ↓↓↓
       - /path/to/your/music:/music:ro
+      # ↓↓↓ 有声书目录（可选）↓↓↓
+      # - /path/to/audiobooks:/audiobooks:ro

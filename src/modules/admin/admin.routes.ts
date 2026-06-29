@@ -14,12 +14,13 @@ router.use(authMiddleware, adminMiddleware);
 // ─── 仪表盘 ──────────────────────────────────────────────
 router.get('/dashboard', async (req, res, next) => {
   try {
-    const [trackCount, albumCount, artistCount, userCount, libraryCount] = await Promise.all([
+    const [trackCount, albumCount, artistCount, userCount, libraryCount, audiobookCount] = await Promise.all([
       db.select({ count: sql<number>`count(*)` }).from(schema.track).get(),
       db.select({ count: sql<number>`count(*)` }).from(schema.album).get(),
       db.select({ count: sql<number>`count(*)` }).from(schema.artist).get(),
       db.select({ count: sql<number>`count(*)` }).from(schema.sysUser).get(),
       db.select({ count: sql<number>`count(*)` }).from(schema.mediaLibrary).get(),
+      db.select({ count: sql<number>`count(*)` }).from(schema.audiobook).get(),
     ]);
     const totalSize = await db.select({ sum: sql<number>`coalesce(sum(file_size), 0)` }).from(schema.track).get();
 
@@ -30,6 +31,7 @@ router.get('/dashboard', async (req, res, next) => {
         artists: artistCount?.count ?? 0,
         users: userCount?.count ?? 0,
         libraries: libraryCount?.count ?? 0,
+        audiobooks: audiobookCount?.count ?? 0,
         totalSizeBytes: totalSize?.sum ?? 0,
       },
     });
@@ -308,6 +310,58 @@ router.post('/cache/clear', async (req, res, next) => {
   try {
     await db.delete(schema.transcodeCache);
     res.json({ code: 0, message: 'Cache cleared', data: null });
+  } catch (err) { next(err); }
+});
+
+// ─── 有声书管理 ──────────────────────────────────────────
+router.get('/audiobooks', async (req, res, next) => {
+  try {
+    const page = qn(req.query.page, 1)!;
+    const pageSize = qn(req.query.pageSize, 50)!;
+    const search = qs(req.query.search);
+    const where = search ? like(schema.audiobook.title, `%${search}%`) : undefined;
+
+    const [items, totalResult] = await Promise.all([
+      db.select().from(schema.audiobook).where(where)
+        .orderBy(desc(schema.audiobook.createdAt))
+        .limit(pageSize).offset((page - 1) * pageSize).all(),
+      db.select({ count: sql<number>`count(*)` }).from(schema.audiobook).where(where).get(),
+    ]);
+    res.json({ code: 0, message: 'ok', data: { items, total: totalResult?.count ?? 0, page, pageSize } });
+  } catch (err) { next(err); }
+});
+
+router.put('/audiobooks/:id', async (req, res, next) => {
+  try {
+    const bookId = parseInt(req.params.id as string);
+    const { title, author, narrator, genre, year, description } = req.body;
+    const updates: any = {};
+    if (title !== undefined) updates.title = title;
+    if (author !== undefined) updates.author = author;
+    if (narrator !== undefined) updates.narrator = narrator;
+    if (genre !== undefined) updates.genre = genre;
+    if (year !== undefined) updates.year = year;
+    if (description !== undefined) updates.description = description;
+    if (Object.keys(updates).length === 0) throw new AppError(2001, 400, 'No fields to update');
+    await db.update(schema.audiobook).set(updates).where(eq(schema.audiobook.id, bookId));
+    res.json({ code: 0, message: 'ok', data: null });
+  } catch (err) { next(err); }
+});
+
+router.delete('/audiobooks/:id', async (req, res, next) => {
+  try {
+    await db.delete(schema.audiobook).where(eq(schema.audiobook.id, parseInt(req.params.id as string)));
+    res.json({ code: 0, message: 'ok', data: null });
+  } catch (err) { next(err); }
+});
+
+router.get('/audiobooks/:id/chapters', async (req, res, next) => {
+  try {
+    const bookId = parseInt(req.params.id as string);
+    const chapters = await db.select().from(schema.audiobookChapter)
+      .where(eq(schema.audiobookChapter.audiobookId, bookId))
+      .orderBy(schema.audiobookChapter.chapterNumber).all();
+    res.json({ code: 0, message: 'ok', data: chapters });
   } catch (err) { next(err); }
 });
 

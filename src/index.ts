@@ -20,6 +20,7 @@ import historyRoutes from './modules/history/history.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import subsonicRoutes from './modules/subsonic/subsonic.routes.js';
 import coverRoutes from './modules/cover/cover.routes.js';
+import audiobookRoutes from './modules/audiobook/audiobook.routes.js';
 
 // 初始化数据库
 initDatabase();
@@ -69,6 +70,7 @@ app.use('/api/history', historyRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/rest', subsonicRoutes);
 app.use('/api/cover', coverRoutes);
+app.use('/api/audiobooks', audiobookRoutes);
 
 // 健康检查
 app.get('/api/health', (_req, res) => {

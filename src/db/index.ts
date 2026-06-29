@@ -35,6 +35,7 @@ export function initDatabase() {
       name TEXT NOT NULL,
       storage_type TEXT NOT NULL,
       storage_path TEXT NOT NULL,
+      media_type TEXT DEFAULT 'music' NOT NULL,
       scan_status TEXT DEFAULT 'idle',
       last_scan_at INTEGER,
       file_count INTEGER DEFAULT 0,
@@ -144,6 +145,56 @@ export function initDatabase() {
       key TEXT PRIMARY KEY,
       value TEXT,
       updated_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS audiobook (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      author TEXT,
+      narrator TEXT,
+      cover_path TEXT,
+      description TEXT,
+      genre TEXT,
+      year INTEGER,
+      total_duration INTEGER,
+      chapter_count INTEGER,
+      storage_type TEXT NOT NULL,
+      storage_path TEXT NOT NULL,
+      created_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS audiobook_chapter (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      audiobook_id INTEGER REFERENCES audiobook(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      chapter_number INTEGER NOT NULL,
+      duration INTEGER,
+      format TEXT,
+      file_size INTEGER,
+      storage_path TEXT NOT NULL,
+      file_hash TEXT,
+      created_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS audiobook_progress (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES sys_user(id) ON DELETE CASCADE,
+      audiobook_id INTEGER REFERENCES audiobook(id) ON DELETE CASCADE,
+      chapter_id INTEGER REFERENCES audiobook_chapter(id),
+      chapter_number INTEGER,
+      position INTEGER DEFAULT 0,
+      completed INTEGER DEFAULT 0,
+      last_played_at INTEGER
+    );
+
+    CREATE TABLE IF NOT EXISTS audiobook_bookmark (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES sys_user(id) ON DELETE CASCADE,
+      audiobook_id INTEGER REFERENCES audiobook(id) ON DELETE CASCADE,
+      chapter_id INTEGER REFERENCES audiobook_chapter(id),
+      position INTEGER NOT NULL,
+      title TEXT,
+      created_at INTEGER
     );
   `);
 }
