@@ -1,6 +1,6 @@
 import { db, schema } from '../../db/index.js';
 import { eq } from 'drizzle-orm';
-import argon2 from 'argon2';
+import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { config } from '../../config/index.js';
 import { AppError } from '../../middleware/error-handler.js';
@@ -18,7 +18,7 @@ export class AuthService {
     const userCount = await db.select().from(schema.sysUser).all();
     const role = userCount.length === 0 ? 'admin' : 'user';
 
-    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    const passwordHash = await bcrypt.hash(password, 12);
 
     const result = await db.insert(schema.sysUser).values({
       username,
@@ -41,7 +41,7 @@ export class AuthService {
       throw new AppError(1003, 401, 'Invalid username or password');
     }
 
-    const valid = await argon2.verify(user.passwordHash, password);
+    const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
       throw new AppError(1003, 401, 'Invalid username or password');
     }

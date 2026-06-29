@@ -16,9 +16,8 @@
     "better-sqlite3": "^11.9.1",
     "drizzle-orm": "^0.44.0",
     "jsonwebtoken": "^9.0.2",
-    "argon2": "^0.43.0",
+    "bcryptjs": "^2.4.3",
     "music-metadata": "^10.6.5",
-    "sharp": "^0.34.2",
     "cors": "^2.8.5",
     "helmet": "^8.1.0",
     "express-rate-limit": "^7.5.0",
@@ -29,15 +28,14 @@
     "zod": "^3.25.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.1",
-    "chokidar": "^4.0.3",
     "lru-cache": "^11.1.0",
-    "mime-types": "^2.1.35",
-    "smb2": "^0.7.0"
+    "mime-types": "^2.1.35"
   },
   "devDependencies": {
     "@types/express": "^5.0.2",
     "@types/better-sqlite3": "^7.6.13",
     "@types/jsonwebtoken": "^9.0.9",
+    "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/morgan": "^1.9.9",
     "@types/swagger-jsdoc": "^6.0.4",

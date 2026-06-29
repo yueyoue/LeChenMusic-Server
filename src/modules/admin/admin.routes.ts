@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db, schema } from '../../db/index.js';
 import { eq, sql, desc } from 'drizzle-orm';
 import { authMiddleware, adminMiddleware } from '../../middleware/auth.js';
-import argon2 from 'argon2';
+import bcrypt from 'bcryptjs';
 import { AppError } from '../../middleware/error-handler.js';
 import { config } from '../../config/index.js';
 import { readdirSync, statSync, rmSync, existsSync } from 'fs';
@@ -67,7 +67,7 @@ router.post('/users', async (req, res, next) => {
       .where(eq(schema.sysUser.username, username)).get();
     if (existing) throw new AppError(2001, 400, 'Username already exists');
 
-    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    const passwordHash = await bcrypt.hash(password, 12);
     const user = await db.insert(schema.sysUser).values({
       username,
       passwordHash,
