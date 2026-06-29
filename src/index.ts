@@ -67,6 +67,20 @@ app.get('/api/health', (_req, res) => {
   res.json({ code: 0, message: 'ok', data: { status: 'running', version: '0.1.0' } });
 });
 
+// 首页
+app.get('/', (_req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"><title>LeChenMusic Server</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;justify-content:center;align-items:center;min-height:100vh}.card{background:#1e293b;border-radius:16px;padding:48px;text-align:center;max-width:480px}h1{font-size:28px;margin-bottom:12px}p{color:#94a3b8;margin-bottom:24px}.btn{display:inline-block;background:#3b82f6;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-size:16px}.btn:hover{background:#2563eb}.status{margin-top:24px;color:#4ade80;font-size:14px}</style></head>
+<body><div class="card">
+<h1>🎵 LeChenMusic</h1>
+<p>私有音乐流媒体服务端</p>
+<a href="/api/health" class="btn">检查服务状态</a>
+<div class="status">✅ 服务运行中</div>
+</div></body></html>`);
+});
+
 // 404
 app.use((_req, res) => {
   res.status(404).json({ code: 3001, message: 'Not found', data: null });
