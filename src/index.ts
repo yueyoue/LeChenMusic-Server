@@ -71,6 +71,13 @@ app.get('/api/health', (_req, res) => {
   res.json({ code: 0, message: 'ok', data: { status: 'running', version: '0.1.0' } });
 });
 
+// ─── 管理后台页面 ──────────────────────────────────────
+import { adminPageHTML } from './modules/admin/admin-page.js';
+
+app.get('/admin', (_req, res) => {
+  res.send(adminPageHTML);
+});
+
 // ─── 首页（含注册/登录/管理界面）──────────────────────────
 app.get('/', (_req, res) => {
   res.send(`<!DOCTYPE html>
