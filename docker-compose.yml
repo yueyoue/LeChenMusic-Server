@@ -1,8 +1,7 @@
-version: '3'
+version: '3.8'
 services:
   lechen-music:
-    build: .
-    image: lechen-music:latest
+    image: ghcr.io/yueyoue/lechenmusic-server:latest
     container_name: lechen-music
     restart: unless-stopped
     ports:
@@ -10,18 +9,10 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - NODE_ENV=production
-      - DB_TYPE=sqlite
-      - DB_PATH=/app/data/lechen.db
-      - JWT_SECRET=${JWT_SECRET:-change-me-to-a-random-string}
+      - JWT_SECRET=你的密钥改成任意字符串
       - MAX_TRANSCODE_TASKS=4
-      - TRANSCODE_CACHE_DIR=/app/data/transcode-cache
       - LOG_LEVEL=info
     volumes:
-      - ./data:/app/data                     # 数据库、配置、转码缓存
-      - /path/to/music:/music:ro             # 本地音乐目录（按需修改路径）
-      # - /mnt/nas/music:/music:ro           # NAS 挂载目录示例
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
+      - ./data:/app/data
+      # ↓↓↓ 改成你的音乐文件夹路径 ↓↓↓
+      - /path/to/your/music:/music:ro

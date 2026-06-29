@@ -1,137 +1,102 @@
 # LeChenMusic Server
 
-私有部署的音乐流媒体服务端，替代 Navidrome，配合 LeChenMusic Android 客户端使用。
+私有部署音乐流媒体服务端，配合 LeChenMusic Android 客户端使用。
 
-## 特性
+## 🚀 飞牛 NAS 一键部署
 
-- 🎵 音频文件扫描与元数据自动解析
-- 🔄 实时音频转码（FFmpeg）
-- 💾 混合存储支持（本地磁盘 / SMB / NFS / rclone 云盘挂载）
-- 🔐 JWT 鉴权 + 角色权限管理
-- 📱 Subsonic API 兼容（支持第三方客户端）
-- 🖥️ Web 管理后台
-- 🐳 Docker 一键部署（x86_64 / ARM64）
+### 第一步：创建 docker-compose.yml
 
-## 快速开始
+在飞牛 NAS 的 Docker 目录下创建 `docker-compose.yml`，粘贴以下内容：
 
-### Docker 部署（推荐）
-
-```bash
-# 克隆项目
-git clone https://github.com/yueyoue/LeChenMusic-Server.git
-cd LeChenMusic-Server
-
-# 修改配置
-cp .env.example .env
-# 编辑 .env 修改 JWT_SECRET
-
-# 修改 docker-compose.yml 中的音乐目录路径
-# /path/to/music → 你的实际音乐目录
-
-# 启动
-docker-compose up -d
+```yaml
+version: '3.8'
+services:
+  lechen-music:
+    image: ghcr.io/yueyoue/lechenmusic-server:latest
+    container_name: lechen-music
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - TZ=Asia/Shanghai
+      - NODE_ENV=production
+      - JWT_SECRET=改成你自己的密钥
+      - MAX_TRANSCODE_TASKS=4
+      - LOG_LEVEL=info
+    volumes:
+      - ./data:/app/data
+      - /vol1/music:/music:ro    # ← 改成你的音乐目录
 ```
 
-服务启动后：
-- API 服务：`http://localhost:3000`
-- 管理后台：`http://localhost:3000/admin`
-- 健康检查：`http://localhost:3000/api/health`
+### 第二步：启动
 
-### 本地开发
+在飞牛 Docker 管理界面中，选择「Compose」→「导入」→ 选择这个 yml 文件 → 点击「启动」
 
-```bash
-# 安装依赖
-npm install
+首次启动会自动拉取镜像，等待几分钟即可。
 
-# 复制配置
-cp .env.example .env
+### 第三步：使用
 
-# 启动开发服务器（热重载）
-npm run dev
+- 管理后台：`http://你的NAS-IP:3000`
+- 首个注册的用户自动成为管理员
+- 在后台「媒体库管理」中添加音乐目录（容器内路径为 `/music`）
 
-# 数据库迁移
-npm run db:generate
-npm run db:migrate
-```
+## 📱 客户端连接
 
-## 项目结构
+在 LeChenMusic APP 的设置中：
+- 服务端地址：`http://你的NAS-IP:3000`
+- 用户名/密码：后台注册的账号
 
-```
-src/
-├── config/           # 配置管理
-├── db/               # 数据库 schema 与连接
-├── middleware/        # Express 中间件（鉴权、错误处理）
-├── modules/
-│   ├── admin/        # 后台管理 API
-│   ├── album/        # 专辑模块
-│   ├── artist/       # 艺人模块
-│   ├── auth/         # 认证模块（登录/注册/Token 刷新）
-│   ├── favorite/     # 收藏模块
-│   ├── history/      # 播放历史
-│   ├── library/      # 媒体库管理与扫描
-│   ├── playlist/     # 歌单模块
-│   ├── search/       # 全局搜索
-│   ├── storage/      # 存储驱动抽象层
-│   └── track/        # 音轨模块（列表/播放/转码）
-└── utils/            # 工具函数（日志等）
-```
+## 🔧 配置说明
 
-## API 文档
+| 环境变量 | 说明 | 默认值 |
+|---------|------|--------|
+| `JWT_SECRET` | Token 加密密钥，改成任意字符串 | 必须修改 |
+| `MAX_TRANSCODE_TASKS` | 最大同时转码数 | 4 |
+| `LOG_LEVEL` | 日志级别 (info/debug/warn/error) | info |
+| `TZ` | 时区 | Asia/Shanghai |
 
-启动服务后访问 `/api-docs` 查看 Swagger 文档。
+## 📂 音乐目录挂载
 
-### 主要接口
-
-| 分组 | 说明 |
-|------|------|
-| `POST /api/auth/login` | 用户登录 |
-| `POST /api/auth/register` | 用户注册 |
-| `GET /api/tracks` | 音轨列表 |
-| `GET /api/tracks/:id/stream` | 流式播放 |
-| `GET /api/search?q=xxx` | 全局搜索 |
-| `GET /api/playlists` | 歌单列表 |
-| `GET /api/favorites` | 收藏列表 |
-| `GET /api/history` | 播放历史 |
-| `GET /api/admin/dashboard` | 仪表盘统计 |
-
-## 音乐目录挂载
-
-### 本地目录
-直接修改 `docker-compose.yml` 中的 volume 映射：
+### 飞牛 NAS 本地目录
 ```yaml
 volumes:
-  - /your/music/path:/music:ro
+  - /vol1/music:/music:ro
 ```
 
-### NAS SMB 挂载
-在宿主机挂载 SMB 后映射到容器：
-```bash
-# 宿主机挂载
-mount -t cifs //nas/music /mnt/nas-music -o username=xxx,password=xxx
-
-# docker-compose.yml
+### SMB 网络挂载
+先在飞牛系统中挂载 SMB 共享，然后映射挂载路径：
+```yaml
 volumes:
-  - /mnt/nas-music:/music:ro
+  - /mnt/smb/music:/music:ro
 ```
 
-### 云盘（rclone）
+### 云盘（通过 rclone）
 ```bash
-# 宿主机安装 rclone 并挂载云盘
+# 先在 NAS 上安装 rclone 并挂载
 rclone mount aliyun:/music /mnt/cloud-music --vfs-cache-mode full
-
-# docker-compose.yml
+```
+```yaml
 volumes:
   - /mnt/cloud-music:/music:ro
 ```
 
-## 技术栈
+## 🏗️ 技术栈
 
-- **运行时**：Node.js 20 LTS + TypeScript
-- **框架**：Express 5
-- **数据库**：SQLite（Drizzle ORM）
-- **音频处理**：FFmpeg + music-metadata
-- **鉴权**：JWT + argon2id
-- **容器化**：Docker (Alpine)
+- Node.js 20 + TypeScript + Express 5
+- SQLite + Drizzle ORM
+- FFmpeg 实时转码
+- JWT 鉴权
+
+## 📖 API
+
+启动后访问 `http://NAS-IP:3000/api/health` 检查服务状态。
+
+主要接口：
+- `POST /api/auth/login` — 登录
+- `POST /api/auth/register` — 注册
+- `GET /api/tracks` — 歌曲列表
+- `GET /api/tracks/:id/stream` — 播放
+- `GET /api/search?q=xxx` — 搜索
 
 ## License
 
