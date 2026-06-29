@@ -1,7 +1,7 @@
 import { db, schema } from '../../db/index.js';
 import { eq, and } from 'drizzle-orm';
-// @ts-ignore - music-metadata ESM export map resolution workaround
-import { parseFile } from 'music-metadata/lib/index.js';
+// @ts-expect-error - TypeScript resolves to 'core' entry but Node.js runtime uses 'node' entry which exports parseFile
+import { parseFile } from 'music-metadata';
 import { createHash } from 'crypto';
 import { readFileSync, existsSync } from 'fs';
 import { join, extname, basename, dirname, relative } from 'path';
