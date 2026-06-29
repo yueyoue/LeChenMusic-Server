@@ -3,8 +3,7 @@ import { eq, like, or, desc, asc, sql, and } from 'drizzle-orm';
 import { storageManager } from '../storage/storage-manager.js';
 import type { StorageType } from '../storage/types.js';
 import { createReadStream } from 'fs';
-import { join } from 'path';
-import { extname } from 'path';
+import { join, extname } from 'path';
 import { AppError } from '../../middleware/error-handler.js';
 
 const MIME_MAP: Record<string, string> = {
@@ -52,7 +51,7 @@ export class TrackService {
       : orderBy === 'trackNumber' ? schema.track.trackNumber
       : schema.track.title;
 
-    const [items, total] = await Promise.all([
+    const [items, totalResult] = await Promise.all([
       db.select({
         id: schema.track.id,
         title: schema.track.title,
@@ -77,11 +76,10 @@ export class TrackService {
       db.select({ count: sql<number>`count(*)` })
         .from(schema.track)
         .where(where)
-        .get()
-        .then(r => r?.count ?? 0),
+        .get(),
     ]);
 
-    return { items, total, page, pageSize };
+    return { items, total: totalResult?.count ?? 0, page, pageSize };
   }
 
   async getById(id: number) {
@@ -108,17 +106,11 @@ export class TrackService {
     const ext = extname(track.storagePath).toLowerCase();
     const contentType = MIME_MAP[ext] || 'application/octet-stream';
 
-    return {
-      track,
-      driver,
-      stat,
-      contentType,
-      fullPath,
-    };
+    return { track, driver, stat, contentType, fullPath };
   }
 
   async stream(id: number, rangeHeader: string | undefined) {
-    const { track, stat, contentType, fullPath } = await this.getStreamInfo(id);
+    const { stat, contentType, fullPath } = await this.getStreamInfo(id);
 
     if (rangeHeader) {
       const parts = rangeHeader.replace(/bytes=/, '').split('-');

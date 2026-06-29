@@ -3,6 +3,7 @@ import { db, schema } from '../../db/index.js';
 import { eq, and, sql, desc } from 'drizzle-orm';
 import { authMiddleware } from '../../middleware/auth.js';
 import { AppError } from '../../middleware/error-handler.js';
+import { qn } from '../../utils/query.js';
 
 const router = Router();
 
@@ -35,7 +36,7 @@ router.post('/', authMiddleware, async (req, res, next) => {
 /** 获取歌单详情及歌曲 */
 router.get('/:id', authMiddleware, async (req, res, next) => {
   try {
-    const playlistId = parseInt(req.params.id);
+    const playlistId = parseInt(req.params.id as string);
     const playlist = await db.select().from(schema.playlist)
       .where(eq(schema.playlist.id, playlistId)).get();
     if (!playlist) throw new AppError(3001, 404, 'Playlist not found');
@@ -57,11 +58,10 @@ router.get('/:id', authMiddleware, async (req, res, next) => {
 /** 向歌单添加歌曲 */
 router.post('/:id/tracks', authMiddleware, async (req, res, next) => {
   try {
-    const playlistId = parseInt(req.params.id);
+    const playlistId = parseInt(req.params.id as string);
     const { trackIds } = req.body;
     if (!Array.isArray(trackIds)) throw new AppError(2001, 400, 'trackIds must be an array');
 
-    // 获取当前最大排序
     const maxOrder = await db.select({ max: sql<number>`coalesce(max(sort_order), 0)` })
       .from(schema.playlistTrack)
       .where(eq(schema.playlistTrack.playlistId, playlistId))
@@ -76,7 +76,6 @@ router.post('/:id/tracks', authMiddleware, async (req, res, next) => {
       }).onConflictDoNothing();
     }
 
-    // 更新歌单的 updatedAt
     await db.update(schema.playlist)
       .set({ updatedAt: new Date() })
       .where(eq(schema.playlist.id, playlistId));
@@ -88,8 +87,8 @@ router.post('/:id/tracks', authMiddleware, async (req, res, next) => {
 /** 从歌单移除歌曲 */
 router.delete('/:id/tracks/:trackId', authMiddleware, async (req, res, next) => {
   try {
-    const playlistId = parseInt(req.params.id);
-    const trackId = parseInt(req.params.trackId);
+    const playlistId = parseInt(req.params.id as string);
+    const trackId = parseInt(req.params.trackId as string);
 
     await db.delete(schema.playlistTrack).where(
       and(
@@ -105,7 +104,7 @@ router.delete('/:id/tracks/:trackId', authMiddleware, async (req, res, next) => 
 /** 删除歌单 */
 router.delete('/:id', authMiddleware, async (req, res, next) => {
   try {
-    const playlistId = parseInt(req.params.id);
+    const playlistId = parseInt(req.params.id as string);
     await db.delete(schema.playlist).where(eq(schema.playlist.id, playlistId));
     res.json({ code: 0, message: 'ok', data: null });
   } catch (err) { next(err); }

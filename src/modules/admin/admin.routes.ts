@@ -82,7 +82,7 @@ router.post('/users', async (req, res, next) => {
 /** 删除用户 */
 router.delete('/users/:id', async (req, res, next) => {
   try {
-    const userId = parseInt(req.params.id);
+    const userId = parseInt(req.params.id as string);
     if (userId === req.user!.userId) throw new AppError(4001, 400, 'Cannot delete yourself');
 
     await db.delete(schema.sysUser).where(eq(schema.sysUser.id, userId));

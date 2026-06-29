@@ -8,13 +8,11 @@ import type { JwtPayload } from '../../middleware/auth.js';
 
 export class AuthService {
   async register(username: string, password: string, displayName?: string) {
-    // 检查用户名是否已存在
     const existing = await db.select().from(schema.sysUser).where(eq(schema.sysUser.username, username)).get();
     if (existing) {
       throw new AppError(2001, 400, 'Username already exists');
     }
 
-    // 检查是否是第一个用户（自动设为管理员）
     const userCount = await db.select().from(schema.sysUser).all();
     const role = userCount.length === 0 ? 'admin' : 'user';
 
@@ -54,11 +52,11 @@ export class AuthService {
 
     const accessToken = jwt.sign(payload, config.jwt.secret, {
       expiresIn: config.jwt.accessExpires,
-    });
+    } as jwt.SignOptions);
 
     const refreshToken = jwt.sign({ ...payload, type: 'refresh' }, config.jwt.secret, {
       expiresIn: config.jwt.refreshExpires,
-    });
+    } as jwt.SignOptions);
 
     return {
       accessToken,
@@ -88,7 +86,7 @@ export class AuthService {
 
       const newAccessToken = jwt.sign(newPayload, config.jwt.secret, {
         expiresIn: config.jwt.accessExpires,
-      });
+      } as jwt.SignOptions);
 
       return { accessToken: newAccessToken };
     } catch {

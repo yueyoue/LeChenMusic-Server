@@ -1,6 +1,7 @@
 import { db, schema } from '../../db/index.js';
 import { eq, and } from 'drizzle-orm';
-import { parseFile } from 'music-metadata';
+// @ts-ignore - music-metadata ESM export map resolution workaround
+import { parseFile } from 'music-metadata/lib/index.js';
 import { createHash } from 'crypto';
 import { readFileSync, existsSync } from 'fs';
 import { join, extname, basename, dirname, relative } from 'path';

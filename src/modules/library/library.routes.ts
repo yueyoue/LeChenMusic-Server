@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { db, schema } from '../../db/index.js';
-import { eq, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { authMiddleware, adminMiddleware } from '../../middleware/auth.js';
 import { scannerService } from './scanner.service.js';
 import { AppError } from '../../middleware/error-handler.js';
+import { qs } from '../../utils/query.js';
 
 const router = Router();
 
@@ -36,8 +37,7 @@ router.post('/', authMiddleware, adminMiddleware, async (req, res, next) => {
 /** 触发媒体库扫描（管理员） */
 router.post('/:id/scan', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
-    const libraryId = parseInt(req.params.id);
-    // 异步执行扫描，立即返回
+    const libraryId = parseInt(req.params.id as string);
     scannerService.scanLibrary(libraryId).catch(err => {
       console.error('Scan failed:', err);
     });
@@ -48,7 +48,7 @@ router.post('/:id/scan', authMiddleware, adminMiddleware, async (req, res, next)
 /** 删除媒体库（管理员） */
 router.delete('/:id', authMiddleware, adminMiddleware, async (req, res, next) => {
   try {
-    const libraryId = parseInt(req.params.id);
+    const libraryId = parseInt(req.params.id as string);
     await db.delete(schema.mediaLibrary).where(eq(schema.mediaLibrary.id, libraryId));
     res.json({ code: 0, message: 'ok', data: null });
   } catch (err) { next(err); }

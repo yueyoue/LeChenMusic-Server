@@ -2,16 +2,17 @@ import { Router } from 'express';
 import { db, schema } from '../../db/index.js';
 import { eq, desc, sql } from 'drizzle-orm';
 import { authMiddleware } from '../../middleware/auth.js';
+import { qn } from '../../utils/query.js';
 
 const router = Router();
 
 /** 获取播放历史 */
 router.get('/', authMiddleware, async (req, res, next) => {
   try {
-    const page = parseInt(req.query.page as string) || 1;
-    const pageSize = parseInt(req.query.pageSize as string) || 50;
+    const page = qn(req.query.page, 1)!;
+    const pageSize = qn(req.query.pageSize, 50)!;
 
-    const [items, total] = await Promise.all([
+    const [items, totalResult] = await Promise.all([
       db.select({
         id: schema.playHistory.id,
         trackId: schema.playHistory.trackId,
@@ -30,10 +31,10 @@ router.get('/', authMiddleware, async (req, res, next) => {
       db.select({ count: sql<number>`count(*)` })
         .from(schema.playHistory)
         .where(eq(schema.playHistory.userId, req.user!.userId))
-        .get().then(r => r?.count ?? 0),
+        .get(),
     ]);
 
-    res.json({ code: 0, message: 'ok', data: { items, total, page, pageSize } });
+    res.json({ code: 0, message: 'ok', data: { items, total: totalResult?.count ?? 0, page, pageSize } });
   } catch (err) { next(err); }
 });
 
