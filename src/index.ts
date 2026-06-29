@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { config } from './config/index.js';
+import { initDatabase } from './db/index.js';
 import { logger } from './utils/logger.js';
 import { errorHandler } from './middleware/error-handler.js';
 
@@ -17,6 +18,9 @@ import playlistRoutes from './modules/playlist/playlist.routes.js';
 import favoriteRoutes from './modules/favorite/favorite.routes.js';
 import historyRoutes from './modules/history/history.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
+
+// 初始化数据库
+initDatabase();
 
 const app = express();
 
