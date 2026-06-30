@@ -61,7 +61,7 @@ input:focus{border-color:var(--primary)}
   <a onclick="nav('artists')" id="nav-artists"><span>🎤 艺人</span></a>
   <a onclick="nav('audiobooks')" id="nav-audiobooks"><span>📖 有声书</span></a>
   <a onclick="nav('users')" id="nav-users"><span>👥 用户</span></a>
-  <a href="/" style="margin-top:auto;position:absolute;bottom:16px;left:0;right:0"><span>🏠 返回首页</span></a>
+  <a href="/" style="margin-top:auto"><span>🏠 返回首页</span></a>
 </div>
 <div class="main">
   <div id="msg" class="msg"></div>

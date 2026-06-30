@@ -147,7 +147,8 @@ button.submit:disabled{opacity:.5;cursor:not-allowed}
   <div id="dashboard" style="display:none;margin-top:24px">
     <div class="info" id="userInfo"></div>
     <div class="info" style="margin-top:12px" id="statsInfo">加载中...</div>
-    <div style="margin-top:16px;text-align:center">
+    <div style="margin-top:16px;text-align:center;display:flex;flex-direction:column;gap:10px">
+      <button class="submit" onclick="location.href='/admin'" style="background:#3b82f6;width:100%">进入管理后台</button>
       <button class="submit" onclick="logout()" style="background:#ef4444;width:100%">退出登录</button>
     </div>
   </div>
