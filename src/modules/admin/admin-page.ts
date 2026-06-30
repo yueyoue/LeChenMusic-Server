@@ -10,8 +10,8 @@ export const adminPageHTML = `<!DOCTYPE html>
 body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
 .sidebar{width:220px;background:var(--card);border-right:1px solid var(--border);padding:16px 0;flex-shrink:0}
 .sidebar h2{padding:0 16px 16px;font-size:18px;border-bottom:1px solid var(--border);margin-bottom:8px}
-.sidebar a{display:block;padding:10px 16px;color:var(--muted);text-decoration:none;font-size:14px;cursor:pointer}
-.sidebar a:hover,.sidebar a.active{color:var(--text);background:rgba(59,130,246,.1);border-right:3px solid var(--primary)}
+.sidebar .nav-item{display:block;padding:10px 16px;color:var(--muted);text-decoration:none;font-size:14px;cursor:pointer}
+.sidebar .nav-item:hover,.sidebar .nav-item.active{color:var(--text);background:rgba(59,130,246,.1);border-right:3px solid var(--primary)}
 .main{flex:1;padding:24px;overflow-y:auto}
 .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
 .header h1{font-size:22px}
@@ -48,20 +48,20 @@ input:focus{border-color:var(--primary)}
 .pager{display:flex;gap:8px;justify-content:center;margin-top:16px;align-items:center}
 .pager button{padding:6px 12px}
 .pager span{font-size:13px;color:var(--muted)}
-@media(max-width:768px){.sidebar{width:60px}.sidebar h2,.sidebar a span{display:none}.sidebar a{text-align:center;padding:12px 0}}
+@media(max-width:768px){.sidebar{width:60px}.sidebar h2,.sidebar .nav-item span{display:none}.sidebar .nav-item{text-align:center;padding:12px 0}}
 </style>
 </head>
 <body>
 <div class="sidebar">
   <h2>🎵 管理后台</h2>
-  <a href="javascript:void(0)" onclick="nav('dashboard')" id="nav-dashboard"><span>📊 仪表盘</span></a>
-  <a href="javascript:void(0)" onclick="nav('libraries')" id="nav-libraries"><span>📁 媒体库</span></a>
-  <a href="javascript:void(0)" onclick="nav('tracks')" id="nav-tracks"><span>🎵 歌曲</span></a>
-  <a href="javascript:void(0)" onclick="nav('albums')" id="nav-albums"><span>💿 专辑</span></a>
-  <a href="javascript:void(0)" onclick="nav('artists')" id="nav-artists"><span>🎤 艺人</span></a>
-  <a href="javascript:void(0)" onclick="nav('audiobooks')" id="nav-audiobooks"><span>📖 有声书</span></a>
-  <a href="javascript:void(0)" onclick="nav('users')" id="nav-users"><span>👥 用户</span></a>
-  <a href="/" style="margin-top:auto"><span>🏠 返回首页</span></a>
+  <div class="nav-item" onclick="nav('dashboard')" id="nav-dashboard"><span>📊 仪表盘</span></div>
+  <div class="nav-item" onclick="nav('libraries')" id="nav-libraries"><span>📁 媒体库</span></div>
+  <div class="nav-item" onclick="nav('tracks')" id="nav-tracks"><span>🎵 歌曲</span></div>
+  <div class="nav-item" onclick="nav('albums')" id="nav-albums"><span>💿 专辑</span></div>
+  <div class="nav-item" onclick="nav('artists')" id="nav-artists"><span>🎤 艺人</span></div>
+  <div class="nav-item" onclick="nav('audiobooks')" id="nav-audiobooks"><span>📖 有声书</span></div>
+  <div class="nav-item" onclick="nav('users')" id="nav-users"><span>👥 用户</span></div>
+  <a href="/" class="nav-item" style="margin-top:auto"><span>🏠 返回首页</span></a>
 </div>
 <div class="main">
   <div id="msg" class="msg"></div>
@@ -89,7 +89,7 @@ async function api(path,opts){
 let currentPage='dashboard';
 function nav(page){
   currentPage=page;
-  document.querySelectorAll('.sidebar a').forEach(a=>a.classList.remove('active'));
+  document.querySelectorAll('.sidebar .nav-item').forEach(a=>a.classList.remove('active'));
   const el=document.getElementById('nav-'+page);if(el)el.classList.add('active');
   window['render_'+page]();
 }
