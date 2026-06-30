@@ -180,7 +180,7 @@ async function render_tracks(){
   const d=r.data;
   document.getElementById('content').innerHTML=\`
     <div class="header"><h1>🎵 歌曲管理</h1><span style="color:var(--muted)">共 \${d.total} 首</span></div>
-    <div class="search-bar"><input id="trackSearch" placeholder="搜索歌曲名、流派..." value="\${search}" onkeydown="if(event.key==='Enter'){trackPage=1;render_tracks()}"><button class="btn btn-primary" onclick="trackPage=1;render_tracks()">搜索</button></div>
+    <div class="search-bar"><input id="trackSearch" placeholder="搜索歌曲名、流派..." value="\${search}" onkeydown="if(event.key===\\'Enter\\'){trackPage=1;render_tracks()}"><button class="btn btn-primary" onclick="trackPage=1;render_tracks()">搜索</button></div>
     <table><thead><tr><th>ID</th><th>歌曲名</th><th>艺人</th><th>专辑</th><th>时长</th><th>格式</th><th>码率</th><th>流派</th><th>操作</th></tr></thead>
     <tbody>\${d.items.map(t=>\`<tr>
       <td>\${t.id}</td><td>\${t.title}</td><td>\${t.artistName||'-'}</td><td>\${t.albumTitle||'-'}</td>
@@ -367,61 +367,45 @@ async function deleteUser(id){
 // ─── 有声书 ────────────────────────────────────────────
 let abPage=1;
 async function render_audiobooks(){
-  var search=(document.getElementById('abSearch')||{}).value||'';
-  var r=await api('/api/admin/audiobooks?page='+abPage+'&pageSize=30&search='+encodeURIComponent(search));
+  const search=document.getElementById('abSearch')?.value||'';
+  const r=await api('/api/admin/audiobooks?page='+abPage+'&pageSize=30&search='+encodeURIComponent(search));
   if(r.code!==0)return;
-  var d=r.data;
-  var html='<div class="header"><h1>📖 有声书管理</h1><span style="color:var(--muted)">共 '+d.total+' 本</span></div>';
-  html+='<div class="search-bar"><input id="abSearch" placeholder="搜索有声书名..." value="'+search+'" onkeydown="if(event.key===\'Enter\'){abPage=1;render_audiobooks()}"><button class="btn btn-primary" onclick="abPage=1;render_audiobooks()">搜索</button></div>';
-  html+='<table><thead><tr><th>ID</th><th>书名</th><th>作者</th><th>演播</th><th>分类</th><th>章节</th><th>总时长</th><th>操作</th></tr></thead><tbody>';
-  for(var i=0;i<d.items.length;i++){
-    var a=d.items[i];
-    html+='<tr><td>'+a.id+'</td><td>'+a.title+'</td><td>'+(a.author||'-')+'</td><td>'+(a.narrator||'-')+'</td>';
-    html+='<td>'+(a.genre||'-')+'</td><td>'+(a.chapterCount||0)+'</td><td>'+fmtDur(a.totalDuration)+'</td>';
-    html+='<td><button class="btn btn-primary btn-sm" onclick="editAudiobook('+a.id+',\''+a.title?.replace(/'/g,"\\'")+'\',\''+(a.author||'')+'\',\''+(a.narrator||'')+'\',\''+(a.genre||'')+'\','+(a.year||0)+')">编辑</button> ';
-    html+='<button class="btn btn-danger btn-sm" onclick="deleteAudiobook('+a.id+')">删除</button></td></tr>';
-  }
-  html+='</tbody></table>';
-  html+='<div class="pager">';
-  html+='<button class="btn btn-sm" onclick="if(abPage>1){abPage--;render_audiobooks()}" '+(d.page<=1?'disabled':'')+'>上一页</button>';
-  html+='<span>第 '+d.page+' / '+Math.ceil(d.total/d.pageSize)+' 页</span>';
-  html+='<button class="btn btn-sm" onclick="if(d.page*d.pageSize<d.total){abPage++;render_audiobooks()}" '+(d.page*d.pageSize>=d.total?'disabled':'')+'>下一页</button>';
-  html+='</div><div id="abModal"></div>';
-  document.getElementById('content').innerHTML=html;
+  const d=r.data;
+  document.getElementById('content').innerHTML=\`
+    <div class="header"><h1>📖 有声书管理</h1><span style="color:var(--muted)">共 \${d.total} 本</span></div>
+    <div class="search-bar"><input id="abSearch" placeholder="搜索有声书名..." value="\${search}" onkeydown="if(event.key==='Enter'){abPage=1;render_audiobooks()}"><button class="btn btn-primary" onclick="abPage=1;render_audiobooks()">搜索</button></div>
+    <table><thead><tr><th>ID</th><th>书名</th><th>作者</th><th>演播</th><th>分类</th><th>章节</th><th>总时长</th><th>操作</th></tr></thead>
+    <tbody>\${d.items.map(a=>\`<tr>
+      <td>\${a.id}</td><td>\${a.title}</td><td>\${a.author||'-'}</td><td>\${a.narrator||'-'}</td>
+      <td>\${a.genre||'-'}</td><td>\${a.chapterCount||0}</td><td>\${fmtDur(a.totalDuration)}</td>
+      <td><button class="btn btn-primary btn-sm" onclick="editAudiobook(\${a.id},'\${a.title?.replace(/'/g,"\\\\'")}','\${a.author||''}','\${a.narrator||''}','\${a.genre||''}',\${a.year||0})">编辑</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteAudiobook(\${a.id})">删除</button></td>
+    </tr>\`).join('')}</tbody></table>
+    <div class="pager">
+      <button class="btn btn-sm" onclick="if(abPage>1){abPage--;render_audiobooks()}" \${d.page<=1?'disabled':''}>上一页</button>
+      <span>第 \${d.page} / \${Math.ceil(d.total/d.pageSize)} 页</span>
+      <button class="btn btn-sm" onclick="if(d.page*d.pageSize<d.total){abPage++;render_audiobooks()}" \${d.page*d.pageSize>=d.total?'disabled':''}>下一页</button>
+    </div>
+    <div id="abModal"></div>\`;
 }
 
 function editAudiobook(id,title,author,narrator,genre,year){
-  var html='<div class="modal-overlay" onclick="if(event.target===this)this.remove()">';
-  html+='<div class="modal"><h3>编辑有声书 #'+id+'</h3>';
-  html+='<div class="form-group"><label>书名</label><input id="eabTitle" value="'+title+'"></div>';
-  html+='<div style="display:flex;gap:8px">';
-  html+='<div class="form-group" style="flex:1"><label>作者</label><input id="eabAuthor" value="'+author+'"></div>';
-  html+='<div class="form-group" style="flex:1"><label>演播者</label><input id="eabNarrator" value="'+narrator+'"></div>';
-  html+='</div>';
-  html+='<div style="display:flex;gap:8px">';
-  html+='<div class="form-group" style="flex:1"><label>分类</label><input id="eabGenre" value="'+genre+'"></div>';
-  html+='<div class="form-group" style="flex:1"><label>年份</label><input id="eabYear" type="number" value="'+year+'"></div>';
-  html+='</div>';
-  html+='<div class="actions"><button class="btn" onclick="this.closest(\'.modal-overlay\').remove()">取消</button>';
-  html+='<button class="btn btn-primary" onclick="saveAudiobook('+id+')">保存</button></div></div></div>';
-  document.getElementById('abModal').innerHTML=html;
-}
-
-async function saveAudiobook(id){
-  var r=await api('/api/admin/audiobooks/'+id,{method:'PUT',body:JSON.stringify({
-    title:document.getElementById('eabTitle').value,
-    author:document.getElementById('eabAuthor').value,
-    narrator:document.getElementById('eabNarrator').value,
-    genre:document.getElementById('eabGenre').value,
-    year:parseInt(document.getElementById('eabYear').value)||null
-  })});
-  if(r.code===0){showMsg('保存成功',true);document.querySelector('.modal-overlay').remove();render_audiobooks();}
-}
-
-async function deleteAudiobook(id){
-  if(!confirm('确定删除此有声书？'))return;
-  var r=await api('/api/admin/audiobooks/'+id,{method:'DELETE'});
-  if(r.code===0){showMsg('已删除',true);render_audiobooks();}
+  document.getElementById('abModal').innerHTML=\`
+    <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
+      <div class="modal"><h3>编辑有声书 #\${id}</h3>
+        <div class="form-group"><label>书名</label><input id="eabTitle" value="\${title}"></div>
+        <div style="display:flex;gap:8px">
+          <div class="form-group" style="flex:1"><label>作者</label><input id="eabAuthor" value="\${author}"></div>
+          <div class="form-group" style="flex:1"><label>演播者</label><input id="eabNarrator" value="\${narrator}"></div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <div class="form-group" style="flex:1"><label>分类</label><input id="eabGenre" value="\${genre}"></div>
+          <div class="form-group" style="flex:1"><label>年份</label><input id="eabYear" type="number" value="\${year}"></div>
+        </div>
+        <div class="actions"><button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button>
+        <button class="btn btn-primary" onclick="saveAudiobook(\${id})">保存</button></div>
+      </div>
+    </div>\`;
 }
 
 // 初始化
