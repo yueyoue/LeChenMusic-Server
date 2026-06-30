@@ -54,13 +54,13 @@ input:focus{border-color:var(--primary)}
 <body>
 <div class="sidebar">
   <h2>🎵 管理后台</h2>
-  <a onclick="nav('dashboard')" id="nav-dashboard"><span>📊 仪表盘</span></a>
-  <a onclick="nav('libraries')" id="nav-libraries"><span>📁 媒体库</span></a>
-  <a onclick="nav('tracks')" id="nav-tracks"><span>🎵 歌曲</span></a>
-  <a onclick="nav('albums')" id="nav-albums"><span>💿 专辑</span></a>
-  <a onclick="nav('artists')" id="nav-artists"><span>🎤 艺人</span></a>
-  <a onclick="nav('audiobooks')" id="nav-audiobooks"><span>📖 有声书</span></a>
-  <a onclick="nav('users')" id="nav-users"><span>👥 用户</span></a>
+  <a href="javascript:void(0)" onclick="nav('dashboard')" id="nav-dashboard"><span>📊 仪表盘</span></a>
+  <a href="javascript:void(0)" onclick="nav('libraries')" id="nav-libraries"><span>📁 媒体库</span></a>
+  <a href="javascript:void(0)" onclick="nav('tracks')" id="nav-tracks"><span>🎵 歌曲</span></a>
+  <a href="javascript:void(0)" onclick="nav('albums')" id="nav-albums"><span>💿 专辑</span></a>
+  <a href="javascript:void(0)" onclick="nav('artists')" id="nav-artists"><span>🎤 艺人</span></a>
+  <a href="javascript:void(0)" onclick="nav('audiobooks')" id="nav-audiobooks"><span>📖 有声书</span></a>
+  <a href="javascript:void(0)" onclick="nav('users')" id="nav-users"><span>👥 用户</span></a>
   <a href="/" style="margin-top:auto"><span>🏠 返回首页</span></a>
 </div>
 <div class="main">
