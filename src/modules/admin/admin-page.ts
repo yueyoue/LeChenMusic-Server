@@ -170,8 +170,14 @@ async function deleteLib(id){
 
 // ─── 歌曲（表格+排序）────────────────────────────────
 let trackPage=1, trackSort='default';
-function sortBtns(current,items,onClick){
-  return items.map(([k,l])=>\`<button class="sort-btn \${current===k?'active':''}" onclick="\${onClick}('\${k}')">\${l}</button>\`).join('');
+
+function setTrackSort(k){trackSort=k;trackPage=1;render_tracks()}
+function setAlbumSort(k){albumSort=k;albumPage=1;render_albums()}
+function setArtistSort(k){artistSort=k;artistPage=1;render_artists()}
+function setAbSort(k){abSort=k;abPage=1;render_audiobooks()}
+
+function sortBtns(current,items,callback){
+  return items.map(([k,l])=>\`<button class="sort-btn \${current===k?'active':''}" onclick="\${callback}('\${k}')">\${l}</button>\`).join('');
 }
 async function render_tracks(){
   const search=document.getElementById('trackSearch')?.value||'';
@@ -183,21 +189,22 @@ async function render_tracks(){
       <h1>🎵 歌曲 <span style="font-size:14px;color:var(--muted);font-weight:400">共 \${d.total} 首</span></h1>
       <div class="toolbar">
         <input class="search-input" id="trackSearch" placeholder="搜索歌曲名、流派..." value="\${search}" onkeydown="if(event.key==='Enter'){trackPage=1;render_tracks()}">
-        <div class="sort-btns">\${sortBtns(trackSort,[['default','默认排序'],['recent','最近添加'],['plays','最多播放']],'k=>{trackSort=k;trackPage=1;render_tracks()}')}</div>
+        <div class="sort-btns">\${sortBtns(trackSort,[['default','默认排序'],['recent','最近添加'],['plays','最多播放']],'setTrackSort')}</div>
       </div>
     </div>
-    <table>
-      <thead><tr><th>歌曲</th><th>艺人</th><th>专辑</th><th>时长</th><th>大小</th><th>操作</th></tr></thead>
-      <tbody>\${d.items.map(t=>\`<tr>
-        <td style="font-weight:500">\${t.title}</td>
-        <td style="color:var(--muted)">\${t.artistName||'-'}</td>
-        <td style="color:var(--muted)">\${t.albumTitle||'-'}</td>
-        <td style="color:var(--muted)">\${fmtDur(t.duration)}</td>
-        <td style="color:var(--muted)">\${fmtSize(t.fileSize)}</td>
-        <td><button class="btn btn-primary btn-sm" onclick="editTrack(\${t.id},'\${(t.title||'').replace(/'/g,"\\'")}','\${(t.genre||'').replace(/'/g,"\\'")}',\${t.trackNumber||0},\${t.discNumber||1})">编辑</button></td>
-      </tr>\`).join('')}
-      </tbody>
-    </table>
+    <div class="card-grid">
+      \${d.items.map(t=>\`<div class="card" onclick="editTrack(\${t.id},'\${(t.title||'').replace(/'/g,"\\'")}','\${(t.genre||'').replace(/'/g,"\\'")}',\${t.trackNumber||0},\${t.discNumber||1})">
+        <div style="position:relative">
+          <img class="card-img" src="/api/cover/\${t.albumId||0}" alt="\${t.title}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <div style="width:100%;aspect-ratio:1;background:#334155;display:none;align-items:center;justify-content:center;font-size:48px">🎵</div>
+        </div>
+        <div class="card-body">
+          <div class="card-title">\${t.title}</div>
+          <div class="card-sub">\${t.artistName||'未知艺人'}\${t.albumTitle?' · '+t.albumTitle:''}</div>
+          <div class="card-sub">\${fmtDur(t.duration)}\${t.format?' · '+t.format.toUpperCase():''}\${t.bitrate?' · '+t.bitrate+'kbps':''}</div>
+        </div>
+      </div>\`).join('')}
+    </div>
     <div class="pager">
       <button class="btn btn-sm" onclick="if(trackPage>1){trackPage--;render_tracks()}" \${d.page<=1?'disabled':''}>上一页</button>
       <span>第 \${d.page} / \${Math.ceil(d.total/d.pageSize)||1} 页</span>
@@ -255,7 +262,7 @@ async function render_albums(){
       <h1>💿 专辑 <span style="font-size:14px;color:var(--muted);font-weight:400">共 \${d.total} 张</span></h1>
       <div class="toolbar">
         <input class="search-input" id="albumSearch" placeholder="搜索专辑名..." value="\${search}" onkeydown="if(event.key==='Enter'){albumPage=1;render_albums()}">
-        <div class="sort-btns">\${sortBtns(albumSort,[['default','默认排序'],['recent','最近添加'],['plays','最多播放']],'k=>{albumSort=k;albumPage=1;render_albums()}')}</div>
+        <div class="sort-btns">\${sortBtns(albumSort,[['default','默认排序'],['recent','最近添加'],['plays','最多播放']],'setAlbumSort')}</div>
       </div>
     </div>
     <div class="card-grid">
@@ -308,7 +315,7 @@ async function render_artists(){
       <h1>🎤 艺人 <span style="font-size:14px;color:var(--muted);font-weight:400">共 \${d.total} 位</span></h1>
       <div class="toolbar">
         <input class="search-input" id="artistSearch" placeholder="搜索艺人名..." value="\${search}" onkeydown="if(event.key==='Enter'){artistPage=1;render_artists()}">
-        <div class="sort-btns">\${sortBtns(artistSort,[['default','默认排序'],['recent','最近添加'],['plays','最多播放']],'k=>{artistSort=k;artistPage=1;render_artists()}')}</div>
+        <div class="sort-btns">\${sortBtns(artistSort,[['default','默认排序'],['recent','最近添加'],['plays','最多播放']],'setArtistSort')}</div>
       </div>
     </div>
     <div class="card-grid">
@@ -407,7 +414,7 @@ async function render_audiobooks(){
       <h1>📖 有声书 <span style="font-size:14px;color:var(--muted);font-weight:400">共 \${d.total} 本</span></h1>
       <div class="toolbar">
         <input class="search-input" id="abSearch" placeholder="搜索有声书名..." value="\${search}" onkeydown="if(event.key==='Enter'){abPage=1;render_audiobooks()}">
-        <div class="sort-btns">\${sortBtns(abSort,[['default','默认排序'],['recent','最近添加']],'k=>{abSort=k;abPage=1;render_audiobooks()}')}</div>
+        <div class="sort-btns">\${sortBtns(abSort,[['default','默认排序'],['recent','最近添加']],'setAbSort')}</div>
       </div>
     </div>
     <div class="card-grid">
