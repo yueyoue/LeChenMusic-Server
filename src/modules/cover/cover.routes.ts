@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import { db, schema } from '../../db/index.js';
 import { eq } from 'drizzle-orm';
-import { existsSync, readFileSync, statSync, readdirSync } from 'fs';
-import { join, extname } from 'path';
+import { existsSync, readFileSync, statSync } from 'fs';
+import { join, dirname } from 'path';
 
 const router = Router();
 
@@ -34,7 +34,7 @@ router.get('/:albumId', async (req, res) => {
       const track = await db.select({ storagePath: schema.track.storagePath })
         .from(schema.track).where(eq(schema.track.albumId, albumId)).limit(1).get();
       if (track) {
-        const trackDir = join(library.storagePath, track.storagePath.replace(/\\/[^\\/]*$/, ''));
+        const trackDir = join(library.storagePath, dirname(track.storagePath));
         const coverNames = ['cover.jpg', 'cover.jpeg', 'cover.png', 'folder.jpg', 'folder.jpeg', 'front.jpg', 'front.jpeg'];
         for (const name of coverNames) {
           const coverFile = join(trackDir, name);

@@ -6,7 +6,7 @@ import argon2 from 'bcryptjs';
 import { AppError } from '../../middleware/error-handler.js';
 import { qs, qn } from '../../utils/query.js';
 import { existsSync, readFileSync, statSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
 
 const router = Router();
 
@@ -344,7 +344,6 @@ router.get('/artists/:id/avatar', async (req, res) => {
         .from(schema.track).where(eq(schema.track.artistId, artistId)).limit(1).get();
       if (track) {
         // 查找艺人目录（上一级目录）
-        const { dirname, basename } = await import('path');
         const trackDir = dirname(join(library.storagePath, track.storagePath));
         const artistDir = dirname(trackDir); // 可能是 艺人名/专辑名/歌曲.flac
         const searchDirs = [trackDir, artistDir];
