@@ -206,18 +206,32 @@ async function render_tracks(){
     <div id="trackModal"></div>\`;
 }
 function editTrack(id,title,genre,trackNo,discNo){
-  document.getElementById('trackModal').innerHTML=\`
-    <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
-      <div class="modal"><h3>编辑歌曲 #\${id}</h3>
-        <div class="form-group"><label>歌曲名</label><input id="etTitle" value="\${title}"></div>
-        <div class="form-group"><label>流派</label><input id="etGenre" value="\${genre}"></div>
-        <div style="display:flex;gap:8px">
-          <div class="form-group" style="flex:1"><label>曲目号</label><input id="etTrack" type="number" value="\${trackNo}"></div>
-          <div class="form-group" style="flex:1"><label>碟片号</label><input id="etDisc" type="number" value="\${discNo}"></div>
+  // Fetch full track details for editing
+  api('/api/admin/tracks/'+id).then(r=>{
+    if(r.code!==0)return;
+    const t=r.data;
+    document.getElementById('trackModal').innerHTML=\`
+      <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
+        <div class="modal"><h3>编辑歌曲 #\${id}</h3>
+          <div class="form-group"><label>歌曲名</label><input id="etTitle" value="\${t.title||''}"></div>
+          <div class="form-group"><label>流派</label><input id="etGenre" value="\${t.genre||''}"></div>
+          <div style="display:flex;gap:8px">
+            <div class="form-group" style="flex:1"><label>曲目号</label><input id="etTrack" type="number" value="\${t.trackNumber||0}"></div>
+            <div class="form-group" style="flex:1"><label>碟片号</label><input id="etDisc" type="number" value="\${t.discNumber||1}"></div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <div class="form-group" style="flex:1"><label>格式</label><input value="\${t.format||'-'}" disabled></div>
+            <div class="form-group" style="flex:1"><label>码率</label><input value="\${t.bitrate?t.bitrate+'kbps':'-'}" disabled></div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <div class="form-group" style="flex:1"><label>采样率</label><input value="\${t.sampleRate?t.sampleRate+'Hz':'-'}" disabled></div>
+            <div class="form-group" style="flex:1"><label>位深</label><input value="\${t.bitDepth?t.bitDepth+'bit':'-'}" disabled></div>
+          </div>
+          <div class="form-group"><label>文件大小</label><input value="\${fmtSize(t.fileSize)}" disabled></div>
+          <div class="actions"><button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button><button class="btn btn-primary" onclick="saveTrack(\${id})">保存</button></div>
         </div>
-        <div class="actions"><button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button><button class="btn btn-primary" onclick="saveTrack(\${id})">保存</button></div>
-      </div>
-    </div>\`;
+      </div>\`;
+  });
 }
 async function saveTrack(id){
   const r=await api('/api/admin/tracks/'+id,{method:'PUT',body:JSON.stringify({
@@ -241,7 +255,7 @@ async function render_albums(){
       <h1>💿 专辑 <span style="font-size:14px;color:var(--muted);font-weight:400">共 \${d.total} 张</span></h1>
       <div class="toolbar">
         <input class="search-input" id="albumSearch" placeholder="搜索专辑名..." value="\${search}" onkeydown="if(event.key==='Enter'){albumPage=1;render_albums()}">
-        <div class="sort-btns">\${sortBtns(albumSort,[['default','默认排序'],['recent','最近添加']],'k=>{albumSort=k;albumPage=1;render_albums()}')}</div>
+        <div class="sort-btns">\${sortBtns(albumSort,[['default','默认排序'],['recent','最近添加'],['plays','最多播放']],'k=>{albumSort=k;albumPage=1;render_albums()}')}</div>
       </div>
     </div>
     <div class="card-grid">
@@ -294,7 +308,7 @@ async function render_artists(){
       <h1>🎤 艺人 <span style="font-size:14px;color:var(--muted);font-weight:400">共 \${d.total} 位</span></h1>
       <div class="toolbar">
         <input class="search-input" id="artistSearch" placeholder="搜索艺人名..." value="\${search}" onkeydown="if(event.key==='Enter'){artistPage=1;render_artists()}">
-        <div class="sort-btns">\${sortBtns(artistSort,[['default','默认排序'],['recent','最近添加']],'k=>{artistSort=k;artistPage=1;render_artists()}')}</div>
+        <div class="sort-btns">\${sortBtns(artistSort,[['default','默认排序'],['recent','最近添加'],['plays','最多播放']],'k=>{artistSort=k;artistPage=1;render_artists()}')}</div>
       </div>
     </div>
     <div class="card-grid">

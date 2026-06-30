@@ -193,6 +193,35 @@ router.get('/tracks', async (req, res, next) => {
 });
 
 // 编辑歌曲
+router.get('/tracks/:id', async (req, res, next) => {
+  try {
+    const trackId = parseInt(req.params.id as string);
+    const track = await db.select({
+      id: schema.track.id,
+      title: schema.track.title,
+      artistId: schema.track.artistId,
+      albumId: schema.track.albumId,
+      duration: schema.track.duration,
+      bitrate: schema.track.bitrate,
+      bitDepth: schema.track.bitDepth,
+      sampleRate: schema.track.sampleRate,
+      format: schema.track.format,
+      fileSize: schema.track.fileSize,
+      trackNumber: schema.track.trackNumber,
+      discNumber: schema.track.discNumber,
+      genre: schema.track.genre,
+      artistName: schema.artist.name,
+      albumTitle: schema.album.title,
+    })
+      .from(schema.track)
+      .leftJoin(schema.artist, eq(schema.track.artistId, schema.artist.id))
+      .leftJoin(schema.album, eq(schema.track.albumId, schema.album.id))
+      .where(eq(schema.track.id, trackId)).get();
+    if (!track) throw new AppError(4004, 404, 'Track not found');
+    res.json({ code: 0, message: 'ok', data: track });
+  } catch (err) { next(err); }
+});
+
 router.put('/tracks/:id', async (req, res, next) => {
   try {
     const trackId = parseInt(req.params.id as string);
@@ -220,12 +249,20 @@ router.get('/albums', async (req, res, next) => {
     let orderBy;
     if (sort === 'recent') {
       orderBy = desc(schema.album.createdAt);
+    } else if (sort === 'plays') {
+      // 按播放次数排序（通过 play_history 关联的 track 的 album_id）
+      const playCounts = db.select({
+        albumId: schema.track.albumId,
+        count: sql<number>`count(*)`.as('count'),
+      }).from(schema.playHistory)
+        .leftJoin(schema.track, eq(schema.playHistory.trackId, schema.track.id))
+        .groupBy(schema.track.albumId).as('pc');
+      orderBy = desc(sql`coalesce(pc.count, 0)`);
     } else {
       orderBy = schema.album.id;
     }
 
-    const [items, totalResult] = await Promise.all([
-      db.select({
+    let query = db.select({
         id: schema.album.id,
         title: schema.album.title,
         artistId: schema.album.artistId,
@@ -235,12 +272,26 @@ router.get('/albums', async (req, res, next) => {
         artistName: schema.artist.name,
       })
         .from(schema.album)
-        .leftJoin(schema.artist, eq(schema.album.artistId, schema.artist.id))
-        .where(where)
-        .orderBy(orderBy)
-        .limit(pageSize).offset((page - 1) * pageSize).all(),
-      db.select({ count: sql<number>`count(*)` }).from(schema.album).where(where).get(),
-    ]);
+        .leftJoin(schema.artist, eq(schema.album.artistId, schema.artist.id));
+
+    if (sort === 'plays') {
+      const playCounts = db.select({
+        albumId: schema.track.albumId,
+        count: sql<number>`count(*)`.as('count'),
+      }).from(schema.playHistory)
+        .leftJoin(schema.track, eq(schema.playHistory.trackId, schema.track.id))
+        .groupBy(schema.track.albumId).as('pc');
+      query = query.leftJoin(playCounts, eq(schema.album.id, playCounts.albumId)) as any;
+    }
+
+    const items = await query
+      .where(where)
+      .orderBy(orderBy)
+      .limit(pageSize).offset((page - 1) * pageSize)
+      .all();
+
+    const totalResult = await db.select({ count: sql<number>`count(*)` }).from(schema.album).where(where).get();
+
     res.json({ code: 0, message: 'ok', data: { items, total: totalResult?.count ?? 0, page, pageSize } });
   } catch (err) { next(err); }
 });
@@ -299,16 +350,39 @@ router.get('/artists', async (req, res, next) => {
     let orderBy;
     if (sort === 'recent') {
       orderBy = desc(schema.artist.createdAt);
+    } else if (sort === 'plays') {
+      // 按播放次数排序（通过 play_history 关联的 track 的 artist_id）
+      const playCounts = db.select({
+        artistId: schema.track.artistId,
+        count: sql<number>`count(*)`.as('count'),
+      }).from(schema.playHistory)
+        .leftJoin(schema.track, eq(schema.playHistory.trackId, schema.track.id))
+        .groupBy(schema.track.artistId).as('pc');
+      orderBy = desc(sql`coalesce(pc.count, 0)`);
     } else {
       orderBy = schema.artist.id;
     }
 
-    const [items, totalResult] = await Promise.all([
-      db.select().from(schema.artist).where(where)
-        .orderBy(orderBy)
-        .limit(pageSize).offset((page - 1) * pageSize).all(),
-      db.select({ count: sql<number>`count(*)` }).from(schema.artist).where(where).get(),
-    ]);
+    let query = db.select().from(schema.artist);
+
+    if (sort === 'plays') {
+      const playCounts = db.select({
+        artistId: schema.track.artistId,
+        count: sql<number>`count(*)`.as('count'),
+      }).from(schema.playHistory)
+        .leftJoin(schema.track, eq(schema.playHistory.trackId, schema.track.id))
+        .groupBy(schema.track.artistId).as('pc');
+      query = query.leftJoin(playCounts, eq(schema.artist.id, playCounts.artistId)) as any;
+    }
+
+    const items = await query
+      .where(where)
+      .orderBy(orderBy)
+      .limit(pageSize).offset((page - 1) * pageSize)
+      .all();
+
+    const totalResult = await db.select({ count: sql<number>`count(*)` }).from(schema.artist).where(where).get();
+
     res.json({ code: 0, message: 'ok', data: { items, total: totalResult?.count ?? 0, page, pageSize } });
   } catch (err) { next(err); }
 });
@@ -442,6 +516,32 @@ router.get('/audiobooks/:id/chapters', async (req, res, next) => {
       .orderBy(schema.audiobookChapter.chapterNumber).all();
     res.json({ code: 0, message: 'ok', data: chapters });
   } catch (err) { next(err); }
+});
+
+// 有声书封面
+router.get('/audiobooks/:id/cover', async (req, res) => {
+  try {
+    const bookId = parseInt(req.params.id as string);
+    const book = await db.select().from(schema.audiobook).where(eq(schema.audiobook.id, bookId)).get();
+    if (!book?.coverPath) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.send('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect fill="#1e293b" width="200" height="200"/><text fill="#64748b" font-size="48" x="50%" y="50%" text-anchor="middle" dy=".3em">📖</text></svg>');
+      return;
+    }
+    const library = await db.select().from(schema.mediaLibrary).limit(1).get();
+    if (!library) { res.status(404).end(); return; }
+    const fullPath = join(library.storagePath, book.coverPath);
+    if (!existsSync(fullPath)) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.send('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><rect fill="#1e293b" width="200" height="200"/><text fill="#64748b" font-size="48" x="50%" y="50%" text-anchor="middle" dy=".3em">📖</text></svg>');
+      return;
+    }
+    const stat = statSync(fullPath);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(readFileSync(fullPath));
+  } catch { res.status(500).end(); }
 });
 
 export default router;
