@@ -8,21 +8,29 @@ export const adminPageHTML = `<!DOCTYPE html>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#0f172a;--card:#1e293b;--border:#334155;--text:#e2e8f0;--muted:#94a3b8;--primary:#3b82f6;--danger:#ef4444;--success:#22c55e}
 body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
-.sidebar{width:220px;background:var(--card);border-right:1px solid var(--border);padding:16px 0;flex-shrink:0}
+.sidebar{width:220px;background:var(--card);border-right:1px solid var(--border);padding:16px 0;flex-shrink:0;display:flex;flex-direction:column}
 .sidebar h2{padding:0 16px 16px;font-size:18px;border-bottom:1px solid var(--border);margin-bottom:8px}
-.sidebar .nav-item{display:block;padding:10px 16px;color:var(--muted);text-decoration:none;font-size:14px;cursor:pointer}
+.sidebar .nav-item{display:block;padding:10px 16px;color:var(--muted);text-decoration:none;font-size:14px;cursor:pointer;transition:.15s}
 .sidebar .nav-item:hover,.sidebar .nav-item.active{color:var(--text);background:rgba(59,130,246,.1);border-right:3px solid var(--primary)}
-.main{flex:1;padding:24px;overflow-y:auto}
-.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
-.header h1{font-size:22px}
+.main{flex:1;padding:24px;overflow-y:auto;min-width:0}
+.header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.header h1{font-size:22px;white-space:nowrap}
+.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.search-input{background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px 14px;border-radius:8px;font-size:13px;outline:none;width:260px}
+.search-input:focus{border-color:var(--primary)}
+.sort-btns{display:flex;gap:0;background:var(--card);border-radius:8px;overflow:hidden;border:1px solid var(--border)}
+.sort-btn{padding:7px 14px;font-size:12px;color:var(--muted);cursor:pointer;border:none;background:transparent;transition:.15s}
+.sort-btn.active{background:var(--primary);color:#fff}
+.sort-btn:hover:not(.active){color:var(--text);background:rgba(255,255,255,.05)}
 .btn{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500}
 .btn-primary{background:var(--primary);color:#fff}
 .btn-danger{background:var(--danger);color:#fff}
 .btn-sm{padding:4px 10px;font-size:12px}
 .btn:hover{opacity:.85}
 table{width:100%;border-collapse:collapse;background:var(--card);border-radius:8px;overflow:hidden}
-th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);font-size:13px}
+th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--border);font-size:13px}
 th{background:#0f172a;color:var(--muted);font-weight:500;font-size:12px;text-transform:uppercase}
+tr:hover{background:rgba(255,255,255,.02)}
 input,select{background:var(--card);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:6px;font-size:13px;outline:none}
 input:focus{border-color:var(--primary)}
 .modal-overlay{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);display:flex;justify-content:center;align-items:center;z-index:100}
@@ -40,15 +48,20 @@ input:focus{border-color:var(--primary)}
 .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
 .badge-admin{background:#7c3aed;color:#fff}
 .badge-user{background:#334155;color:#94a3b8}
-.badge-idle{background:#064e3b;color:#6ee7b7}
-.badge-scanning{background:#854d0e;color:#fbbf24}
-.badge-error{background:#7f1d1d;color:#fca5a5}
-.search-bar{display:flex;gap:8px;margin-bottom:16px}
-.search-bar input{flex:1}
-.pager{display:flex;gap:8px;justify-content:center;margin-top:16px;align-items:center}
-.pager button{padding:6px 12px}
+.pager{display:flex;gap:8px;justify-content:center;margin-top:20px;align-items:center}
+.pager button{padding:6px 14px}
 .pager span{font-size:13px;color:var(--muted)}
-@media(max-width:768px){.sidebar{width:60px}.sidebar h2,.sidebar .nav-item span{display:none}.sidebar .nav-item{text-align:center;padding:12px 0}}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:20px}
+.card{background:var(--card);border-radius:10px;overflow:hidden;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.card:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.3)}
+.card-img{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:#334155}
+.card-img-circle{width:120px;height:120px;border-radius:50%;object-fit:cover;display:block;margin:20px auto 0;background:#334155}
+.card-body{padding:10px 12px 14px}
+.card-title{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-sub{font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card-artist-wrap{text-align:center;padding:10px 8px 16px}
+.card-artist-name{font-size:13px;font-weight:500;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:768px){.sidebar{width:60px}.sidebar h2,.sidebar .nav-item span{display:none}.sidebar .nav-item{text-align:center;padding:12px 0}.search-input{width:160px}.card-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}}
 </style>
 </head>
 <body>
@@ -102,24 +115,12 @@ async function render_dashboard(){
   document.getElementById('content').innerHTML=\`
     <div class="header"><h1>📊 仪表盘</h1></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px">
-      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center">
-        <div style="font-size:28px;font-weight:700">\${d.tracks}</div><div style="color:var(--muted);font-size:13px">🎵 歌曲</div>
-      </div>
-      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center">
-        <div style="font-size:28px;font-weight:700">\${d.albums}</div><div style="color:var(--muted);font-size:13px">💿 专辑</div>
-      </div>
-      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center">
-        <div style="font-size:28px;font-weight:700">\${d.artists}</div><div style="color:var(--muted);font-size:13px">🎤 艺人</div>
-      </div>
-      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center">
-        <div style="font-size:28px;font-weight:700">\${d.users}</div><div style="color:var(--muted);font-size:13px">👥 用户</div>
-      </div>
-      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center">
-        <div style="font-size:28px;font-weight:700">\${d.libraries}</div><div style="color:var(--muted);font-size:13px">📁 媒体库</div>
-      </div>
-      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center">
-        <div style="font-size:28px;font-weight:700">\${fmtSize(d.totalSizeBytes)}</div><div style="color:var(--muted);font-size:13px">💾 总大小</div>
-      </div>
+      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center"><div style="font-size:28px;font-weight:700">\${d.tracks}</div><div style="color:var(--muted);font-size:13px">🎵 歌曲</div></div>
+      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center"><div style="font-size:28px;font-weight:700">\${d.albums}</div><div style="color:var(--muted);font-size:13px">💿 专辑</div></div>
+      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center"><div style="font-size:28px;font-weight:700">\${d.artists}</div><div style="color:var(--muted);font-size:13px">🎤 艺人</div></div>
+      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center"><div style="font-size:28px;font-weight:700">\${d.users}</div><div style="color:var(--muted);font-size:13px">👥 用户</div></div>
+      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center"><div style="font-size:28px;font-weight:700">\${d.libraries}</div><div style="color:var(--muted);font-size:13px">📁 媒体库</div></div>
+      <div style="background:var(--card);padding:20px;border-radius:8px;text-align:center"><div style="font-size:28px;font-weight:700">\${fmtSize(d.totalSizeBytes)}</div><div style="color:var(--muted);font-size:13px">💾 总大小</div></div>
     </div>\`;
 }
 
@@ -138,7 +139,6 @@ async function render_libraries(){
     </tr>\`).join('')}</tbody></table>
     <div id="libModal"></div>\`;
 }
-
 function showAddLibrary(){
   document.getElementById('libModal').innerHTML=\`
     <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
@@ -150,7 +150,6 @@ function showAddLibrary(){
       </div>
     </div>\`;
 }
-
 async function addLibrary(){
   const name=document.getElementById('libName').value;
   const storageType=document.getElementById('libType').value;
@@ -159,42 +158,53 @@ async function addLibrary(){
   const r=await api('/api/admin/libraries',{method:'POST',body:JSON.stringify({name,storageType,storagePath})});
   if(r.code===0){showMsg('添加成功',true);document.querySelector('.modal-overlay').remove();render_libraries();}
 }
-
 async function scanLib(id){
   const r=await api('/api/admin/libraries/'+id+'/scan',{method:'POST'});
   if(r.code===0)showMsg('扫描已启动，请稍候...',true);
 }
-
 async function deleteLib(id){
   if(!confirm('确定删除此媒体库？'))return;
   const r=await api('/api/admin/libraries/'+id,{method:'DELETE'});
   if(r.code===0){showMsg('已删除',true);render_libraries();}
 }
 
-// ─── 歌曲 ────────────────────────────────────────────
-let trackPage=1;
+// ─── 歌曲（表格+排序）────────────────────────────────
+let trackPage=1, trackSort='default';
+function sortBtns(current,items,onClick){
+  return items.map(([k,l])=>\`<button class="sort-btn \${current===k?'active':''}" onclick="\${onClick}('\${k}')">\${l}</button>\`).join('');
+}
 async function render_tracks(){
   const search=document.getElementById('trackSearch')?.value||'';
-  const r=await api('/api/admin/tracks?page='+trackPage+'&pageSize=30&search='+encodeURIComponent(search));
+  const r=await api('/api/admin/tracks?page='+trackPage+'&pageSize=30&search='+encodeURIComponent(search)+'&sort='+trackSort);
   if(r.code!==0)return;
   const d=r.data;
   document.getElementById('content').innerHTML=\`
-    <div class="header"><h1>🎵 歌曲管理</h1><span style="color:var(--muted)">共 \${d.total} 首</span></div>
-    <div class="search-bar"><input id="trackSearch" placeholder="搜索歌曲名、流派..." value="\${search}" onkeydown="if(event.key===\\'Enter\\'){trackPage=1;render_tracks()}"><button class="btn btn-primary" onclick="trackPage=1;render_tracks()">搜索</button></div>
-    <table><thead><tr><th>ID</th><th>歌曲名</th><th>艺人</th><th>专辑</th><th>时长</th><th>格式</th><th>码率</th><th>流派</th><th>操作</th></tr></thead>
-    <tbody>\${d.items.map(t=>\`<tr>
-      <td>\${t.id}</td><td>\${t.title}</td><td>\${t.artistName||'-'}</td><td>\${t.albumTitle||'-'}</td>
-      <td>\${fmtDur(t.duration)}</td><td>\${t.format||'-'}</td><td>\${t.bitrate?t.bitrate+'kbps':'-'}</td><td>\${t.genre||'-'}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="editTrack(\${t.id},'\${t.title?.replace(/'/g,"\\\\'")}','\${t.genre||''}',\${t.trackNumber||0},\${t.discNumber||1})">编辑</button></td>
-    </tr>\`).join('')}</tbody></table>
+    <div class="header">
+      <h1>🎵 歌曲 <span style="font-size:14px;color:var(--muted);font-weight:400">共 \${d.total} 首</span></h1>
+      <div class="toolbar">
+        <input class="search-input" id="trackSearch" placeholder="搜索歌曲名、流派..." value="\${search}" onkeydown="if(event.key==='Enter'){trackPage=1;render_tracks()}">
+        <div class="sort-btns">\${sortBtns(trackSort,[['default','默认排序'],['recent','最近添加'],['plays','最多播放']],'k=>{trackSort=k;trackPage=1;render_tracks()}')}</div>
+      </div>
+    </div>
+    <table>
+      <thead><tr><th>歌曲</th><th>艺人</th><th>专辑</th><th>时长</th><th>大小</th><th>操作</th></tr></thead>
+      <tbody>\${d.items.map(t=>\`<tr>
+        <td style="font-weight:500">\${t.title}</td>
+        <td style="color:var(--muted)">\${t.artistName||'-'}</td>
+        <td style="color:var(--muted)">\${t.albumTitle||'-'}</td>
+        <td style="color:var(--muted)">\${fmtDur(t.duration)}</td>
+        <td style="color:var(--muted)">\${fmtSize(t.fileSize)}</td>
+        <td><button class="btn btn-primary btn-sm" onclick="editTrack(\${t.id},'\${(t.title||'').replace(/'/g,"\\'")}','\${(t.genre||'').replace(/'/g,"\\'")}',\${t.trackNumber||0},\${t.discNumber||1})">编辑</button></td>
+      </tr>\`).join('')}
+      </tbody>
+    </table>
     <div class="pager">
       <button class="btn btn-sm" onclick="if(trackPage>1){trackPage--;render_tracks()}" \${d.page<=1?'disabled':''}>上一页</button>
-      <span>第 \${d.page} / \${Math.ceil(d.total/d.pageSize)} 页</span>
+      <span>第 \${d.page} / \${Math.ceil(d.total/d.pageSize)||1} 页</span>
       <button class="btn btn-sm" onclick="if(d.page*d.pageSize<d.total){trackPage++;render_tracks()}" \${d.page*d.pageSize>=d.total?'disabled':''}>下一页</button>
     </div>
     <div id="trackModal"></div>\`;
 }
-
 function editTrack(id,title,genre,trackNo,discNo){
   document.getElementById('trackModal').innerHTML=\`
     <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
@@ -209,7 +219,6 @@ function editTrack(id,title,genre,trackNo,discNo){
       </div>
     </div>\`;
 }
-
 async function saveTrack(id){
   const r=await api('/api/admin/tracks/'+id,{method:'PUT',body:JSON.stringify({
     title:document.getElementById('etTitle').value,
@@ -220,29 +229,37 @@ async function saveTrack(id){
   if(r.code===0){showMsg('保存成功',true);document.querySelector('.modal-overlay').remove();render_tracks();}
 }
 
-// ─── 专辑 ────────────────────────────────────────────
-let albumPage=1;
+// ─── 专辑（卡片网格+排序）────────────────────────────
+let albumPage=1, albumSort='default';
 async function render_albums(){
   const search=document.getElementById('albumSearch')?.value||'';
-  const r=await api('/api/admin/albums?page='+albumPage+'&pageSize=30&search='+encodeURIComponent(search));
+  const r=await api('/api/admin/albums?page='+albumPage+'&pageSize=30&search='+encodeURIComponent(search)+'&sort='+albumSort);
   if(r.code!==0)return;
   const d=r.data;
   document.getElementById('content').innerHTML=\`
-    <div class="header"><h1>💿 专辑管理</h1><span style="color:var(--muted)">共 \${d.total} 张</span></div>
-    <div class="search-bar"><input id="albumSearch" placeholder="搜索专辑名..." value="\${search}" onkeydown="if(event.key==='Enter'){albumPage=1;render_albums()}"><button class="btn btn-primary" onclick="albumPage=1;render_albums()">搜索</button></div>
-    <table><thead><tr><th>ID</th><th>专辑名</th><th>艺人</th><th>年份</th><th>流派</th><th>操作</th></tr></thead>
-    <tbody>\${d.items.map(a=>\`<tr>
-      <td>\${a.id}</td><td>\${a.title}</td><td>\${a.artistName||'-'}</td><td>\${a.year||'-'}</td><td>\${a.genre||'-'}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="editAlbum(\${a.id},'\${a.title?.replace(/'/g,"\\\\'")}',\${a.year||0},'\${a.genre||''}')">编辑</button></td>
-    </tr>\`).join('')}</tbody></table>
+    <div class="header">
+      <h1>💿 专辑 <span style="font-size:14px;color:var(--muted);font-weight:400">共 \${d.total} 张</span></h1>
+      <div class="toolbar">
+        <input class="search-input" id="albumSearch" placeholder="搜索专辑名..." value="\${search}" onkeydown="if(event.key==='Enter'){albumPage=1;render_albums()}">
+        <div class="sort-btns">\${sortBtns(albumSort,[['default','默认排序'],['recent','最近添加']],'k=>{albumSort=k;albumPage=1;render_albums()}')}</div>
+      </div>
+    </div>
+    <div class="card-grid">
+      \${d.items.map(a=>\`<div class="card" onclick="editAlbum(\${a.id},'\${(a.title||'').replace(/'/g,"\\'")}',\${a.year||0},'\${(a.genre||'').replace(/'/g,"\\'")}')">
+        <img class="card-img" src="/api/cover/\${a.id}" alt="\${a.title}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23334155%22 width=%22200%22 height=%22200%22/><text fill=%22%2394a3b8%22 font-size=%2248%22 x=%2250%%22 y=%2250%%22 text-anchor=%22middle%22 dy=%22.3em%22>💿</text></svg>'">
+        <div class="card-body">
+          <div class="card-title">\${a.title}</div>
+          <div class="card-sub">\${a.artistName||'未知艺人'}\${a.year?' · '+a.year:''}</div>
+        </div>
+      </div>\`).join('')}
+    </div>
     <div class="pager">
       <button class="btn btn-sm" onclick="if(albumPage>1){albumPage--;render_albums()}" \${d.page<=1?'disabled':''}>上一页</button>
-      <span>第 \${d.page} / \${Math.ceil(d.total/d.pageSize)} 页</span>
+      <span>第 \${d.page} / \${Math.ceil(d.total/d.pageSize)||1} 页</span>
       <button class="btn btn-sm" onclick="if(d.page*d.pageSize<d.total){albumPage++;render_albums()}" \${d.page*d.pageSize>=d.total?'disabled':''}>下一页</button>
     </div>
     <div id="albumModal"></div>\`;
 }
-
 function editAlbum(id,title,year,genre){
   document.getElementById('albumModal').innerHTML=\`
     <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
@@ -256,7 +273,6 @@ function editAlbum(id,title,year,genre){
       </div>
     </div>\`;
 }
-
 async function saveAlbum(id){
   const r=await api('/api/admin/albums/'+id,{method:'PUT',body:JSON.stringify({
     title:document.getElementById('eaTitle').value,
@@ -266,29 +282,36 @@ async function saveAlbum(id){
   if(r.code===0){showMsg('保存成功',true);document.querySelector('.modal-overlay').remove();render_albums();}
 }
 
-// ─── 艺人 ────────────────────────────────────────────
-let artistPage=1;
+// ─── 艺人（圆形头像卡片+排序）────────────────────────
+let artistPage=1, artistSort='default';
 async function render_artists(){
   const search=document.getElementById('artistSearch')?.value||'';
-  const r=await api('/api/admin/artists?page='+artistPage+'&pageSize=30&search='+encodeURIComponent(search));
+  const r=await api('/api/admin/artists?page='+artistPage+'&pageSize=30&search='+encodeURIComponent(search)+'&sort='+artistSort);
   if(r.code!==0)return;
   const d=r.data;
   document.getElementById('content').innerHTML=\`
-    <div class="header"><h1>🎤 艺人管理</h1><span style="color:var(--muted)">共 \${d.total} 位</span></div>
-    <div class="search-bar"><input id="artistSearch" placeholder="搜索艺人名..." value="\${search}" onkeydown="if(event.key==='Enter'){artistPage=1;render_artists()}"><button class="btn btn-primary" onclick="artistPage=1;render_artists()">搜索</button></div>
-    <table><thead><tr><th>ID</th><th>艺人名</th><th>简介</th><th>操作</th></tr></thead>
-    <tbody>\${d.items.map(a=>\`<tr>
-      <td>\${a.id}</td><td>\${a.name}</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis">\${a.bio||'-'}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="editArtist(\${a.id},'\${a.name?.replace(/'/g,"\\\\'")}','\${(a.bio||'').replace(/'/g,"\\\\'").replace(/\\n/g,'\\\\n')}')">编辑</button></td>
-    </tr>\`).join('')}</tbody></table>
+    <div class="header">
+      <h1>🎤 艺人 <span style="font-size:14px;color:var(--muted);font-weight:400">共 \${d.total} 位</span></h1>
+      <div class="toolbar">
+        <input class="search-input" id="artistSearch" placeholder="搜索艺人名..." value="\${search}" onkeydown="if(event.key==='Enter'){artistPage=1;render_artists()}">
+        <div class="sort-btns">\${sortBtns(artistSort,[['default','默认排序'],['recent','最近添加']],'k=>{artistSort=k;artistPage=1;render_artists()}')}</div>
+      </div>
+    </div>
+    <div class="card-grid">
+      \${d.items.map(a=>\`<div class="card" onclick="editArtist(\${a.id},'\${(a.name||'').replace(/'/g,"\\'")}','\${(a.bio||'').replace(/'/g,"\\'").replace(/\\n/g,"\\\\n")}')">
+        <div class="card-artist-wrap">
+          <img class="card-img-circle" src="/api/admin/artists/\${a.id}/avatar" alt="\${a.name}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><circle cx=%22100%22 cy=%22100%22 r=%22100%22 fill=%22%23334155%22/><text fill=%22%2394a3b8%22 font-size=%2264%22 x=%2250%%22 y=%2250%%22 text-anchor=%22middle%22 dy=%22.35em%22>🎤</text></svg>'">
+          <div class="card-artist-name">\${a.name}</div>
+        </div>
+      </div>\`).join('')}
+    </div>
     <div class="pager">
       <button class="btn btn-sm" onclick="if(artistPage>1){artistPage--;render_artists()}" \${d.page<=1?'disabled':''}>上一页</button>
-      <span>第 \${d.page} / \${Math.ceil(d.total/d.pageSize)} 页</span>
+      <span>第 \${d.page} / \${Math.ceil(d.total/d.pageSize)||1} 页</span>
       <button class="btn btn-sm" onclick="if(d.page*d.pageSize<d.total){artistPage++;render_artists()}" \${d.page*d.pageSize>=d.total?'disabled':''}>下一页</button>
     </div>
     <div id="artistModal"></div>\`;
 }
-
 function editArtist(id,name,bio){
   document.getElementById('artistModal').innerHTML=\`
     <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
@@ -299,7 +322,6 @@ function editArtist(id,name,bio){
       </div>
     </div>\`;
 }
-
 async function saveArtist(id){
   const r=await api('/api/admin/artists/'+id,{method:'PUT',body:JSON.stringify({
     name:document.getElementById('eaName').value,
@@ -325,7 +347,6 @@ async function render_users(){
     </tr>\`).join('')}</tbody></table>
     <div id="userModal"></div>\`;
 }
-
 function showAddUser(){
   document.getElementById('userModal').innerHTML=\`
     <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
@@ -338,7 +359,6 @@ function showAddUser(){
       </div>
     </div>\`;
 }
-
 async function addUser(){
   const username=document.getElementById('nuUser').value;
   const password=document.getElementById('nuPass').value;
@@ -350,45 +370,49 @@ async function addUser(){
   })});
   if(r.code===0){showMsg('添加成功',true);document.querySelector('.modal-overlay').remove();render_users();}
 }
-
 async function setAdmin(id){
   if(!confirm('确定将此用户设为管理员？'))return;
   const r=await api('/api/admin/users/'+id,{method:'PUT',body:JSON.stringify({role:'admin'})});
   if(r.code===0){showMsg('已设为管理员',true);render_users();}
 }
-
 async function deleteUser(id){
   if(!confirm('确定删除此用户？'))return;
   const r=await api('/api/admin/users/'+id,{method:'DELETE'});
   if(r.code===0){showMsg('已删除',true);render_users();}
 }
 
-
-// ─── 有声书 ────────────────────────────────────────────
-let abPage=1;
+// ─── 有声书（卡片网格+排序）──────────────────────────
+let abPage=1, abSort='default';
 async function render_audiobooks(){
   const search=document.getElementById('abSearch')?.value||'';
-  const r=await api('/api/admin/audiobooks?page='+abPage+'&pageSize=30&search='+encodeURIComponent(search));
+  const r=await api('/api/admin/audiobooks?page='+abPage+'&pageSize=30&search='+encodeURIComponent(search)+'&sort='+abSort);
   if(r.code!==0)return;
   const d=r.data;
   document.getElementById('content').innerHTML=\`
-    <div class="header"><h1>📖 有声书管理</h1><span style="color:var(--muted)">共 \${d.total} 本</span></div>
-    <div class="search-bar"><input id="abSearch" placeholder="搜索有声书名..." value="\${search}" onkeydown="if(event.key==='Enter'){abPage=1;render_audiobooks()}"><button class="btn btn-primary" onclick="abPage=1;render_audiobooks()">搜索</button></div>
-    <table><thead><tr><th>ID</th><th>书名</th><th>作者</th><th>演播</th><th>分类</th><th>章节</th><th>总时长</th><th>操作</th></tr></thead>
-    <tbody>\${d.items.map(a=>\`<tr>
-      <td>\${a.id}</td><td>\${a.title}</td><td>\${a.author||'-'}</td><td>\${a.narrator||'-'}</td>
-      <td>\${a.genre||'-'}</td><td>\${a.chapterCount||0}</td><td>\${fmtDur(a.totalDuration)}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="editAudiobook(\${a.id},'\${a.title?.replace(/'/g,"\\\\'")}','\${a.author||''}','\${a.narrator||''}','\${a.genre||''}',\${a.year||0})">编辑</button>
-      <button class="btn btn-danger btn-sm" onclick="deleteAudiobook(\${a.id})">删除</button></td>
-    </tr>\`).join('')}</tbody></table>
+    <div class="header">
+      <h1>📖 有声书 <span style="font-size:14px;color:var(--muted);font-weight:400">共 \${d.total} 本</span></h1>
+      <div class="toolbar">
+        <input class="search-input" id="abSearch" placeholder="搜索有声书名..." value="\${search}" onkeydown="if(event.key==='Enter'){abPage=1;render_audiobooks()}">
+        <div class="sort-btns">\${sortBtns(abSort,[['default','默认排序'],['recent','最近添加']],'k=>{abSort=k;abPage=1;render_audiobooks()}')}</div>
+      </div>
+    </div>
+    <div class="card-grid">
+      \${d.items.map(a=>\`<div class="card" onclick="editAudiobook(\${a.id},'\${(a.title||'').replace(/'/g,"\\'")}','\${(a.author||'').replace(/'/g,"\\'")}','\${(a.narrator||'').replace(/'/g,"\\'")}','\${(a.genre||'').replace(/'/g,"\\'")}',\${a.year||0})">
+        <img class="card-img" src="/api/cover/\${a.id}" alt="\${a.title}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23334155%22 width=%22200%22 height=%22200%22/><text fill=%22%2394a3b8%22 font-size=%2248%22 x=%2250%%22 y=%2250%%22 text-anchor=%22middle%22 dy=%22.3em%22>📖</text></svg>'">
+        <div class="card-body">
+          <div class="card-title">\${a.title}</div>
+          <div class="card-sub">\${a.author||'未知作者'}\${a.narrator?' · '+a.narrator:''}</div>
+          <div class="card-sub">\${a.chapterCount||0}章 · \${fmtDur(a.totalDuration)}</div>
+        </div>
+      </div>\`).join('')}
+    </div>
     <div class="pager">
       <button class="btn btn-sm" onclick="if(abPage>1){abPage--;render_audiobooks()}" \${d.page<=1?'disabled':''}>上一页</button>
-      <span>第 \${d.page} / \${Math.ceil(d.total/d.pageSize)} 页</span>
+      <span>第 \${d.page} / \${Math.ceil(d.total/d.pageSize)||1} 页</span>
       <button class="btn btn-sm" onclick="if(d.page*d.pageSize<d.total){abPage++;render_audiobooks()}" \${d.page*d.pageSize>=d.total?'disabled':''}>下一页</button>
     </div>
     <div id="abModal"></div>\`;
 }
-
 function editAudiobook(id,title,author,narrator,genre,year){
   document.getElementById('abModal').innerHTML=\`
     <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
@@ -406,6 +430,21 @@ function editAudiobook(id,title,author,narrator,genre,year){
         <button class="btn btn-primary" onclick="saveAudiobook(\${id})">保存</button></div>
       </div>
     </div>\`;
+}
+async function saveAudiobook(id){
+  var r=await api('/api/admin/audiobooks/'+id,{method:'PUT',body:JSON.stringify({
+    title:document.getElementById('eabTitle').value,
+    author:document.getElementById('eabAuthor').value,
+    narrator:document.getElementById('eabNarrator').value,
+    genre:document.getElementById('eabGenre').value,
+    year:parseInt(document.getElementById('eabYear').value)||null
+  })});
+  if(r.code===0){showMsg('保存成功',true);document.querySelector('.modal-overlay').remove();render_audiobooks();}
+}
+async function deleteAudiobook(id){
+  if(!confirm('确定删除此有声书？'))return;
+  var r=await api('/api/admin/audiobooks/'+id,{method:'DELETE'});
+  if(r.code===0){showMsg('已删除',true);render_audiobooks();}
 }
 
 // 初始化

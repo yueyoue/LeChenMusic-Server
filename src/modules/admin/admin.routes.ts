@@ -5,6 +5,8 @@ import { authMiddleware, adminMiddleware } from '../../middleware/auth.js';
 import argon2 from 'bcryptjs';
 import { AppError } from '../../middleware/error-handler.js';
 import { qs, qn } from '../../utils/query.js';
+import { existsSync, readFileSync, statSync } from 'fs';
+import { join } from 'path';
 
 const router = Router();
 
@@ -124,19 +126,33 @@ router.post('/libraries/:id/scan', async (req, res, next) => {
 });
 
 // ─── 元数据管理 ──────────────────────────────────────────
-// 歌曲列表（含搜索）
+// 歌曲列表（含搜索和排序）
 router.get('/tracks', async (req, res, next) => {
   try {
     const page = qn(req.query.page, 1)!;
     const pageSize = qn(req.query.pageSize, 50)!;
     const search = qs(req.query.search);
+    const sort = qs(req.query.sort) || 'default';
     const where = search ? or(
       like(schema.track.title, `%${search}%`),
       like(schema.track.genre, `%${search}%`),
     ) : undefined;
 
-    const [items, totalResult] = await Promise.all([
-      db.select({
+    let orderBy;
+    if (sort === 'recent') {
+      orderBy = desc(schema.track.createdAt);
+    } else if (sort === 'plays') {
+      // 按播放次数排序（通过 play_history 统计）
+      const playCounts = db.select({
+        trackId: schema.playHistory.trackId,
+        count: sql<number>`count(*)`.as('count'),
+      }).from(schema.playHistory).groupBy(schema.playHistory.trackId).as('pc');
+      orderBy = desc(sql`coalesce(pc.count, 0)`);
+    } else {
+      orderBy = schema.track.id;
+    }
+
+    let query = db.select({
         id: schema.track.id,
         title: schema.track.title,
         artistId: schema.track.artistId,
@@ -150,15 +166,28 @@ router.get('/tracks', async (req, res, next) => {
         storagePath: schema.track.storagePath,
         artistName: schema.artist.name,
         albumTitle: schema.album.title,
+        createdAt: schema.track.createdAt,
       })
         .from(schema.track)
         .leftJoin(schema.artist, eq(schema.track.artistId, schema.artist.id))
-        .leftJoin(schema.album, eq(schema.track.albumId, schema.album.id))
-        .where(where)
-        .orderBy(schema.track.id)
-        .limit(pageSize).offset((page - 1) * pageSize).all(),
-      db.select({ count: sql<number>`count(*)` }).from(schema.track).where(where).get(),
-    ]);
+        .leftJoin(schema.album, eq(schema.track.albumId, schema.album.id));
+
+    if (sort === 'plays') {
+      const playCounts = db.select({
+        trackId: schema.playHistory.trackId,
+        count: sql<number>`count(*)`.as('count'),
+      }).from(schema.playHistory).groupBy(schema.playHistory.trackId).as('pc');
+      query = query.leftJoin(playCounts, eq(schema.track.id, playCounts.trackId)) as any;
+    }
+
+    const items = await query
+      .where(where)
+      .orderBy(orderBy)
+      .limit(pageSize).offset((page - 1) * pageSize)
+      .all();
+
+    const totalResult = await db.select({ count: sql<number>`count(*)` }).from(schema.track).where(where).get();
+
     res.json({ code: 0, message: 'ok', data: { items, total: totalResult?.count ?? 0, page, pageSize } });
   } catch (err) { next(err); }
 });
@@ -179,13 +208,21 @@ router.put('/tracks/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// 专辑列表
+// 专辑列表（含搜索和排序）
 router.get('/albums', async (req, res, next) => {
   try {
     const page = qn(req.query.page, 1)!;
     const pageSize = qn(req.query.pageSize, 50)!;
     const search = qs(req.query.search);
+    const sort = qs(req.query.sort) || 'default';
     const where = search ? like(schema.album.title, `%${search}%`) : undefined;
+
+    let orderBy;
+    if (sort === 'recent') {
+      orderBy = desc(schema.album.createdAt);
+    } else {
+      orderBy = schema.album.id;
+    }
 
     const [items, totalResult] = await Promise.all([
       db.select({
@@ -200,7 +237,7 @@ router.get('/albums', async (req, res, next) => {
         .from(schema.album)
         .leftJoin(schema.artist, eq(schema.album.artistId, schema.artist.id))
         .where(where)
-        .orderBy(schema.album.id)
+        .orderBy(orderBy)
         .limit(pageSize).offset((page - 1) * pageSize).all(),
       db.select({ count: sql<number>`count(*)` }).from(schema.album).where(where).get(),
     ]);
@@ -224,17 +261,51 @@ router.put('/albums/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// 艺人列表
+// 艺人头像
+router.get('/artists/:id/avatar', async (req, res) => {
+  try {
+    const artistId = parseInt(req.params.id as string);
+    const art = await db.select().from(schema.artist).where(eq(schema.artist.id, artistId)).get();
+    if (!art?.avatarPath) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.send('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="100" fill="#334155"/><text fill="#94a3b8" font-size="64" x="50%" y="50%" text-anchor="middle" dy=".35em">🎤</text></svg>');
+      return;
+    }
+    const library = await db.select().from(schema.mediaLibrary).limit(1).get();
+    if (!library) { res.status(404).end(); return; }
+    const fullPath = join(library.storagePath, art.avatarPath);
+    if (!existsSync(fullPath)) {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      res.send('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="100" fill="#334155"/><text fill="#94a3b8" font-size="64" x="50%" y="50%" text-anchor="middle" dy=".35em">🎤</text></svg>');
+      return;
+    }
+    const stat = statSync(fullPath);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(readFileSync(fullPath));
+  } catch { res.status(500).end(); }
+});
+
+// 艺人列表（含搜索和排序）
 router.get('/artists', async (req, res, next) => {
   try {
     const page = qn(req.query.page, 1)!;
     const pageSize = qn(req.query.pageSize, 50)!;
     const search = qs(req.query.search);
+    const sort = qs(req.query.sort) || 'default';
     const where = search ? like(schema.artist.name, `%${search}%`) : undefined;
+
+    let orderBy;
+    if (sort === 'recent') {
+      orderBy = desc(schema.artist.createdAt);
+    } else {
+      orderBy = schema.artist.id;
+    }
 
     const [items, totalResult] = await Promise.all([
       db.select().from(schema.artist).where(where)
-        .orderBy(schema.artist.id)
+        .orderBy(orderBy)
         .limit(pageSize).offset((page - 1) * pageSize).all(),
       db.select({ count: sql<number>`count(*)` }).from(schema.artist).where(where).get(),
     ]);
@@ -319,11 +390,19 @@ router.get('/audiobooks', async (req, res, next) => {
     const page = qn(req.query.page, 1)!;
     const pageSize = qn(req.query.pageSize, 50)!;
     const search = qs(req.query.search);
+    const sort = qs(req.query.sort) || 'default';
     const where = search ? like(schema.audiobook.title, `%${search}%`) : undefined;
+
+    let orderBy;
+    if (sort === 'recent') {
+      orderBy = desc(schema.audiobook.createdAt);
+    } else {
+      orderBy = schema.audiobook.id;
+    }
 
     const [items, totalResult] = await Promise.all([
       db.select().from(schema.audiobook).where(where)
-        .orderBy(desc(schema.audiobook.createdAt))
+        .orderBy(orderBy)
         .limit(pageSize).offset((page - 1) * pageSize).all(),
       db.select({ count: sql<number>`count(*)` }).from(schema.audiobook).where(where).get(),
     ]);
