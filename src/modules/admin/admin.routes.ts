@@ -246,23 +246,39 @@ router.get('/albums', async (req, res, next) => {
     const sort = qs(req.query.sort) || 'default';
     const where = search ? like(schema.album.title, `%${search}%`) : undefined;
 
-    let orderBy;
-    if (sort === 'recent') {
-      orderBy = desc(schema.album.createdAt);
-    } else if (sort === 'plays') {
-      // 按播放次数排序（通过 play_history 关联的 track 的 album_id）
+    let items: any[];
+    let totalResult: any;
+
+    if (sort === 'plays') {
+      // 按播放次数排序
       const playCounts = db.select({
         albumId: schema.track.albumId,
         count: sql<number>`count(*)`.as('count'),
       }).from(schema.playHistory)
         .leftJoin(schema.track, eq(schema.playHistory.trackId, schema.track.id))
+        .where(sql`${schema.track.albumId} is not null`)
         .groupBy(schema.track.albumId).as('pc');
-      orderBy = desc(sql`coalesce(pc.count, 0)`);
-    } else {
-      orderBy = schema.album.id;
-    }
 
-    let query = db.select({
+      items = await db.select({
+        id: schema.album.id,
+        title: schema.album.title,
+        artistId: schema.album.artistId,
+        year: schema.album.year,
+        genre: schema.album.genre,
+        coverPath: schema.album.coverPath,
+        artistName: schema.artist.name,
+        playCount: sql<number>`coalesce(pc.count, 0)`,
+      })
+        .from(schema.album)
+        .leftJoin(schema.artist, eq(schema.album.artistId, schema.artist.id))
+        .leftJoin(playCounts, eq(schema.album.id, playCounts.albumId))
+        .where(where)
+        .orderBy(desc(sql`coalesce(pc.count, 0)`))
+        .limit(pageSize).offset((page - 1) * pageSize)
+        .all();
+    } else {
+      let orderBy = sort === 'recent' ? desc(schema.album.createdAt) : schema.album.id;
+      items = await db.select({
         id: schema.album.id,
         title: schema.album.title,
         artistId: schema.album.artistId,
@@ -272,25 +288,14 @@ router.get('/albums', async (req, res, next) => {
         artistName: schema.artist.name,
       })
         .from(schema.album)
-        .leftJoin(schema.artist, eq(schema.album.artistId, schema.artist.id));
-
-    if (sort === 'plays') {
-      const playCounts = db.select({
-        albumId: schema.track.albumId,
-        count: sql<number>`count(*)`.as('count'),
-      }).from(schema.playHistory)
-        .leftJoin(schema.track, eq(schema.playHistory.trackId, schema.track.id))
-        .groupBy(schema.track.albumId).as('pc');
-      query = query.leftJoin(playCounts, eq(schema.album.id, playCounts.albumId)) as any;
+        .leftJoin(schema.artist, eq(schema.album.artistId, schema.artist.id))
+        .where(where)
+        .orderBy(orderBy)
+        .limit(pageSize).offset((page - 1) * pageSize)
+        .all();
     }
 
-    const items = await query
-      .where(where)
-      .orderBy(orderBy)
-      .limit(pageSize).offset((page - 1) * pageSize)
-      .all();
-
-    const totalResult = await db.select({ count: sql<number>`count(*)` }).from(schema.album).where(where).get();
+    totalResult = await db.select({ count: sql<number>`count(*)` }).from(schema.album).where(where).get();
 
     res.json({ code: 0, message: 'ok', data: { items, total: totalResult?.count ?? 0, page, pageSize } });
   } catch (err) { next(err); }
@@ -317,24 +322,52 @@ router.get('/artists/:id/avatar', async (req, res) => {
   try {
     const artistId = parseInt(req.params.id as string);
     const art = await db.select().from(schema.artist).where(eq(schema.artist.id, artistId)).get();
-    if (!art?.avatarPath) {
-      res.setHeader('Content-Type', 'image/svg+xml');
-      res.send('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="100" fill="#334155"/><text fill="#94a3b8" font-size="64" x="50%" y="50%" text-anchor="middle" dy=".35em">🎤</text></svg>');
-      return;
-    }
+
     const library = await db.select().from(schema.mediaLibrary).limit(1).get();
-    if (!library) { res.status(404).end(); return; }
-    const fullPath = join(library.storagePath, art.avatarPath);
-    if (!existsSync(fullPath)) {
-      res.setHeader('Content-Type', 'image/svg+xml');
-      res.send('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="100" fill="#334155"/><text fill="#94a3b8" font-size="64" x="50%" y="50%" text-anchor="middle" dy=".35em">🎤</text></svg>');
-      return;
+
+    // 1. 尝试从数据库记录的 avatarPath 读取
+    if (art?.avatarPath && library) {
+      const fullPath = join(library.storagePath, art.avatarPath);
+      if (existsSync(fullPath)) {
+        const stat = statSync(fullPath);
+        res.setHeader('Content-Type', 'image/jpeg');
+        res.setHeader('Content-Length', stat.size);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.send(readFileSync(fullPath));
+        return;
+      }
     }
-    const stat = statSync(fullPath);
-    res.setHeader('Content-Type', 'image/jpeg');
-    res.setHeader('Content-Length', stat.size);
-    res.setHeader('Cache-Control', 'public, max-age=86400');
-    res.send(readFileSync(fullPath));
+
+    // 2. 尝试在艺人目录下查找 artist.jpg / photo.jpg
+    if (library) {
+      const track = await db.select({ storagePath: schema.track.storagePath })
+        .from(schema.track).where(eq(schema.track.artistId, artistId)).limit(1).get();
+      if (track) {
+        // 查找艺人目录（上一级目录）
+        const { dirname, basename } = await import('path');
+        const trackDir = dirname(join(library.storagePath, track.storagePath));
+        const artistDir = dirname(trackDir); // 可能是 艺人名/专辑名/歌曲.flac
+        const searchDirs = [trackDir, artistDir];
+        const avatarNames = ['artist.jpg', 'artist.jpeg', 'photo.jpg', 'photo.jpeg', 'folder.jpg'];
+        for (const dir of searchDirs) {
+          for (const name of avatarNames) {
+            const avatarFile = join(dir, name);
+            if (existsSync(avatarFile)) {
+              const stat = statSync(avatarFile);
+              res.setHeader('Content-Type', 'image/jpeg');
+              res.setHeader('Content-Length', stat.size);
+              res.setHeader('Cache-Control', 'public, max-age=86400');
+              res.send(readFileSync(avatarFile));
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    // 3. 返回默认头像
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.send('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="100" fill="#334155"/><text fill="#94a3b8" font-size="64" x="50%" y="50%" text-anchor="middle" dy=".35em">🎤</text></svg>');
   } catch { res.status(500).end(); }
 });
 
@@ -347,41 +380,52 @@ router.get('/artists', async (req, res, next) => {
     const sort = qs(req.query.sort) || 'default';
     const where = search ? like(schema.artist.name, `%${search}%`) : undefined;
 
-    let orderBy;
-    if (sort === 'recent') {
-      orderBy = desc(schema.artist.createdAt);
-    } else if (sort === 'plays') {
-      // 按播放次数排序（通过 play_history 关联的 track 的 artist_id）
-      const playCounts = db.select({
-        artistId: schema.track.artistId,
-        count: sql<number>`count(*)`.as('count'),
-      }).from(schema.playHistory)
-        .leftJoin(schema.track, eq(schema.playHistory.trackId, schema.track.id))
-        .groupBy(schema.track.artistId).as('pc');
-      orderBy = desc(sql`coalesce(pc.count, 0)`);
-    } else {
-      orderBy = schema.artist.id;
-    }
-
-    let query = db.select().from(schema.artist);
+    let items: any[];
+    let totalResult: any;
 
     if (sort === 'plays') {
+      // 按播放次数排序 - 使用子查询避免 join 覆盖字段
       const playCounts = db.select({
         artistId: schema.track.artistId,
         count: sql<number>`count(*)`.as('count'),
       }).from(schema.playHistory)
         .leftJoin(schema.track, eq(schema.playHistory.trackId, schema.track.id))
+        .where(sql`${schema.track.artistId} is not null`)
         .groupBy(schema.track.artistId).as('pc');
-      query = query.leftJoin(playCounts, eq(schema.artist.id, playCounts.artistId)) as any;
+
+      items = await db.select({
+        id: schema.artist.id,
+        name: schema.artist.name,
+        nameSort: schema.artist.nameSort,
+        avatarPath: schema.artist.avatarPath,
+        bio: schema.artist.bio,
+        createdAt: schema.artist.createdAt,
+        playCount: sql<number>`coalesce(pc.count, 0)`,
+      })
+        .from(schema.artist)
+        .leftJoin(playCounts, eq(schema.artist.id, playCounts.artistId))
+        .where(where)
+        .orderBy(desc(sql`coalesce(pc.count, 0)`))
+        .limit(pageSize).offset((page - 1) * pageSize)
+        .all();
+    } else {
+      let orderBy = sort === 'recent' ? desc(schema.artist.createdAt) : schema.artist.id;
+      items = await db.select({
+        id: schema.artist.id,
+        name: schema.artist.name,
+        nameSort: schema.artist.nameSort,
+        avatarPath: schema.artist.avatarPath,
+        bio: schema.artist.bio,
+        createdAt: schema.artist.createdAt,
+      })
+        .from(schema.artist)
+        .where(where)
+        .orderBy(orderBy)
+        .limit(pageSize).offset((page - 1) * pageSize)
+        .all();
     }
 
-    const items = await query
-      .where(where)
-      .orderBy(orderBy)
-      .limit(pageSize).offset((page - 1) * pageSize)
-      .all();
-
-    const totalResult = await db.select({ count: sql<number>`count(*)` }).from(schema.artist).where(where).get();
+    totalResult = await db.select({ count: sql<number>`count(*)` }).from(schema.artist).where(where).get();
 
     res.json({ code: 0, message: 'ok', data: { items, total: totalResult?.count ?? 0, page, pageSize } });
   } catch (err) { next(err); }
