@@ -120,7 +120,7 @@ const API = '';
 let token = localStorage.getItem('token');
 if (!token) location.href = '/';
 
-function headers() { return { 'Content-Type': 'application/json', 'Authorization': '***' + token }; }
+function headers() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }; }
 function showMsg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='msg show '+(ok?'ok':'err');setTimeout(()=>m.className='msg',3000)}
 function fmtDate(d){if(!d)return'-';const dt=new Date(d);if(isNaN(dt))return'-';return dt.toLocaleString('zh-CN')}
 function fmtSize(b){if(!b)return'0 B';const k=1024,s=['B','KB','MB','GB','TB'];const i=Math.floor(Math.log(b)/Math.log(k));return(b/Math.pow(k,i)).toFixed(1)+' '+s[i]}
