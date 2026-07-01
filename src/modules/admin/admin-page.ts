@@ -61,6 +61,8 @@ input:focus{border-color:var(--primary)}
 .card-sub{font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card-artist-wrap{text-align:center;padding:10px 8px 16px}
 .card-artist-name{font-size:13px;font-weight:500;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.browse-item{padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;transition:background .1s}
+.browse-item:hover{background:rgba(59,130,246,.1)}
 @media(max-width:768px){.sidebar{width:60px}.sidebar h2,.sidebar .nav-item span{display:none}.sidebar .nav-item{text-align:center;padding:12px 0}.search-input{width:160px}.card-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}}
 </style>
 </head>
@@ -125,39 +127,112 @@ async function render_dashboard(){
 }
 
 // ─── 媒体库 ──────────────────────────────────────────
+let browsePath = '/';
+
 async function render_libraries(){
   const r=await api('/api/admin/libraries');
   if(r.code!==0)return;
   const items=r.data||[];
+  let libsHtml = '';
+  if(items.length===0){
+    libsHtml = '<div style="text-align:center;padding:60px;color:var(--muted)"><div style="font-size:48px;margin-bottom:12px">📁</div><div>暂无媒体库，点击上方按钮添加</div></div>';
+  } else {
+    libsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px">';
+    for(const l of items){
+      const statusLabel = l.scanStatus==='idle'?'空闲':l.scanStatus==='scanning'?'扫描中':'错误';
+      const typeLabel = l.mediaType==='audiobook'?'📖 有声书':'🎵 音乐';
+      libsHtml += \`<div style="background:var(--card);border-radius:10px;padding:18px;border:1px solid var(--border);transition:border-color .15s" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
+          <div>
+            <div style="font-size:16px;font-weight:600">📁 \${l.name}</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:4px">\${typeLabel}</div>
+          </div>
+          <span class="badge badge-\${l.scanStatus}">\${statusLabel}</span>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;word-break:break-all">📂 \${l.storagePath}</div>
+        <div style="display:flex;gap:12px;font-size:12px;color:var(--muted);margin-bottom:14px">
+          <span>🗄️ \${l.storageType}</span>
+          <span>📄 \${l.fileCount||0} 个文件</span>
+          <span>🕐 \${fmtDate(l.lastScanAt)}</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary btn-sm" onclick="scanLib(\${l.id})">🔄 扫描</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteLib(\${l.id})">🗑️ 删除</button>
+        </div>
+      </div>\`;
+    }
+    libsHtml += '</div>';
+  }
   document.getElementById('content').innerHTML=\`
     <div class="header"><h1>📁 媒体库管理</h1><button class="btn btn-primary" onclick="showAddLibrary()">+ 添加媒体库</button></div>
-    <table><thead><tr><th>ID</th><th>名称</th><th>类型</th><th>路径</th><th>状态</th><th>文件数</th><th>上次扫描</th><th>操作</th></tr></thead>
-    <tbody>\${items.map(l=>\`<tr>
-      <td>\${l.id}</td><td>\${l.name}</td><td>\${l.storageType}</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis">\${l.storagePath}</td>
-      <td><span class="badge badge-\${l.scanStatus}">\${l.scanStatus}</span></td><td>\${l.fileCount||0}</td><td>\${fmtDate(l.lastScanAt)}</td>
-      <td><button class="btn btn-primary btn-sm" onclick="scanLib(\${l.id})">扫描</button> <button class="btn btn-danger btn-sm" onclick="deleteLib(\${l.id})">删除</button></td>
-    </tr>\`).join('')}</tbody></table>
+    \${libsHtml}
     <div id="libModal"></div>\`;
 }
+
 function showAddLibrary(){
+  browsePath = '/';
   document.getElementById('libModal').innerHTML=\`
     <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
-      <div class="modal"><h3>添加媒体库</h3>
+      <div class="modal" style="width:560px;max-height:85vh;display:flex;flex-direction:column"><h3>添加媒体库</h3>
         <div class="form-group"><label>名称</label><input id="libName" placeholder="如：我的音乐"></div>
-        <div class="form-group"><label>存储类型</label><select id="libType"><option value="local">本地磁盘</option><option value="smb">SMB/NFS</option></select></div>
-        <div class="form-group"><label>路径（容器内路径）</label><input id="libPath" placeholder="/music"></div>
+        <div class="form-group"><label>媒体类型</label><select id="libType"><option value="music">🎵 音乐</option><option value="audiobook">📖 有声书</option></select></div>
+        <div class="form-group">
+          <label>选择媒体文件夹</label>
+          <div id="browseBox" style="background:#0f172a;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto;margin-top:6px">
+            <div id="browseNav" style="padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:13px">
+              <button class="btn btn-sm" onclick="browseUp()" title="返回上级">⬆️</button>
+              <span id="browseCurrent" style="color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">/</span>
+            </div>
+            <div id="browseList" style="padding:4px 0"></div>
+          </div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+            <span style="font-size:12px;color:var(--muted)">已选路径：</span>
+            <input id="libPath" placeholder="点击上方目录选择或手动输入" style="flex:1">
+          </div>
+        </div>
         <div class="actions"><button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button><button class="btn btn-primary" onclick="addLibrary()">添加</button></div>
       </div>
     </div>\`;
+  browseDir('/');
 }
+
+async function browseDir(path){
+  const r=await api('/api/admin/browse?path='+encodeURIComponent(path));
+  if(r.code!==0)return;
+  const d=r.data;
+  browsePath=d.current;
+  document.getElementById('browseCurrent').textContent=d.current;
+  document.getElementById('libPath').value=d.current;
+  const list=document.getElementById('browseList');
+  if(d.entries.length===0){
+    list.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">此目录下没有子文件夹</div>';
+    return;
+  }
+  let html='';
+  for(const e of d.entries){
+    const safePath = e.path.replace(/'/g, "\\\\'").replace(/\\\\/g, '\\\\\\\\');
+    html += '<div class="browse-item" onclick="browseDir(\\''+safePath+'\\')">';
+    html += '<span>📁</span><span style="flex:1">'+e.name+'</span>';
+    html += '<span style="color:var(--muted);font-size:11px">'+e.childCount+' 项</span></div>';
+  }
+  list.innerHTML=html;
+}
+
+function browseUp(){
+  api('/api/admin/browse?path='+encodeURIComponent(browsePath)).then(r=>{
+    if(r.code===0) browseDir(r.data.parent);
+  });
+}
+
 async function addLibrary(){
   const name=document.getElementById('libName').value;
-  const storageType=document.getElementById('libType').value;
+  const mediaType=document.getElementById('libType').value;
   const storagePath=document.getElementById('libPath').value;
   if(!name||!storagePath)return showMsg('请填写完整',false);
-  const r=await api('/api/admin/libraries',{method:'POST',body:JSON.stringify({name,storageType,storagePath})});
+  const r=await api('/api/admin/libraries',{method:'POST',body:JSON.stringify({name,storageType:'local',storagePath,mediaType})});
   if(r.code===0){showMsg('添加成功',true);document.querySelector('.modal-overlay').remove();render_libraries();}
 }
+
 async function scanLib(id){
   const r=await api('/api/admin/libraries/'+id+'/scan',{method:'POST'});
   if(r.code===0)showMsg('扫描已启动，请稍候...',true);
@@ -193,9 +268,9 @@ async function render_tracks(){
       </div>
     </div>
     <div class="card-grid">
-      \${d.items.map(t=>\`<div class="card" onclick="editTrack(\${t.id},'\${(t.title||'').replace(/'/g,"\\'")}','\${(t.genre||'').replace(/'/g,"\\'")}',\${t.trackNumber||0},\${t.discNumber||1})">
+      \${d.items.map(t=>\`<div class="card" onclick="editTrack(\${t.id},'\${(t.title||'').replace(/'/g,"\\\\'")}','\${(t.genre||'').replace(/'/g,"\\\\'")}',\${t.trackNumber||0},\${t.discNumber||1})">
         <div style="position:relative">
-          <img class="card-img" src="/api/cover/\${t.albumId||0}" alt="\${t.title}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+          <img class="card-img" src="/api/cover/track/\${t.id}" alt="\${t.title}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
           <div style="width:100%;aspect-ratio:1;background:#334155;display:none;align-items:center;justify-content:center;font-size:48px">🎵</div>
         </div>
         <div class="card-body">
@@ -213,7 +288,6 @@ async function render_tracks(){
     <div id="trackModal"></div>\`;
 }
 function editTrack(id,title,genre,trackNo,discNo){
-  // Fetch full track details for editing
   api('/api/admin/tracks/'+id).then(r=>{
     if(r.code!==0)return;
     const t=r.data;
@@ -266,7 +340,7 @@ async function render_albums(){
       </div>
     </div>
     <div class="card-grid">
-      \${d.items.map(a=>\`<div class="card" onclick="editAlbum(\${a.id},'\${(a.title||'').replace(/'/g,"\\'")}',\${a.year||0},'\${(a.genre||'').replace(/'/g,"\\'")}')">
+      \${d.items.map(a=>\`<div class="card" onclick="editAlbum(\${a.id},'\${(a.title||'').replace(/'/g,"\\\\'")}',\${a.year||0},'\${(a.genre||'').replace(/'/g,"\\\\'")}')">
         <img class="card-img" src="/api/cover/\${a.id}" alt="\${a.title}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23334155%22 width=%22200%22 height=%22200%22/><text fill=%22%2394a3b8%22 font-size=%2248%22 x=%2250%%22 y=%2250%%22 text-anchor=%22middle%22 dy=%22.3em%22>💿</text></svg>'">
         <div class="card-body">
           <div class="card-title">\${a.title}</div>
@@ -319,7 +393,7 @@ async function render_artists(){
       </div>
     </div>
     <div class="card-grid">
-      \${d.items.map(a=>\`<div class="card" onclick="editArtist(\${a.id},'\${(a.name||'').replace(/'/g,"\\'")}','\${(a.bio||'').replace(/'/g,"\\'").replace(/\\n/g,"\\\\n")}')">
+      \${d.items.map(a=>\`<div class="card" onclick="editArtist(\${a.id},'\${(a.name||'').replace(/'/g,"\\\\'")}','\${(a.bio||'').replace(/'/g,"\\\\'").replace(/\\n/g,"\\\\n")}')">
         <div class="card-artist-wrap">
           <img class="card-img-circle" src="/api/admin/artists/\${a.id}/avatar" alt="\${a.name}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><circle cx=%22100%22 cy=%22100%22 r=%22100%22 fill=%22%23334155%22/><text fill=%22%2394a3b8%22 font-size=%2264%22 x=%2250%%22 y=%2250%%22 text-anchor=%22middle%22 dy=%22.35em%22>🎤</text></svg>'">
           <div class="card-artist-name">\${a.name}</div>
@@ -418,7 +492,7 @@ async function render_audiobooks(){
       </div>
     </div>
     <div class="card-grid">
-      \${d.items.map(a=>\`<div class="card" onclick="editAudiobook(\${a.id},'\${(a.title||'').replace(/'/g,"\\'")}','\${(a.author||'').replace(/'/g,"\\'")}','\${(a.narrator||'').replace(/'/g,"\\'")}','\${(a.genre||'').replace(/'/g,"\\'")}',\${a.year||0})">
+      \${d.items.map(a=>\`<div class="card" onclick="editAudiobook(\${a.id},'\${(a.title||'').replace(/'/g,"\\\\'")}','\${(a.author||'').replace(/'/g,"\\\\'")}','\${(a.narrator||'').replace(/'/g,"\\\\'")}','\${(a.genre||'').replace(/'/g,"\\\\'")}',\${a.year||0})">
         <img class="card-img" src="/api/cover/\${a.id}" alt="\${a.title}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22><rect fill=%22%23334155%22 width=%22200%22 height=%22200%22/><text fill=%22%2394a3b8%22 font-size=%2248%22 x=%2250%%22 y=%2250%%22 text-anchor=%22middle%22 dy=%22.3em%22>📖</text></svg>'">
         <div class="card-body">
           <div class="card-title">\${a.title}</div>

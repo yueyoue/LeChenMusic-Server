@@ -5,8 +5,8 @@ import { authMiddleware, adminMiddleware } from '../../middleware/auth.js';
 import argon2 from 'bcryptjs';
 import { AppError } from '../../middleware/error-handler.js';
 import { qs, qn } from '../../utils/query.js';
-import { existsSync, readFileSync, statSync } from 'fs';
-import { join, dirname } from 'path';
+import { existsSync, readFileSync, statSync, readdirSync } from 'fs';
+import { join, dirname, resolve, posix } from 'path';
 
 const router = Router();
 
@@ -322,10 +322,9 @@ router.get('/artists/:id/avatar', async (req, res) => {
   try {
     const artistId = parseInt(req.params.id as string);
     const art = await db.select().from(schema.artist).where(eq(schema.artist.id, artistId)).get();
-
     const library = await db.select().from(schema.mediaLibrary).limit(1).get();
 
-    // 1. 尝试从数据库记录的 avatarPath 读取
+    // 1. 从数据库 avatarPath 读取
     if (art?.avatarPath && library) {
       const fullPath = join(library.storagePath, art.avatarPath);
       if (existsSync(fullPath)) {
@@ -338,14 +337,13 @@ router.get('/artists/:id/avatar', async (req, res) => {
       }
     }
 
-    // 2. 尝试在艺人目录下查找 artist.jpg / photo.jpg
+    // 2. 在目录中查找艺人图片文件
     if (library) {
       const track = await db.select({ storagePath: schema.track.storagePath })
         .from(schema.track).where(eq(schema.track.artistId, artistId)).limit(1).get();
       if (track) {
-        // 查找艺人目录（上一级目录）
         const trackDir = dirname(join(library.storagePath, track.storagePath));
-        const artistDir = dirname(trackDir); // 可能是 艺人名/专辑名/歌曲.flac
+        const artistDir = dirname(trackDir);
         const searchDirs = [trackDir, artistDir];
         const avatarNames = ['artist.jpg', 'artist.jpeg', 'photo.jpg', 'photo.jpeg', 'folder.jpg'];
         for (const dir of searchDirs) {
@@ -361,10 +359,30 @@ router.get('/artists/:id/avatar', async (req, res) => {
             }
           }
         }
+
+        // 3. 从该艺人的歌曲内嵌封面提取（作为艺人头像）
+        const audioFullPath = join(library.storagePath, track.storagePath);
+        if (existsSync(audioFullPath)) {
+          try {
+            // @ts-expect-error
+            const { parseFile } = await import('music-metadata');
+            const metadata = await parseFile(audioFullPath, { skipCovers: false, duration: false });
+            if (metadata.common.picture && metadata.common.picture.length > 0) {
+              const coverBuf = Buffer.from(metadata.common.picture[0].data);
+              res.setHeader('Content-Type', 'image/jpeg');
+              res.setHeader('Content-Length', coverBuf.length);
+              res.setHeader('Cache-Control', 'public, max-age=86400');
+              res.send(coverBuf);
+              return;
+            }
+          } catch {
+            // ignore
+          }
+        }
       }
     }
 
-    // 3. 返回默认头像
+    // 4. 默认头像
     res.setHeader('Content-Type', 'image/svg+xml');
     res.send('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="100" fill="#334155"/><text fill="#94a3b8" font-size="64" x="50%" y="50%" text-anchor="middle" dy=".35em">🎤</text></svg>');
   } catch { res.status(500).end(); }
@@ -498,6 +516,42 @@ router.post('/cache/clear', async (req, res, next) => {
   try {
     await db.delete(schema.transcodeCache);
     res.json({ code: 0, message: 'Cache cleared', data: null });
+  } catch (err) { next(err); }
+});
+
+// ─── 目录浏览 ──────────────────────────────────────────
+router.get('/browse', async (req, res, next) => {
+  try {
+    const requestedPath = (req.query.path as string) || '/';
+    const resolved = resolve(requestedPath);
+
+    if (!existsSync(resolved)) {
+      throw new AppError(4004, 404, 'Directory not found');
+    }
+
+    const stat = statSync(resolved);
+    if (!stat.isDirectory()) {
+      throw new AppError(4000, 400, 'Not a directory');
+    }
+
+    const entries = readdirSync(resolved, { withFileTypes: true });
+    const dirs = entries
+      .filter(e => e.isDirectory() && !e.name.startsWith('.'))
+      .map(e => {
+        const fullPath = join(resolved, e.name);
+        let childCount = 0;
+        try {
+          childCount = readdirSync(fullPath).length;
+        } catch { /* ignore */ }
+        return {
+          name: e.name,
+          path: fullPath,
+          childCount,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    res.json({ code: 0, message: 'ok', data: { current: resolved, parent: resolve(resolved, '..'), entries: dirs } });
   } catch (err) { next(err); }
 });
 
