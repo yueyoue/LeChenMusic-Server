@@ -350,9 +350,9 @@ async function browseDir(path){
     <span style="color:var(--muted)">\${d.current}</span>
   </div>\`;
   for(const e of d.entries){
-    const safePath = e.path.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
-    html += \`<div class="browse-right-item" onclick="browseDir('\${safePath}')">
-      <span>[DIR]</span><span>\${e.name}</span>
+    const encPath = encodeURIComponent(e.path);
+    html += \`<div class="browse-right-item" onclick="browseDir(decodeURIComponent(\'\${encPath}\'))">
+      <span>[DIR]</span><span>\${e.name}</span>\
     </div>\`;
   }
   right.innerHTML=html;
