@@ -553,19 +553,19 @@ async function render_artists(){
     <div id="artistModal"></div>\`;
 }
 function editArtist(id,name,bio){
-  document.getElementById('artistModal').innerHTML=`
+  document.getElementById('artistModal').innerHTML=\`
     <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
-      <div class="modal" style="width:480px"><h3>编辑艺人 #${id}</h3>
+      <div class="modal" style="width:480px"><h3>编辑艺人 #\${id}</h3>
         <div class="form-group" style="text-align:center">
-          <img id="eaAvatar" src="/api/admin/artists/${id}/avatar" style="width:120px;height:120px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid var(--border)" onclick="document.getElementById('avatarFile').click()" title="点击更换头像">
-          <input type="file" id="avatarFile" accept="image/jpeg,image/png" style="display:none" onchange="uploadAvatar(${id})">
+          <img id="eaAvatar" src="/api/admin/artists/\${id}/avatar" style="width:120px;height:120px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid var(--border)" onclick="document.getElementById('avatarFile').click()" title="点击更换头像">
+          <input type="file" id="avatarFile" accept="image/jpeg,image/png" style="display:none" onchange="uploadAvatar(\${id})">
           <div style="font-size:11px;color:var(--muted);margin-top:4px">点击图片更换头像</div>
         </div>
-        <div class="form-group"><label>艺人名</label><input id="eaName" value="${name}"></div>
-        <div class="form-group"><label>简介</label><textarea id="eaBio">${bio.replace(/\\n/g,'\n')}</textarea></div>
-        <div class="actions"><button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button><button class="btn btn-primary" onclick="saveArtist(${id})">保存</button></div>
+        <div class="form-group"><label>艺人名</label><input id="eaName" value="\${name}"></div>
+        <div class="form-group"><label>简介</label><textarea id="eaBio">\${bio.replace(/\\n/g,'\n')}</textarea></div>
+        <div class="actions"><button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button><button class="btn btn-primary" onclick="saveArtist(\${id})">保存</button></div>
       </div>
-    </div>`;
+    </div>\`;
 }
 async function uploadAvatar(id){
   const file=document.getElementById('avatarFile').files[0];
