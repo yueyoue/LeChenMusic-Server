@@ -6,7 +6,7 @@ export const adminPageHTML = `<!DOCTYPE html>
 <title>LeChenMusic 管理后台</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0f172a;--card:#1e293b;--border:#334155;--text:#e2e8f0;--muted:#94a3b8;--primary:#3b82f6;--danger:#ef4444;--success:#22c55e}
+:root{--bg:#0f172a;--card:#1e293b;--border:#334155;--text:#e2e8f0;--muted:#94a3b8;--primary:#3b82f6;--danger:#ef4444;--success:#22c55e;--green:#22c55e;--brown:#a16207}
 body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
 .sidebar{width:220px;background:var(--card);border-right:1px solid var(--border);padding:16px 0;flex-shrink:0;display:flex;flex-direction:column}
 .sidebar h2{padding:0 16px 16px;font-size:18px;border-bottom:1px solid var(--border);margin-bottom:8px}
@@ -25,6 +25,7 @@ body{font-family:-apple-system,system-ui,sans-serif;background:var(--bg);color:v
 .btn{padding:8px 16px;border:none;border-radius:6px;cursor:pointer;font-size:13px;font-weight:500}
 .btn-primary{background:var(--primary);color:#fff}
 .btn-danger{background:var(--danger);color:#fff}
+.btn-success{background:var(--green);color:#fff}
 .btn-sm{padding:4px 10px;font-size:12px}
 .btn:hover{opacity:.85}
 table{width:100%;border-collapse:collapse;background:var(--card);border-radius:8px;overflow:hidden}
@@ -61,9 +62,40 @@ input:focus{border-color:var(--primary)}
 .card-sub{font-size:11px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card-artist-wrap{text-align:center;padding:10px 8px 16px}
 .card-artist-name{font-size:13px;font-weight:500;margin-top:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.browse-item{padding:8px 12px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;transition:background .1s}
-.browse-item:hover{background:rgba(59,130,246,.1)}
-@media(max-width:768px){.sidebar{width:60px}.sidebar h2,.sidebar .nav-item span{display:none}.sidebar .nav-item{text-align:center;padding:12px 0}.search-input{width:160px}.card-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}}
+/* 媒体库专用样式 */
+.lib-entry{background:var(--card);border-radius:10px;padding:16px 20px;margin-bottom:12px;display:flex;align-items:center;gap:20px;border:1px solid var(--border)}
+.lib-info{flex:1;min-width:0}
+.lib-name{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+.lib-path{font-size:12px;color:var(--muted);margin-top:4px;word-break:break-all}
+.lib-meta{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-top:6px;align-items:center}
+.lib-meta select{padding:4px 8px;font-size:11px;border-radius:4px}
+.lib-actions{display:flex;gap:8px;align-items:center;flex-shrink:0}
+.lib-actions .btn{border:1px solid var(--border);background:transparent;color:var(--text);font-size:12px;padding:5px 12px}
+.lib-actions .btn:hover{background:rgba(255,255,255,.05)}
+.lib-actions .btn-remove{border-color:var(--danger);color:var(--danger)}
+.lib-actions .btn-remove:hover{background:rgba(239,68,68,.1)}
+.tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:500}
+.tag-music{background:#064e3b;color:#6ee7b7}
+.tag-audiobook{background:#451a03;color:#fbbf24}
+/* 进度条 */
+.progress-bar{height:6px;background:#334155;border-radius:3px;overflow:hidden;flex:1}
+.progress-fill{height:100%;background:var(--green);border-radius:3px;transition:width .3s}
+.scan-status{background:#1a1a2e;border-radius:8px;padding:12px 16px;margin-bottom:16px;display:flex;align-items:center;gap:12px;font-size:13px}
+/* 开关 */
+.toggle{position:relative;width:36px;height:20px;cursor:pointer}
+.toggle input{display:none}
+.toggle .slider{position:absolute;top:0;left:0;right:0;bottom:0;background:#334155;border-radius:10px;transition:.2s}
+.toggle input:checked+.slider{background:var(--green)}
+.toggle .slider:before{content:'';position:absolute;height:16px;width:16px;left:2px;bottom:2px;background:#fff;border-radius:50%;transition:.2s}
+.toggle input:checked+.slider:before{transform:translateX(16px)}
+/* 目录浏览器 */
+.browse-left{width:240px;flex-shrink:0;border-right:1px solid var(--border);overflow-y:auto;max-height:360px}
+.browse-left-item{padding:10px 12px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--border);transition:background .1s}
+.browse-left-item:hover,.browse-left-item.active{background:rgba(34,197,94,.1)}
+.browse-right{flex:1;overflow-y:auto;max-height:360px}
+.browse-right-item{padding:8px 12px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:8px;transition:background .1s}
+.browse-right-item:hover{background:rgba(59,130,246,.1)}
+@media(max-width:768px){.sidebar{width:60px}.sidebar h2,.sidebar .nav-item span{display:none}.sidebar .nav-item{text-align:center;padding:12px 0}.search-input{width:160px}.card-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}.lib-entry{flex-direction:column;align-items:flex-start}.lib-actions{width:100%;justify-content:flex-end}}
 </style>
 </head>
 <body>
@@ -88,9 +120,9 @@ const API = '';
 let token = localStorage.getItem('token');
 if (!token) location.href = '/';
 
-function headers() { return { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }; }
+function headers() { return { 'Content-Type': 'application/json', 'Authorization': '***' + token }; }
 function showMsg(t,ok){const m=document.getElementById('msg');m.textContent=t;m.className='msg show '+(ok?'ok':'err');setTimeout(()=>m.className='msg',3000)}
-function fmtDate(d){if(!d)return'-';return new Date(d*1000).toLocaleString('zh-CN')}
+function fmtDate(d){if(!d)return'-';const dt=new Date(d);if(isNaN(dt))return'-';return dt.toLocaleString('zh-CN')}
 function fmtSize(b){if(!b)return'0 B';const k=1024,s=['B','KB','MB','GB','TB'];const i=Math.floor(Math.log(b)/Math.log(k));return(b/Math.pow(k,i)).toFixed(1)+' '+s[i]}
 function fmtDur(s){if(!s)return'-';const m=Math.floor(s/60),sec=s%60;return m+':'+String(sec).padStart(2,'0')}
 
@@ -128,72 +160,178 @@ async function render_dashboard(){
 
 // ─── 媒体库 ──────────────────────────────────────────
 let browsePath = '/';
+let authorizedDirs = [];
 
 async function render_libraries(){
   const r=await api('/api/admin/libraries');
   if(r.code!==0)return;
   const items=r.data||[];
-  let libsHtml = '';
-  if(items.length===0){
-    libsHtml = '<div style="text-align:center;padding:60px;color:var(--muted)"><div style="font-size:48px;margin-bottom:12px">📁</div><div>暂无媒体库，点击上方按钮添加</div></div>';
+
+  // 统计扫描状态
+  let scanningCount = items.filter(l=>l.scanStatus==='scanning').length;
+  let totalFiles = items.reduce((s,l)=>s+(l.fileCount||0),0);
+
+  let html = \`
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+      <h1 style="font-size:22px">多媒体路径与歌曲入库扫描</h1>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-success" onclick="showAddLibrary()">+ 添加媒体</button>
+        <button class="btn" style="background:#334155;color:var(--text)" onclick="pauseAllScan()">⏸ 暂停扫描</button>
+      </div>
+    </div>\`;
+
+  // 扫描进度条
+  if(scanningCount > 0){
+    html += \`
+    <div class="scan-status">
+      <span style="color:var(--muted)">扫描中 (\${scanningCount} 个媒体库)</span>
+      <div class="progress-bar"><div class="progress-fill" style="width:50%"></div></div>
+      <span style="color:var(--muted)">进行中...</span>
+    </div>\`;
+  } else if(items.length > 0){
+    html += \`
+    <div class="scan-status">
+      <span style="color:var(--muted)">空闲 (\${items.length} 个媒体库, 共 \${totalFiles} 个文件)</span>
+      <div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div>
+      <span style="color:var(--muted)">100%</span>
+    </div>\`;
+  }
+
+  if(items.length === 0){
+    html += \`
+    <div style="text-align:center;padding:60px;color:var(--muted)">
+      <div style="font-size:48px;margin-bottom:12px">📁</div>
+      <div>暂无媒体库，点击「添加媒体」开始</div>
+    </div>\`;
   } else {
-    libsHtml = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px">';
     for(const l of items){
-      const statusLabel = l.scanStatus==='idle'?'空闲':l.scanStatus==='scanning'?'扫描中':'错误';
-      const typeLabel = l.mediaType==='audiobook'?'📖 有声书':'🎵 音乐';
-      libsHtml += \`<div style="background:var(--card);border-radius:10px;padding:18px;border:1px solid var(--border);transition:border-color .15s" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
-          <div>
-            <div style="font-size:16px;font-weight:600">📁 \${l.name}</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:4px">\${typeLabel}</div>
+      const isMusic = l.mediaType !== 'audiobook';
+      const tagClass = isMusic ? 'tag-music' : 'tag-audiobook';
+      const tagLabel = isMusic ? '音乐媒体' : '有声书';
+      const statusLabel = l.scanStatus==='scanning'?'扫描中':l.scanStatus==='error'?'错误':'不监控';
+      html += \`
+      <div class="lib-entry">
+        <div class="lib-info">
+          <div class="lib-name">\${l.name} <span class="tag \${tagClass}">\${tagLabel}</span></div>
+          <div class="lib-path">\${l.storagePath}</div>
+          <div class="lib-meta">
+            <span>定时入库</span>
+            <select style="padding:3px 6px;font-size:11px;border-radius:4px;background:#334155;border:1px solid var(--border);color:var(--text)">
+              <option \${l.scanStatus==='idle'?'selected':''}>不监控</option>
+              <option>每次启动</option>
+              <option>每小时</option>
+              <option>每天</option>
+            </select>
+            <span>上次: \${fmtDate(l.lastScanAt)}</span>
           </div>
-          <span class="badge badge-\${l.scanStatus}">\${statusLabel}</span>
         </div>
-        <div style="font-size:12px;color:var(--muted);margin-bottom:6px;word-break:break-all">📂 \${l.storagePath}</div>
-        <div style="display:flex;gap:12px;font-size:12px;color:var(--muted);margin-bottom:14px">
-          <span>🗄️ \${l.storageType}</span>
-          <span>📄 \${l.fileCount||0} 个文件</span>
-          <span>🕐 \${fmtDate(l.lastScanAt)}</span>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-primary btn-sm" onclick="scanLib(\${l.id})">🔄 扫描</button>
-          <button class="btn btn-danger btn-sm" onclick="deleteLib(\${l.id})">🗑️ 删除</button>
+        <div class="lib-actions">
+          <label class="toggle" title="重建"><input type="checkbox"><span class="slider"></span></label>
+          <button class="btn" onclick="scanLib(\${l.id})">扫描</button>
+          <button class="btn btn-remove" onclick="deleteLib(\${l.id})">移除</button>
         </div>
       </div>\`;
     }
-    libsHtml += '</div>';
   }
-  document.getElementById('content').innerHTML=\`
-    <div class="header"><h1>📁 媒体库管理</h1><button class="btn btn-primary" onclick="showAddLibrary()">+ 添加媒体库</button></div>
-    \${libsHtml}
-    <div id="libModal"></div>\`;
+
+  html += '<div id="libModal"></div>';
+  document.getElementById('content').innerHTML = html;
+}
+
+async function pauseAllScan(){
+  showMsg('扫描已暂停',true);
 }
 
 function showAddLibrary(){
   browsePath = '/';
   document.getElementById('libModal').innerHTML=\`
     <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
-      <div class="modal" style="width:560px;max-height:85vh;display:flex;flex-direction:column"><h3>添加媒体库</h3>
-        <div class="form-group"><label>名称</label><input id="libName" placeholder="如：我的音乐"></div>
-        <div class="form-group"><label>媒体类型</label><select id="libType"><option value="music">🎵 音乐</option><option value="audiobook">📖 有声书</option></select></div>
+      <div class="modal" style="width:680px;max-height:85vh;display:flex;flex-direction:column">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0">添加媒体路径</h3>
+          <button class="btn" style="background:#334155;font-size:12px" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:16px">上方填写类型与标签，下方直接选择目录后添加。</div>
+
         <div class="form-group">
-          <label>选择媒体文件夹</label>
-          <div id="browseBox" style="background:#0f172a;border:1px solid var(--border);border-radius:8px;max-height:320px;overflow-y:auto;margin-top:6px">
-            <div id="browseNav" style="padding:10px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:13px">
-              <button class="btn btn-sm" onclick="browseUp()" title="返回上级">⬆️</button>
-              <span id="browseCurrent" style="color:var(--muted);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">/</span>
-            </div>
-            <div id="browseList" style="padding:4px 0"></div>
-          </div>
-          <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
-            <span style="font-size:12px;color:var(--muted)">已选路径：</span>
-            <input id="libPath" placeholder="点击上方目录选择或手动输入" style="flex:1">
+          <label>目录类型</label>
+          <div style="display:flex;gap:8px;margin-top:4px">
+            <button class="btn btn-success dir-type-btn active" onclick="selectDirType(this,'music')" data-type="music">🎵 音乐媒体</button>
+            <button class="btn dir-type-btn" style="background:#334155;color:var(--text)" onclick="selectDirType(this,'playlist')" data-type="playlist">📁 歌单目录</button>
+            <button class="btn dir-type-btn" style="background:#334155;color:var(--text)" onclick="selectDirType(this,'audiobook')" data-type="audiobook">🎧 有声书</button>
           </div>
         </div>
-        <div class="actions"><button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button><button class="btn btn-primary" onclick="addLibrary()">添加</button></div>
+
+        <div class="form-group">
+          <label>目录路径</label>
+          <div style="display:flex;gap:8px">
+            <input id="libPath" placeholder="选择下方目录或手动输入" style="flex:1">
+            <button class="btn" style="background:#334155;color:var(--text);white-space:nowrap" onclick="useSelectedDir()">使用当前选中</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>可选标签</label>
+          <input id="libTag" placeholder="例如：家庭 NAS / 外接硬盘">
+        </div>
+
+        <div class="form-group">
+          <label>媒体文件夹</label>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:6px">当前为 FPK 模式，仅显示应用授权可读取目录。</div>
+          <div style="display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;height:300px">
+            <div class="browse-left" id="browseLeft"></div>
+            <div class="browse-right" id="browseRight">
+              <div style="padding:12px;color:var(--muted);text-align:center;font-size:13px">← 请先选择左侧目录</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">目录下根目录和子目录的音乐媒体逐一入库，含有过滤重复文件。</div>
+
+        <div class="actions" style="margin-top:16px">
+          <button class="btn" style="background:#334155;color:var(--text)" onclick="this.closest('.modal-overlay').remove()">取消</button>
+          <button class="btn btn-success" onclick="addLibrary()">添加路径</button>
+        </div>
       </div>
     </div>\`;
-  browseDir('/');
+  loadAuthorizedDirs();
+}
+
+let selectedDirType = 'music';
+function selectDirType(btn, type){
+  selectedDirType = type;
+  document.querySelectorAll('.dir-type-btn').forEach(b=>{
+    if(b.classList.contains('active')){b.classList.remove('active');b.style.background='#334155';b.style.color='var(--text)'}
+  });
+  btn.classList.add('active');
+  btn.style.background='var(--green)';
+  btn.style.color='#fff';
+}
+
+let selectedAuthDir = '';
+async function loadAuthorizedDirs(){
+  const r = await api('/api/admin/authorized-dirs');
+  if(r.code!==0) return;
+  authorizedDirs = r.data || [];
+  const left = document.getElementById('browseLeft');
+  if(authorizedDirs.length === 0){
+    left.innerHTML = '<div style="padding:20px;color:var(--muted);text-align:center;font-size:12px">未检测到授权目录</div>';
+    return;
+  }
+  left.innerHTML = authorizedDirs.map((d,i)=>\`
+    <div class="browse-left-item \${i===0?'active':''}" onclick="selectAuthDir(this,'\${d.path.replace(/'/g,"\\\\'")}')">
+      <div style="font-weight:500">授权目录 \${d.name}</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">\${d.path}</div>
+    </div>\`).join('');
+  // 自动选中第一个
+  selectAuthDir(left.querySelector('.browse-left-item'), authorizedDirs[0].path);
+}
+
+function selectAuthDir(el, path){
+  document.querySelectorAll('.browse-left-item').forEach(e=>e.classList.remove('active'));
+  if(el) el.classList.add('active');
+  selectedAuthDir = path;
+  browseDir(path);
 }
 
 async function browseDir(path){
@@ -201,21 +339,23 @@ async function browseDir(path){
   if(r.code!==0)return;
   const d=r.data;
   browsePath=d.current;
-  document.getElementById('browseCurrent').textContent=d.current;
   document.getElementById('libPath').value=d.current;
-  const list=document.getElementById('browseList');
+  const right=document.getElementById('browseRight');
   if(d.entries.length===0){
-    list.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">此目录下没有子文件夹</div>';
+    right.innerHTML='<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">此目录下没有子文件夹</div>';
     return;
   }
-  let html='';
+  let html=\`<div style="padding:6px 12px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-size:12px">
+    <button class="btn btn-sm" style="background:#334155;color:var(--text);font-size:11px;padding:3px 8px" onclick="browseUp()">返回上级</button>
+    <span style="color:var(--muted)">\${d.current}</span>
+  </div>\`;
   for(const e of d.entries){
-    const safePath = e.path.replace(/'/g, "\\\\'").replace(/\\\\/g, '\\\\\\\\');
-    html += '<div class="browse-item" onclick="browseDir(\\''+safePath+'\\')">';
-    html += '<span>📁</span><span style="flex:1">'+e.name+'</span>';
-    html += '<span style="color:var(--muted);font-size:11px">'+e.childCount+' 项</span></div>';
+    const safePath = e.path.replace(/\\\\/g, '\\\\\\\\').replace(/'/g, "\\\\'");
+    html += \`<div class="browse-right-item" onclick="browseDir('\${safePath}')">
+      <span>[DIR]</span><span>\${e.name}</span>
+    </div>\`;
   }
-  list.innerHTML=html;
+  right.innerHTML=html;
 }
 
 function browseUp(){
@@ -224,11 +364,16 @@ function browseUp(){
   });
 }
 
+function useSelectedDir(){
+  document.getElementById('libPath').value = browsePath;
+}
+
 async function addLibrary(){
-  const name=document.getElementById('libName').value;
-  const mediaType=document.getElementById('libType').value;
   const storagePath=document.getElementById('libPath').value;
-  if(!name||!storagePath)return showMsg('请填写完整',false);
+  const tag=document.getElementById('libTag').value;
+  if(!storagePath)return showMsg('请选择目录路径',false);
+  const mediaType = selectedDirType === 'audiobook' ? 'audiobook' : 'music';
+  const name = tag || storagePath.split('/').filter(Boolean).pop() || '媒体库';
   const r=await api('/api/admin/libraries',{method:'POST',body:JSON.stringify({name,storageType:'local',storagePath,mediaType})});
   if(r.code===0){showMsg('添加成功',true);document.querySelector('.modal-overlay').remove();render_libraries();}
 }
@@ -238,9 +383,9 @@ async function scanLib(id){
   if(r.code===0)showMsg('扫描已启动，请稍候...',true);
 }
 async function deleteLib(id){
-  if(!confirm('确定删除此媒体库？'))return;
+  if(!confirm('确定移除此媒体库？'))return;
   const r=await api('/api/admin/libraries/'+id,{method:'DELETE'});
-  if(r.code===0){showMsg('已删除',true);render_libraries();}
+  if(r.code===0){showMsg('已移除',true);render_libraries();}
 }
 
 // ─── 歌曲（表格+排序）────────────────────────────────

@@ -5,7 +5,7 @@ import { authMiddleware, adminMiddleware } from '../../middleware/auth.js';
 import argon2 from 'bcryptjs';
 import { AppError } from '../../middleware/error-handler.js';
 import { qs, qn } from '../../utils/query.js';
-import { existsSync, readFileSync, statSync, readdirSync } from 'fs';
+import { existsSync, readFileSync, statSync, readdirSync, readFileSync as readFS } from 'fs';
 import { join, dirname, resolve, posix } from 'path';
 
 const router = Router();
@@ -516,6 +516,40 @@ router.post('/cache/clear', async (req, res, next) => {
   try {
     await db.delete(schema.transcodeCache);
     res.json({ code: 0, message: 'Cache cleared', data: null });
+  } catch (err) { next(err); }
+});
+
+// ─── 授权目录（检测挂载的卷） ─────────────────────
+router.get('/authorized-dirs', async (req, res, next) => {
+  try {
+    const dirs: { name: string; path: string }[] = [];
+    // 读取 /proc/self/mountinfo 检测挂载点
+    try {
+      const mountInfo = readFS('/proc/self/mountinfo', 'utf-8');
+      const seen = new Set<string>();
+      for (const line of mountInfo.split('\n')) {
+        const parts = line.split(' ');
+        if (parts.length < 5) continue;
+        const mountPoint = parts[4];
+        // 过滤系统目录，只保留用户数据目录
+        if (!mountPoint || mountPoint === '/' || mountPoint.startsWith('/proc') || mountPoint.startsWith('/sys') || mountPoint.startsWith('/dev') || mountPoint === '/app' || mountPoint.startsWith('/app/') || mountPoint === '/tmp' || mountPoint.startsWith('/etc') || mountPoint.startsWith('/run') || mountPoint.startsWith('/var/run')) continue;
+        if (seen.has(mountPoint)) continue;
+        seen.add(mountPoint);
+        // 从挂载路径推断名称
+        const name = mountPoint.split('/').filter(Boolean).pop() || mountPoint;
+        dirs.push({ name, path: mountPoint });
+      }
+    } catch {
+      // /proc 不可用时的 fallback
+    }
+    // 如果没检测到，添加一些常见路径
+    if (dirs.length === 0) {
+      const commonPaths = ['/music', '/data', '/media', '/mnt'];
+      for (const p of commonPaths) {
+        if (existsSync(p)) dirs.push({ name: p.slice(1), path: p });
+      }
+    }
+    res.json({ code: 0, message: 'ok', data: dirs });
   } catch (err) { next(err); }
 });
 
