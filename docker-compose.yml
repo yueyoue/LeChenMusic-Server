@@ -1,7 +1,6 @@
-version: '3.8'
 services:
   lechen-music:
-    image: ghcr.io/yueyoue/lechenmusic-server:latest
+    build: .
     container_name: lechen-music
     restart: unless-stopped
     ports:
@@ -9,12 +8,10 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - NODE_ENV=production
-      - JWT_SECRET=你的密钥改成任意字符串
+      - JWT_SECRET=lechen-music-secret-key
       - MAX_TRANSCODE_TASKS=4
       - LOG_LEVEL=info
     volumes:
       - ./data:/app/data
       # ↓↓↓ 改成你的音乐文件夹路径 ↓↓↓
-      - /path/to/your/music:/music:ro
-      # ↓↓↓ 有声书目录（可选）↓↓↓
-      # - /path/to/audiobooks:/audiobooks:ro
+      - /vol1/1000/音乐:/music:ro

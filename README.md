@@ -4,41 +4,36 @@
 
 ## 🚀 飞牛 NAS 一键部署
 
-### 第一步：创建 docker-compose.yml
+### SSH 方式（推荐）
 
-在飞牛 NAS 的 Docker 目录下创建 `docker-compose.yml`，粘贴以下内容：
+用 SSH 登录飞牛 NAS，依次执行以下命令：
 
-```yaml
-version: '3.8'
-services:
-  lechen-music:
-    image: ghcr.io/yueyoue/lechenmusic-server:latest
-    container_name: lechen-music
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    environment:
-      - TZ=Asia/Shanghai
-      - NODE_ENV=production
-      - JWT_SECRET=改成你自己的密钥
-      - MAX_TRANSCODE_TASKS=4
-      - LOG_LEVEL=info
-    volumes:
-      - ./data:/app/data
-      - /vol1/music:/music:ro    # ← 改成你的音乐目录
+```bash
+# 1. 下载项目
+cd /vol1/1000
+git clone https://github.com/yueyoue/LeChenMusic-Server.git
+cd LeChenMusic-Server
+
+# 2. 启动（首次会自动构建，约2-3分钟）
+docker compose up -d --build
 ```
 
-### 第二步：启动
+部署完成！访问 `http://你的NAS-IP:3000` 即可使用。
 
-在飞牛 Docker 管理界面中，选择「Compose」→「导入」→ 选择这个 yml 文件 → 点击「启动」
+> **修改音乐目录：** 编辑 `docker-compose.yml` 中的 volumes，把 `/vol1/1000/音乐` 改成你的实际路径，然后执行 `docker compose up -d --build` 重建。
 
-首次启动会自动拉取镜像，等待几分钟即可。
+### 飞牛界面方式
 
-### 第三步：使用
+1. 打开飞牛 **Docker** → **Compose** → **新建项目**
+2. 项目名称填 `lechen-music`
+3. 选择「上传」，上传项目里的 `docker-compose.yml` 文件
+4. 点击「启动」，等待构建完成
 
-- 管理后台：`http://你的NAS-IP:3000`
-- 首个注册的用户自动成为管理员
-- 在后台「媒体库管理」中添加音乐目录（容器内路径为 `/music`）
+## 📱 使用
+
+- **管理后台：** `http://你的NAS-IP:3000`
+- **首个注册的用户自动成为管理员**
+- 进入后台 → **媒体库** → **添加媒体路径** → 选择音乐目录 → 点击 **扫描**
 
 ## 📱 客户端连接
 
@@ -48,43 +43,47 @@ services:
 
 ## 🔧 配置说明
 
+编辑 `docker-compose.yml` 中的环境变量：
+
 | 环境变量 | 说明 | 默认值 |
 |---------|------|--------|
-| `JWT_SECRET` | Token 加密密钥，改成任意字符串 | 必须修改 |
+| `JWT_SECRET` | Token 加密密钥，改成任意字符串 | 需要修改 |
 | `MAX_TRANSCODE_TASKS` | 最大同时转码数 | 4 |
-| `LOG_LEVEL` | 日志级别 (info/debug/warn/error) | info |
+| `LOG_LEVEL` | 日级 (info/debug/warn/error) | info |
 | `TZ` | 时区 | Asia/Shanghai |
 
-## 📂 音乐目录挂载
+修改后执行 `docker compose up -d` 重启生效。
 
-### 飞牛 NAS 本地目录
+## 📂 音乐目录配置
+
+`docker-compose.yml` 中的 volumes 配置音乐目录：
+
 ```yaml
 volumes:
-  - /vol1/music:/music:ro
+  - ./data:/app/data           # 数据库（不要改）
+  - /vol1/1000/音乐:/music:ro  # ← 改成你的音乐目录
 ```
 
-### SMB 网络挂载
-先在飞牛系统中挂载 SMB 共享，然后映射挂载路径：
+### 常见路径示例
+
 ```yaml
-volumes:
-  - /mnt/smb/music:/music:ro
+# 飞牛默认音乐目录
+- /vol1/1000/音乐:/music:ro
+
+# 自定义目录
+- /vol2/data/my-music:/music:ro
+
+# SMB 网络挂载（先在飞牛系统中挂载）
+- /mnt/smb/music:/music:ro
 ```
 
-### 云盘（通过 rclone）
-```bash
-# 先在 NAS 上安装 rclone 并挂载
-rclone mount aliyun:/music /mnt/cloud-music --vfs-cache-mode full
-```
-```yaml
-volumes:
-  - /mnt/cloud-music:/music:ro
-```
+修改后执行 `docker compose up -d --build` 重建生效。
 
 ## 🏗️ 技术栈
 
 - Node.js 20 + TypeScript + Express 5
 - SQLite + Drizzle ORM
-- FFmpeg 实时转码
+- music-metadata 音频元数据解析
 - JWT 鉴权
 
 ## 📖 API
