@@ -553,14 +553,33 @@ async function render_artists(){
     <div id="artistModal"></div>\`;
 }
 function editArtist(id,name,bio){
-  document.getElementById('artistModal').innerHTML=\`
+  document.getElementById('artistModal').innerHTML=`
     <div class="modal-overlay" onclick="if(event.target===this)this.remove()">
-      <div class="modal"><h3>编辑艺人 #\${id}</h3>
-        <div class="form-group"><label>艺人名</label><input id="eaName" value="\${name}"></div>
-        <div class="form-group"><label>简介</label><textarea id="eaBio">\${bio.replace(/\\\\n/g,'\\n')}</textarea></div>
-        <div class="actions"><button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button><button class="btn btn-primary" onclick="saveArtist(\${id})">保存</button></div>
+      <div class="modal" style="width:480px"><h3>编辑艺人 #${id}</h3>
+        <div class="form-group" style="text-align:center">
+          <img id="eaAvatar" src="/api/admin/artists/${id}/avatar" style="width:120px;height:120px;border-radius:50%;object-fit:cover;cursor:pointer;border:2px solid var(--border)" onclick="document.getElementById('avatarFile').click()" title="点击更换头像">
+          <input type="file" id="avatarFile" accept="image/jpeg,image/png" style="display:none" onchange="uploadAvatar(${id})">
+          <div style="font-size:11px;color:var(--muted);margin-top:4px">点击图片更换头像</div>
+        </div>
+        <div class="form-group"><label>艺人名</label><input id="eaName" value="${name}"></div>
+        <div class="form-group"><label>简介</label><textarea id="eaBio">${bio.replace(/\\n/g,'\n')}</textarea></div>
+        <div class="actions"><button class="btn" onclick="this.closest('.modal-overlay').remove()">取消</button><button class="btn btn-primary" onclick="saveArtist(${id})">保存</button></div>
       </div>
-    </div>\`;
+    </div>`;
+}
+async function uploadAvatar(id){
+  const file=document.getElementById('avatarFile').files[0];
+  if(!file)return;
+  if(file.size>5*1024*1024)return showMsg('图片不能超过5MB',false);
+  const reader=new FileReader();
+  reader.onload=async function(e){
+    const r=await api('/api/admin/artists/'+id+'/avatar',{method:'PUT',body:JSON.stringify({image:e.target.result})});
+    if(r.code===0){
+      showMsg('头像上传成功',true);
+      document.getElementById('eaAvatar').src='/api/admin/artists/'+id+'/avatar?t='+Date.now();
+    }
+  };
+  reader.readAsDataURL(file);
 }
 async function saveArtist(id){
   const r=await api('/api/admin/artists/'+id,{method:'PUT',body:JSON.stringify({
@@ -569,6 +588,7 @@ async function saveArtist(id){
   })});
   if(r.code===0){showMsg('保存成功',true);document.querySelector('.modal-overlay').remove();render_artists();}
 }
+
 
 // ─── 用户 ────────────────────────────────────────────
 async function render_users(){

@@ -324,12 +324,13 @@ router.get('/artists/:id/avatar', async (req, res) => {
     const art = await db.select().from(schema.artist).where(eq(schema.artist.id, artistId)).get();
     const library = await db.select().from(schema.mediaLibrary).limit(1).get();
 
-    // 1. 从数据库 avatarPath 读取
+    // 1. 从数据库 avatarPath 读取（用户上传的）
     if (art?.avatarPath && library) {
       const fullPath = join(library.storagePath, art.avatarPath);
       if (existsSync(fullPath)) {
         const stat = statSync(fullPath);
-        res.setHeader('Content-Type', 'image/jpeg');
+        const mime = extname(fullPath).toLowerCase() === '.png' ? 'image/png' : 'image/jpeg';
+        res.setHeader('Content-Type', mime);
         res.setHeader('Content-Length', stat.size);
         res.setHeader('Cache-Control', 'public, max-age=86400');
         res.send(readFileSync(fullPath));
@@ -337,62 +338,65 @@ router.get('/artists/:id/avatar', async (req, res) => {
       }
     }
 
-    // 2. 在目录中查找艺人图片文件
+    // 2. 从该艺人的歌曲内嵌封面提取（尝试多首）
     if (library) {
-      const track = await db.select({ storagePath: schema.track.storagePath })
-        .from(schema.track).where(eq(schema.track.artistId, artistId)).limit(1).get();
-      if (track) {
-        const trackDir = dirname(join(library.storagePath, track.storagePath));
-        const artistDir = dirname(trackDir);
-        const searchDirs = [trackDir, artistDir];
-        const avatarNames = ['artist.jpg', 'artist.jpeg', 'photo.jpg', 'photo.jpeg', 'folder.jpg'];
-        for (const dir of searchDirs) {
-          for (const name of avatarNames) {
-            const avatarFile = join(dir, name);
-            if (existsSync(avatarFile)) {
-              const stat = statSync(avatarFile);
+      const tracks = await db.select({ storagePath: schema.track.storagePath })
+        .from(schema.track).where(eq(schema.track.artistId, artistId)).limit(10).all();
+      for (const t of tracks) {
+        const audioPath = join(library.storagePath, t.storagePath);
+        if (existsSync(audioPath)) {
+          try {
+            // @ts-expect-error
+            const { parseFile } = await import('music-metadata');
+            const meta = await parseFile(audioPath, { skipCovers: false, duration: false });
+            if (meta.common.picture?.length > 0 && meta.common.picture[0].data?.length > 0) {
+              const buf = Buffer.from(meta.common.picture[0].data);
               res.setHeader('Content-Type', 'image/jpeg');
-              res.setHeader('Content-Length', stat.size);
+              res.setHeader('Content-Length', buf.length);
               res.setHeader('Cache-Control', 'public, max-age=86400');
-              res.send(readFileSync(avatarFile));
+              res.send(buf);
               return;
             }
-          }
-        }
-
-        // 3. 从该艺人的歌曲内嵌封面提取（作为艺人头像）
-        // 尝试多首歌，提高找到封面的概率
-        const tracks = await db.select({ storagePath: schema.track.storagePath })
-          .from(schema.track).where(eq(schema.track.artistId, artistId)).limit(5).all();
-        for (const t of tracks) {
-          const audioFullPath = join(library.storagePath, t.storagePath);
-          if (existsSync(audioFullPath)) {
-            try {
-              // @ts-expect-error
-              const { parseFile } = await import('music-metadata');
-              const metadata = await parseFile(audioFullPath, { skipCovers: false, duration: false });
-              if (metadata.common.picture && metadata.common.picture.length > 0) {
-                const coverBuf = Buffer.from(metadata.common.picture[0].data);
-                if (coverBuf.length > 0) {
-                  res.setHeader('Content-Type', 'image/jpeg');
-                  res.setHeader('Content-Length', coverBuf.length);
-                  res.setHeader('Cache-Control', 'public, max-age=86400');
-                  res.send(coverBuf);
-                  return;
-                }
-              }
-            } catch {
-              // try next song
-            }
-          }
+          } catch { /* try next */ }
         }
       }
     }
 
-    // 4. 默认头像
+    // 3. 默认
     res.setHeader('Content-Type', 'image/svg+xml');
     res.send('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"><circle cx="100" cy="100" r="100" fill="#334155"/><text fill="#94a3b8" font-size="64" x="50%" y="50%" text-anchor="middle" dy=".35em">🎤</text></svg>');
   } catch { res.status(500).end(); }
+});
+
+/** 上传艺人头像 */
+router.put('/artists/:id/avatar', async (req, res, next) => {
+  try {
+    const artistId = parseInt(req.params.id as string);
+    const { image } = req.body; // base64 data URL
+    if (!image) throw new AppError(2001, 400, 'Missing image data');
+
+    const library = await db.select().from(schema.mediaLibrary).limit(1).get();
+    if (!library) throw new AppError(3001, 404, 'No media library configured');
+
+    // 解析 base64
+    const matches = image.match(/^data:image\/(jpeg|png|jpg);base64,(.+)$/);
+    if (!matches) throw new AppError(2001, 400, 'Invalid image format (use jpeg or png)');
+    const ext = matches[1] === 'png' ? '.png' : '.jpg';
+    const buf = Buffer.from(matches[2], 'base64');
+
+    // 保存到 .avatars 目录
+    const avatarsDir = join(library.storagePath, '.avatars');
+    mkdirSync(avatarsDir, { recursive: true });
+    const filename = `artist_${artistId}${ext}`;
+    const filePath = join(avatarsDir, filename);
+    writeFileSync(filePath, buf);
+
+    // 更新数据库
+    const relPath = relative(library.storagePath, filePath);
+    await db.update(schema.artist).set({ avatarPath: relPath }).where(eq(schema.artist.id, artistId));
+
+    res.json({ code: 0, message: 'ok', data: { path: relPath } });
+  } catch (err) { next(err); }
 });
 
 // 艺人列表（含搜索和排序）
