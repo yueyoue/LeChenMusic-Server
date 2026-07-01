@@ -11,12 +11,19 @@ const router = Router();
 /** 从音频文件内嵌封面中提取并返回图片 */
 async function extractCoverFromAudio(audioFullPath: string): Promise<Buffer | null> {
   try {
+    if (!existsSync(audioFullPath)) return null;
     const metadata = await parseFile(audioFullPath, { skipCovers: false, duration: false });
     if (metadata.common.picture && metadata.common.picture.length > 0) {
-      return Buffer.from(metadata.common.picture[0].data);
+      const pic = metadata.common.picture[0];
+      if (pic.data && pic.data.length > 0) {
+        return Buffer.from(pic.data);
+      }
     }
-  } catch {
-    // ignore
+  } catch (err: any) {
+    // Log error for debugging (only in dev)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`Failed to extract cover from ${audioFullPath}:`, err.message);
+    }
   }
   return null;
 }
@@ -55,26 +62,32 @@ async function getAlbumCover(albumId: number): Promise<{ buf: Buffer; mime: stri
     }
 
     // 3. 从音频文件内嵌封面提取
-    const audioFullPath = join(library.storagePath, track.storagePath);
-    if (existsSync(audioFullPath)) {
-      const coverBuf = await extractCoverFromAudio(audioFullPath);
-      if (coverBuf) {
-        // 同时保存到 .covers 目供后续快速读取
-        try {
-          const coverDir = join(trackDir, '.covers');
-          const coverName = `${basename(track.storagePath, extname(track.storagePath))}.jpg`;
-          const coverPath = join(coverDir, coverName);
-          if (!existsSync(coverPath)) {
-            mkdirSync(coverDir, { recursive: true });
-            writeFileSync(coverPath, coverBuf);
+    // 尝试多首歌，提高找到封面的概率
+    const tracks = await db.select({ storagePath: schema.track.storagePath })
+      .from(schema.track).where(eq(schema.track.albumId, albumId)).limit(5).all();
+    for (const t of tracks) {
+      const audioFullPath = join(library.storagePath, t.storagePath);
+      if (existsSync(audioFullPath)) {
+        const coverBuf = await extractCoverFromAudio(audioFullPath);
+        if (coverBuf) {
+          // 同时保存到 .covers 目供后续快速读取
+          try {
+            const trackDir = join(library.storagePath, dirname(t.storagePath));
+            const coverDir = join(trackDir, '.covers');
+            const coverName = `${basename(t.storagePath, extname(t.storagePath))}.jpg`;
+            const coverPath = join(coverDir, coverName);
+            if (!existsSync(coverPath)) {
+              mkdirSync(coverDir, { recursive: true });
+              writeFileSync(coverPath, coverBuf);
+            }
+            // 更新数据库
+            const relCover = relative(library.storagePath, coverPath);
+            await db.update(schema.album).set({ coverPath: relCover }).where(eq(schema.album.id, albumId));
+          } catch {
+            // 即使保存失败也返回封面
           }
-          // 更新数据库
-          const relCover = relative(library.storagePath, coverPath);
-          await db.update(schema.album).set({ coverPath: relCover }).where(eq(schema.album.id, albumId));
-        } catch {
-          // 即使保存失败也返回封面
+          return { buf: coverBuf, mime: 'image/jpeg' };
         }
-        return { buf: coverBuf, mime: 'image/jpeg' };
       }
     }
   }

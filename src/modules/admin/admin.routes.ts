@@ -361,22 +361,29 @@ router.get('/artists/:id/avatar', async (req, res) => {
         }
 
         // 3. 从该艺人的歌曲内嵌封面提取（作为艺人头像）
-        const audioFullPath = join(library.storagePath, track.storagePath);
-        if (existsSync(audioFullPath)) {
-          try {
-            // @ts-expect-error
-            const { parseFile } = await import('music-metadata');
-            const metadata = await parseFile(audioFullPath, { skipCovers: false, duration: false });
-            if (metadata.common.picture && metadata.common.picture.length > 0) {
-              const coverBuf = Buffer.from(metadata.common.picture[0].data);
-              res.setHeader('Content-Type', 'image/jpeg');
-              res.setHeader('Content-Length', coverBuf.length);
-              res.setHeader('Cache-Control', 'public, max-age=86400');
-              res.send(coverBuf);
-              return;
+        // 尝试多首歌，提高找到封面的概率
+        const tracks = await db.select({ storagePath: schema.track.storagePath })
+          .from(schema.track).where(eq(schema.track.artistId, artistId)).limit(5).all();
+        for (const t of tracks) {
+          const audioFullPath = join(library.storagePath, t.storagePath);
+          if (existsSync(audioFullPath)) {
+            try {
+              // @ts-expect-error
+              const { parseFile } = await import('music-metadata');
+              const metadata = await parseFile(audioFullPath, { skipCovers: false, duration: false });
+              if (metadata.common.picture && metadata.common.picture.length > 0) {
+                const coverBuf = Buffer.from(metadata.common.picture[0].data);
+                if (coverBuf.length > 0) {
+                  res.setHeader('Content-Type', 'image/jpeg');
+                  res.setHeader('Content-Length', coverBuf.length);
+                  res.setHeader('Cache-Control', 'public, max-age=86400');
+                  res.send(coverBuf);
+                  return;
+                }
+              }
+            } catch {
+              // try next song
             }
-          } catch {
-            // ignore
           }
         }
       }
