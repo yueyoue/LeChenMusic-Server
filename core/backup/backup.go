@@ -46,6 +46,7 @@ type UserBackup struct {
 	UserName  string    `json:"user_name"`
 	Name      string    `json:"name"`
 	Email     string    `json:"email"`
+	Password  string    `json:"password"` // bcrypt hash
 	IsAdmin   bool      `json:"is_admin"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -76,7 +77,7 @@ func Export(ctx context.Context, ds model.DataStore, outputPath string, serverVe
 	for _, u := range users {
 		backup.Users = append(backup.Users, UserBackup{
 			ID: u.ID, UserName: u.UserName, Name: u.Name,
-			Email: u.Email, IsAdmin: u.IsAdmin, CreatedAt: u.CreatedAt,
+			Email: u.Email, Password: u.Password, IsAdmin: u.IsAdmin, CreatedAt: u.CreatedAt,
 		})
 	}
 
@@ -173,7 +174,7 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 			}
 			user := &model.User{
 				ID: ub.ID, UserName: ub.UserName, Name: ub.Name,
-				Email: ub.Email, IsAdmin: ub.IsAdmin, CreatedAt: ub.CreatedAt,
+				Email: ub.Email, Password: ub.Password, IsAdmin: ub.IsAdmin, CreatedAt: ub.CreatedAt,
 			}
 			if existing != nil {
 				user.ID = existing.ID

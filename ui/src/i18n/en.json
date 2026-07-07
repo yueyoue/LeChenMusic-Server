@@ -411,6 +411,14 @@
         "configKey": "key",
         "configValue": "value"
       }
+    },
+    "backup": {
+      "name": "Backup & Restore",
+      "fields": {
+        "name": "Filename",
+        "size": "Size",
+        "created_at": "Created At"
+      }
     }
   },
   "ra": {

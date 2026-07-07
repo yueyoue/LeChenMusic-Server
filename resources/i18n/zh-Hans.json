@@ -409,6 +409,14 @@
         "configKey": "键",
         "configValue": "值"
       }
+    },
+    "backup": {
+      "name": "备份与恢复",
+      "fields": {
+        "name": "文件名",
+        "size": "大小",
+        "created_at": "创建时间"
+      }
     }
   },
   "ra": {
