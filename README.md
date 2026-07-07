@@ -41,9 +41,16 @@ services:
       - ND_PORT=3334
     volumes:
       - ./data:/data
-      - /path/to/music:/music:ro
-      - /path/to/audiobooks:/audiobooks:ro
+      - /你的音乐目录:/music:ro        # ⬅️ 改成你的音乐文件实际路径
+      - /你的有声书目录:/audiobooks:ro  # ⬅️ 改成你的有声书文件实际路径
 ```
+
+> ⚠️ **注意**：`volumes` 里最后两行必须改成你自己服务器上的实际路径！
+>
+> 例如：
+> - 群晖/飞牛 NAS：`/volume1/music:/music:ro`
+> - Linux：`/home/user/music:/music:ro`
+> - Windows Docker Desktop：`D:\\Music:/music:ro`
 
 启动：
 
@@ -59,9 +66,9 @@ docker compose up -d
 docker run -d \
   --name lechen-music \
   -p 3334:3334 \
-  -v /vol1/docker/lechen-music/data:/data \
-  -v /path/to/music:/music:ro \
-  -v /path/to/audiobooks:/audiobooks:ro \
+  -v ./data:/data \
+  -v /你的音乐目录:/music:ro \
+  -v /你的有声书目录:/audiobooks:ro \
   -e TZ=Asia/Shanghai \
   -e ND_PORT=3334 \
   --restart unless-stopped \
@@ -73,7 +80,7 @@ docker run -d \
 1. 打开飞牛 Docker 管理
 2. 新建 Compose
 3. 粘贴上面的 `docker-compose.yml` 内容
-4. 修改音乐和有声书路径
+4. **修改 `volumes` 里最后两行路径**为你 NAS 上的实际音乐和有声书目录
 5. 启动
 
 ## 📁 媒体库配置
