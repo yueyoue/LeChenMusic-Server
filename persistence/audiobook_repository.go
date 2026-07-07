@@ -148,8 +148,28 @@ func (r *audiobookRepository) SaveProgress(progress *model.AudiobookProgress) er
 		progress.ID = id.NewRandom()
 	}
 	progress.LastPlayedAt = time.Now()
-	_, err := r.put(progress.ID, progress)
+	// Use explicit table name to avoid writing to 'audiobook' table
+	values, err := toSQLArgs(progress)
+	if err != nil {
+		return err
+	}
+	update := Update("audiobook_progress").Where(Eq{"id": progress.ID}).SetMap(filterUpdateValues(values, progress.ID))
+	count, err := r.executeSQL(update)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		insert := Insert("audiobook_progress").SetMap(values)
+		_, err = r.executeSQL(insert)
+	}
 	return err
+}
+
+func (r *audiobookRepository) GetAllProgress() ([]model.AudiobookProgress, error) {
+	sel := r.newSelect().From("audiobook_progress").Columns("*")
+	var res []model.AudiobookProgress
+	err := r.queryAll(sel, &res)
+	return res, err
 }
 
 // ─── Bookmarks ───────────────────────────────────────────
@@ -172,8 +192,27 @@ func (r *audiobookRepository) SaveBookmark(bookmark *model.AudiobookBookmark) er
 		bookmark.ID = id.NewRandom()
 	}
 	bookmark.CreatedAt = time.Now()
-	_, err := r.put(bookmark.ID, bookmark)
+	values, err := toSQLArgs(bookmark)
+	if err != nil {
+		return err
+	}
+	update := Update("audiobook_bookmark").Where(Eq{"id": bookmark.ID}).SetMap(filterUpdateValues(values, bookmark.ID))
+	count, err := r.executeSQL(update)
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		insert := Insert("audiobook_bookmark").SetMap(values)
+		_, err = r.executeSQL(insert)
+	}
 	return err
+}
+
+func (r *audiobookRepository) GetAllBookmarks() ([]model.AudiobookBookmark, error) {
+	sel := r.newSelect().From("audiobook_bookmark").Columns("*")
+	var res []model.AudiobookBookmark
+	err := r.queryAll(sel, &res)
+	return res, err
 }
 
 func (r *audiobookRepository) DeleteBookmark(id string) error {

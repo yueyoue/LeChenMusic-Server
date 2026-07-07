@@ -28,6 +28,7 @@ type MockDataStore struct {
 	MockedScrobble       model.ScrobbleRepository
 	MockedRadio          model.RadioRepository
 	MockedPlugin         model.PluginRepository
+	MockedAudiobook      model.AudiobookRepository
 	scrobbleBufferMu     sync.Mutex
 	repoMu               sync.Mutex
 
@@ -245,6 +246,16 @@ func (db *MockDataStore) Plugin(ctx context.Context) model.PluginRepository {
 	}
 	db.MockedPlugin = CreateMockPluginRepo()
 	return db.MockedPlugin
+}
+
+func (db *MockDataStore) Audiobook(ctx context.Context) model.AudiobookRepository {
+	if db.MockedAudiobook != nil {
+		return db.MockedAudiobook
+	}
+	if db.RealDS != nil {
+		return db.RealDS.Audiobook(ctx)
+	}
+	return nil
 }
 
 func (db *MockDataStore) WithTx(block func(tx model.DataStore) error, label ...string) error {
