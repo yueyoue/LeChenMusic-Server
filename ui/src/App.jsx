@@ -21,7 +21,6 @@ import playlist from './playlist'
 import radio from './radio'
 import share from './share'
 import library from './library'
-import backup from './backup'
 import plugin from './plugin'
 import { Player } from './audioplayer'
 import customRoutes from './routes'
@@ -157,13 +156,6 @@ const Admin = (props) => {
           <Resource
             name="library"
             {...library}
-            options={{ subMenu: 'settings' }}
-          />
-        ) : null,
-        permissions === 'admin' ? (
-          <Resource
-            name="backup"
-            {...backup}
             options={{ subMenu: 'settings' }}
           />
         ) : null,

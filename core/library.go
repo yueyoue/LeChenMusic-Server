@@ -46,12 +46,42 @@ type libraryService struct {
 
 // NewLibrary creates a new Library service
 func NewLibrary(ds model.DataStore, scanner model.Scanner, watcher Watcher, broker events.Broker, pluginManager PluginUnloader) Library {
-	return &libraryService{
+	svc := &libraryService{
 		ds:            ds,
 		scanner:       scanner,
 		watcher:       watcher,
 		broker:        broker,
 		pluginManager: pluginManager,
+	}
+	// Auto-detect media type for libraries that don't have it set
+	go svc.autoDetectMediaType()
+	return svc
+}
+
+// autoDetectMediaType sets media_type for libraries based on name/path keywords
+func (s *libraryService) autoDetectMediaType() {
+	ctx := context.Background()
+	libs, err := s.ds.Library(ctx).GetAll()
+	if err != nil {
+		return
+	}
+	keywords := []string{"有声", "audiobook", "评书", "相声", "小说", "戏曲"}
+	for _, lib := range libs {
+		if lib.MediaType != "" && lib.MediaType != "music" {
+			continue
+		}
+		shouldBeAudiobook := false
+		for _, kw := range keywords {
+			if strings.Contains(lib.Name, kw) || strings.Contains(lib.Path, kw) {
+				shouldBeAudiobook = true
+				break
+			}
+		}
+		if shouldBeAudiobook {
+			lib.MediaType = "audiobook"
+			_ = s.ds.Library(ctx).Put(&lib)
+			log.Info(ctx, "Auto-detected audiobook library", "name", lib.Name, "path", lib.Path)
+		}
 	}
 }
 

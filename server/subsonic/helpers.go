@@ -552,6 +552,13 @@ func selectedMusicFolderIds(r *http.Request, required bool) ([]int, error) {
 		return musicFolderIds, nil
 	}
 
-	// If no musicFolderId is provided, return all libraries the user has access to.
-	return accessibleLibraryIds, nil
+	// If no musicFolderId is provided, return all music libraries the user has access to.
+	// Exclude audiobook libraries so audiobook content doesn't appear in music views.
+	musicLibraryIds := make([]int, 0)
+	for _, lib := range libraries {
+		if lib.MediaType != "audiobook" {
+			musicLibraryIds = append(musicLibraryIds, lib.ID)
+		}
+	}
+	return musicLibraryIds, nil
 }
