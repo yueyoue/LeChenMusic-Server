@@ -25,6 +25,7 @@ type Library struct {
 	TotalSize          int64     `json:"totalSize" db:"total_size"`
 	TotalDuration      float64   `json:"totalDuration" db:"total_duration"`
 	DefaultNewUsers    bool      `json:"defaultNewUsers" db:"default_new_users"`
+	MediaType          string    `json:"mediaType" db:"media_type"`
 }
 
 const (
