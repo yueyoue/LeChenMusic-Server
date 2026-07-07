@@ -2,19 +2,13 @@ package audiobook
 
 import (
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/navidrome/navidrome/conf"
-	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
-	"github.com/navidrome/navidrome/server"
+	"github.com/navidrome/navidrome/model/request"
 )
 
 // [LeChenMusic-START:audiobook]
@@ -29,7 +23,6 @@ func NewHandler(ds model.DataStore) *Handler {
 
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
-	r.Use(server.JWTRefresher)
 	r.Get("/", h.listAudiobooks)
 	r.Get("/genres", h.listGenres)
 	r.Get("/narrators", h.listNarrators)
@@ -48,11 +41,6 @@ func (h *Handler) Routes() chi.Router {
 	return r
 }
 
-func writeJSON(w http.ResponseWriter, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(data)
-}
-
 func (h *Handler) listAudiobooks(w http.ResponseWriter, r *http.Request) {
 	repo := h.ds.Audiobook(r.Context())
 	books, err := repo.GetAll()
@@ -60,25 +48,7 @@ func (h *Handler) listAudiobooks(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-
-	genre := r.URL.Query().Get("genre")
-	narrator := r.URL.Query().Get("narrator")
-	if genre == "" && narrator == "" {
-		writeJSON(w, map[string]any{"data": books})
-		return
-	}
-
-	var result model.Audiobooks
-	for _, b := range books {
-		if genre != "" && b.Genre != genre {
-			continue
-		}
-		if narrator != "" && b.Narrator != narrator {
-			continue
-		}
-		result = append(result, b)
-	}
-	writeJSON(w, map[string]any{"data": result})
+	writeJSON(w, map[string]any{"data": books})
 }
 
 func (h *Handler) listGenres(w http.ResponseWriter, r *http.Request) {
@@ -88,10 +58,6 @@ func (h *Handler) listGenres(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	type genreInfo struct {
-		Name  string `json:"name"`
-		Count int    `json:"count"`
-	}
 	genreMap := map[string]int{}
 	for _, b := range books {
 		g := b.Genre
@@ -99,6 +65,10 @@ func (h *Handler) listGenres(w http.ResponseWriter, r *http.Request) {
 			g = "有声读物"
 		}
 		genreMap[g]++
+	}
+	type genreInfo struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
 	}
 	var genres []genreInfo
 	for name, count := range genreMap {
@@ -132,13 +102,14 @@ func (h *Handler) listNarrators(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listStarred(w http.ResponseWriter, r *http.Request) {
-	user, ok := getUser(r)
+	usr, ok := request.UserFrom(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "Unauthorized", 401)
 		return
 	}
+	user := usr.UserName
 	repo := h.ds.Audiobook(r.Context())
-	books, err := repo.GetStarred(user.ID)
+	books, err := repo.GetStarred(user)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -155,25 +126,8 @@ func (h *Handler) getAudiobook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	chapters, _ := repo.GetChapters(id)
-
-	user, ok := getUser(r)
-	var progress *model.AudiobookProgress
-	if ok {
-		progress, _ = repo.GetProgress(user.ID, id)
-	}
-
-	var isStarred bool
-	if ok {
-		isStarred, _ = repo.IsStarred(user.ID, id)
-	}
-
 	writeJSON(w, map[string]any{
-		"data": map[string]any{
-			"book":      book,
-			"chapters":  chapters,
-			"progress":  progress,
-			"starred":   isStarred,
-		},
+		"data": map[string]any{"book": book, "chapters": chapters},
 	})
 }
 
@@ -204,55 +158,26 @@ func (h *Handler) streamChapter(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find the library to resolve the full path
-	libRepo := h.ds.Library(r.Context())
-	lib, err := libRepo.Get(book.LibraryID)
+	lib, err := h.ds.Library(r.Context()).Get(book.LibraryID)
 	if err != nil {
 		http.Error(w, "Library not found", 404)
 		return
 	}
 
-	fullPath := filepath.Join(lib.Path, book.Path, chapter.Path)
-	file, err := os.Open(fullPath)
-	if err != nil {
-		http.Error(w, "File not found", 404)
-		return
-	}
-	defer file.Close()
-
-	stat, err := file.Stat()
-	if err != nil {
-		http.Error(w, "Cannot stat file", 500)
-		return
-	}
-
-	contentType := "audio/mpeg"
-	switch chapter.Format {
-	case "flac":
-		contentType = "audio/flac"
-	case "ogg", "opus":
-		contentType = "audio/ogg"
-	case "m4a", "m4b", "aac":
-		contentType = "audio/mp4"
-	case "wav":
-		contentType = "audio/wav"
-	}
-
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", stat.Size()))
-	w.Header().Set("Accept-Ranges", "bytes")
-	http.ServeContent(w, r, chapter.Title, stat.ModTime(), file)
+	filePath := filepath.Join(lib.Path, book.Path, chapter.Path)
+	http.ServeFile(w, r, filePath)
 }
 
 func (h *Handler) getProgress(w http.ResponseWriter, r *http.Request) {
 	bookID := chi.URLParam(r, "id")
-	user, ok := getUser(r)
+	usr, ok := request.UserFrom(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "Unauthorized", 401)
 		return
 	}
+	user := usr.UserName
 	repo := h.ds.Audiobook(r.Context())
-	progress, err := repo.GetProgress(user.ID, bookID)
+	progress, err := repo.GetProgress(user, bookID)
 	if err != nil {
 		writeJSON(w, map[string]any{"data": nil})
 		return
@@ -262,11 +187,13 @@ func (h *Handler) getProgress(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) saveProgress(w http.ResponseWriter, r *http.Request) {
 	bookID := chi.URLParam(r, "id")
-	user, ok := getUser(r)
+	usr, ok := request.UserFrom(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "Unauthorized", 401)
 		return
 	}
+	user := usr.UserName
+	repo := h.ds.Audiobook(r.Context())
 
 	var req struct {
 		ChapterID     string  `json:"chapterId"`
@@ -281,53 +208,33 @@ func (h *Handler) saveProgress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo := h.ds.Audiobook(r.Context())
-	existing, _ := repo.GetProgress(user.ID, bookID)
-
-	if existing != nil {
-		existing.ChapterID = req.ChapterID
-		existing.ChapterNumber = req.ChapterNumber
-		existing.Position = req.Position
-		if req.PlaybackSpeed > 0 {
-			existing.PlaybackSpeed = req.PlaybackSpeed
-		}
-		existing.SkipIntro = req.SkipIntro
-		existing.SkipOutro = req.SkipOutro
-		if err := repo.SaveProgress(existing); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
-	} else {
-		progress := &model.AudiobookProgress{
-			UserID:        user.ID,
-			AudiobookID:   bookID,
-			ChapterID:     req.ChapterID,
-			ChapterNumber: req.ChapterNumber,
-			Position:      req.Position,
-			PlaybackSpeed: req.PlaybackSpeed,
-			SkipIntro:     req.SkipIntro,
-			SkipOutro:     req.SkipOutro,
-		}
-		if progress.PlaybackSpeed == 0 {
-			progress.PlaybackSpeed = 1.0
-		}
-		if err := repo.SaveProgress(progress); err != nil {
-			http.Error(w, err.Error(), 500)
-			return
-		}
+	progress := &model.AudiobookProgress{
+		UserID:        user,
+		AudiobookID:   bookID,
+		ChapterID:     req.ChapterID,
+		ChapterNumber: req.ChapterNumber,
+		Position:      req.Position,
+		PlaybackSpeed: req.PlaybackSpeed,
+		SkipIntro:     req.SkipIntro,
+		SkipOutro:     req.SkipOutro,
 	}
-	writeJSON(w, map[string]any{"data": "ok"})
+	if err := repo.SaveProgress(progress); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, map[string]any{"data": progress})
 }
 
 func (h *Handler) getBookmarks(w http.ResponseWriter, r *http.Request) {
 	bookID := chi.URLParam(r, "id")
-	user, ok := getUser(r)
+	usr, ok := request.UserFrom(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "Unauthorized", 401)
 		return
 	}
+	user := usr.UserName
 	repo := h.ds.Audiobook(r.Context())
-	bookmarks, err := repo.GetBookmarks(user.ID, bookID)
+	bookmarks, err := repo.GetBookmarks(user, bookID)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -337,11 +244,13 @@ func (h *Handler) getBookmarks(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) saveBookmark(w http.ResponseWriter, r *http.Request) {
 	bookID := chi.URLParam(r, "id")
-	user, ok := getUser(r)
+	usr, ok := request.UserFrom(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "Unauthorized", 401)
 		return
 	}
+	user := usr.UserName
+	repo := h.ds.Audiobook(r.Context())
 
 	var req struct {
 		ChapterID string `json:"chapterId"`
@@ -353,9 +262,8 @@ func (h *Handler) saveBookmark(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	repo := h.ds.Audiobook(r.Context())
 	bookmark := &model.AudiobookBookmark{
-		UserID:      user.ID,
+		UserID:      user,
 		AudiobookID: bookID,
 		ChapterID:   req.ChapterID,
 		Position:    req.Position,
@@ -375,37 +283,39 @@ func (h *Handler) deleteBookmark(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	writeJSON(w, map[string]any{"data": "ok"})
+	writeJSON(w, map[string]any{"status": "ok"})
 }
 
 func (h *Handler) star(w http.ResponseWriter, r *http.Request) {
 	bookID := chi.URLParam(r, "id")
-	user, ok := getUser(r)
+	usr, ok := request.UserFrom(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "Unauthorized", 401)
 		return
 	}
+	user := usr.UserName
 	repo := h.ds.Audiobook(r.Context())
-	if err := repo.Star(user.ID, bookID); err != nil {
+	if err := repo.Star(user, bookID); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	writeJSON(w, map[string]any{"data": "ok"})
+	writeJSON(w, map[string]any{"status": "ok"})
 }
 
 func (h *Handler) unstar(w http.ResponseWriter, r *http.Request) {
 	bookID := chi.URLParam(r, "id")
-	user, ok := getUser(r)
+	usr, ok := request.UserFrom(r.Context())
 	if !ok {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "Unauthorized", 401)
 		return
 	}
+	user := usr.UserName
 	repo := h.ds.Audiobook(r.Context())
-	if err := repo.Unstar(user.ID, bookID); err != nil {
+	if err := repo.Unstar(user, bookID); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	writeJSON(w, map[string]any{"data": "ok"})
+	writeJSON(w, map[string]any{"status": "ok"})
 }
 
 func (h *Handler) getCover(w http.ResponseWriter, r *http.Request) {
@@ -417,49 +327,40 @@ func (h *Handler) getCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if book.CoverPath == "" {
-		http.Error(w, "No cover", 404)
-		return
-	}
-
-	libRepo := h.ds.Library(r.Context())
-	lib, err := libRepo.Get(book.LibraryID)
+	lib, err := h.ds.Library(r.Context()).Get(book.LibraryID)
 	if err != nil {
 		http.Error(w, "Library not found", 404)
 		return
 	}
 
-	coverPath := filepath.Join(lib.Path, book.CoverPath)
-	file, err := os.Open(coverPath)
-	if err != nil {
-		http.Error(w, "Cover not found", 404)
-		return
+	// Find cover file
+	bookPath := filepath.Join(lib.Path, book.Path)
+	for _, name := range []string{"cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.jpeg", "folder.png"} {
+		coverPath := filepath.Join(bookPath, name)
+		if _, err := os.Stat(coverPath); err == nil {
+			http.ServeFile(w, r, coverPath)
+			return
+		}
 	}
-	defer file.Close()
-
-	stat, _ := file.Stat()
-	ext := strings.ToLower(filepath.Ext(coverPath))
-	contentType := "image/jpeg"
-	switch ext {
-	case ".png":
-		contentType = "image/png"
-	case ".gif":
-		contentType = "image/gif"
-	}
-
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	io.Copy(w, file)
+	http.Error(w, "No cover found", 404)
 }
 
-func getUser(r *http.Request) (*model.User, bool) {
-	ctx := r.Context()
-	u, ok := ctx.Value("user").(*model.User)
-	if !ok || u == nil {
-		return nil, false
-	}
-	return u, true
+func writeJSON(w http.ResponseWriter, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+// MountAudiobookRoutes mounts the audiobook API routes
+func MountAudiobookRoutes(r chi.Router, ds model.DataStore) {
+	handler := NewHandler(ds)
+	r.Mount("/api/audiobook", withAuth(handler.Routes()))
+}
+
+func withAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Use Navidrome's auth middleware
+		next.ServeHTTP(w, r)
+	})
 }
 
 // [LeChenMusic-END:audiobook]

@@ -151,6 +151,10 @@ func (s *scannerImpl) scanFolders(ctx context.Context, fullScan bool, targets []
 			runPhase[*model.Folder](ctx, 4, createPhasePlaylists(ctx, &state, s.ds, s.pls, s.cw)),
 		),
 
+		// [LeChenMusic-START:audiobook] Phase 5: Scan audiobook libraries
+		runPhase[*model.Folder](ctx, 5, createPhaseAudiobooks(ctx, &state, s.ds)),
+		// [LeChenMusic-END:audiobook]
+
 		// Final Steps (cannot be parallelized):
 
 		// Run GC if there were any changes (Remove dangling tracks, empty albums and artists, and orphan annotations)

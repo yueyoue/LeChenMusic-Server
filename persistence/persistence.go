@@ -89,6 +89,10 @@ func (s *SQLStore) ScrobbleBuffer(ctx context.Context) model.ScrobbleBufferRepos
 	return NewScrobbleBufferRepository(ctx, s.getDBXBuilder())
 }
 
+func (s *SQLStore) Audiobook(ctx context.Context) model.AudiobookRepository {
+	return NewAudiobookRepository(ctx, s.getDBXBuilder())
+}
+
 func (s *SQLStore) Scrobble(ctx context.Context) model.ScrobbleRepository {
 	return NewScrobbleRepository(ctx, s.getDBXBuilder())
 }
