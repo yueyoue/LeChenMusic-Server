@@ -7,7 +7,6 @@ import (
 	"time"
 
 	. "github.com/Masterminds/squirrel"
-	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/id"
 	"github.com/navidrome/navidrome/utils"
