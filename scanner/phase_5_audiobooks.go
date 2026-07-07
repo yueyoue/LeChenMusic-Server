@@ -24,7 +24,6 @@ func (p *phaseAudiobooks) description() string { return "Scan audiobook librarie
 
 func (p *phaseAudiobooks) producer() ppl.Producer[*model.Folder] {
 	return ppl.NewProducer(func(put func(entry *model.Folder)) error {
-		// Scan audiobook libraries
 		for _, lib := range p.state.libraries {
 			if lib.MediaType == "audiobook" {
 				log.Info(p.ctx, "Scanner: Audiobook library found", "library", lib.Name, "path", lib.Path)
@@ -39,7 +38,7 @@ func (p *phaseAudiobooks) producer() ppl.Producer[*model.Folder] {
 }
 
 func (p *phaseAudiobooks) stages() []ppl.Stage[*model.Folder] {
-	return nil // No additional stages needed
+	return nil
 }
 
 func (p *phaseAudiobooks) finalize(err error) error {
