@@ -4,7 +4,6 @@ package migrations
 import (
 	"context"
 	"database/sql"
-	"strings"
 
 	"github.com/pressly/goose/v3"
 )
