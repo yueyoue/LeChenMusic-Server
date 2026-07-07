@@ -12,6 +12,7 @@ import (
 
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
+	". "github.com/Masterminds/squirrel"
 	"github.com/navidrome/navidrome/model/id"
 )
 
@@ -88,10 +89,7 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 
 		// Check if already exists
 		existing, existErr := repo.GetAll(model.QueryOptions{
-			Filters: map[string]interface{}{
-				"library_id": library.ID,
-				"path":       relPath,
-			},
+			Filters: Eq{"library_id": library.ID, "path": relPath},
 		})
 		if existErr == nil && len(existing) > 0 {
 			book := existing[0]
