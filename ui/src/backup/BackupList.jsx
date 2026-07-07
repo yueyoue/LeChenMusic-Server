@@ -28,8 +28,8 @@ import {
   DialogActions,
 } from '@material-ui/core'
 import {
-  Backup as BackupIcon,
-  Restore as RestoreIcon,
+  Save as BackupIcon,
+  Undo as RestoreIcon,
   Delete as DeleteIcon,
   Download as DownloadIcon,
   Settings as SettingsIcon,
