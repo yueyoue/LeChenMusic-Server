@@ -5,8 +5,7 @@ import (
 
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
-	"github.com/navidrome/navidrome/scanner/metadata"
-	"github.com/navidrome/navidrome/utils/chain"
+	ppl "github.com/google/go-pipeline/pkg/pipeline"
 )
 
 // [LeChenMusic-START:audiobook]
@@ -23,11 +22,9 @@ type phaseAudiobooks struct {
 
 func (p *phaseAudiobooks) description() string { return "Scan audiobook libraries" }
 
-func (p *phaseAudiobooks) producer() <-chan *model.Folder {
-	out := make(chan *model.Folder)
-	go func() {
-		defer close(out)
-		// Only scan libraries with media_type = "audiobook"
+func (p *phaseAudiobooks) producer() ppl.Producer[*model.Folder] {
+	return ppl.NewProducer(func(put func(entry *model.Folder)) error {
+		// Scan audiobook libraries
 		for _, lib := range p.state.libraries {
 			if lib.MediaType == "audiobook" {
 				log.Info(p.ctx, "Scanner: Audiobook library found", "library", lib.Name, "path", lib.Path)
@@ -37,19 +34,16 @@ func (p *phaseAudiobooks) producer() <-chan *model.Folder {
 				}
 			}
 		}
-	}()
-	return out
+		return nil
+	}, ppl.Name("scan audiobook libraries"))
 }
 
-func (p *phaseAudiobooks) stages() []chain.Stage[*model.Folder] {
+func (p *phaseAudiobooks) stages() []ppl.Stage[*model.Folder] {
 	return nil // No additional stages needed
 }
 
 func (p *phaseAudiobooks) finalize(err error) error {
 	return err
 }
-
-// Ensure phaseAudiobooks implements the phase interface
-var _ phase[*model.Folder] = (*phaseAudiobooks)(nil)
 
 // [LeChenMusic-END:audiobook]
