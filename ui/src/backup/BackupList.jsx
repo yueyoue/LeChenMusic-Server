@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { Title, useNotify } from 'react-admin'
 import {
-  Title,
-  useDataProvider,
-  useNotify,
   Button,
   Card,
   CardContent,
@@ -27,18 +25,12 @@ import {
   DialogContent,
   DialogActions,
 } from '@material-ui/core'
-import {
-  Save as BackupIcon,
-  Undo as RestoreIcon,
-  Delete as DeleteIcon,
-  Download as DownloadIcon,
-  Settings as SettingsIcon,
-  CloudDownload as CloudDownloadIcon,
-  CloudUpload as CloudUploadIcon,
-} from '@material-ui/icons'
+import SettingsIcon from '@material-ui/icons/Settings'
+import SaveIcon from '@material-ui/icons/Save'
+import UndoIcon from '@material-ui/icons/Undo'
+import CloudUploadIcon from '@material-ui/icons/CloudUpload'
 
 const BackupPage = () => {
-  const dataProvider = useDataProvider()
   const notify = useNotify()
   const [backups, setBackups] = useState([])
   const [config, setConfig] = useState({
@@ -47,37 +39,34 @@ const BackupPage = () => {
     keep_count: 7,
     interval: 'daily',
   })
-  const [loading, setLoading] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [importFile, setImportFile] = useState(null)
   const [importing, setImporting] = useState(false)
 
+  const getToken = () => localStorage.getItem('token')
+
   const loadBackups = useCallback(async () => {
     try {
-      const response = await fetch('/api/backup/list', {
-        headers: {
-          'X-ND-Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
+      const res = await fetch('/api/backup/list', {
+        headers: { 'X-ND-Authorization': 'Bearer ' + getToken() },
       })
-      const data = await response.json()
+      const data = await res.json()
       setBackups(data.data || [])
     } catch (err) {
-      console.error('Failed to load backups:', err)
+      // ignore
     }
   }, [])
 
   const loadConfig = useCallback(async () => {
     try {
-      const response = await fetch('/api/backup/config', {
-        headers: {
-          'X-ND-Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
+      const res = await fetch('/api/backup/config', {
+        headers: { 'X-ND-Authorization': 'Bearer ' + getToken() },
       })
-      const data = await response.json()
+      const data = await res.json()
       if (data.data) setConfig(data.data)
     } catch (err) {
-      console.error('Failed to load config:', err)
+      // ignore
     }
   }, [])
 
@@ -89,19 +78,17 @@ const BackupPage = () => {
   const handleExport = async () => {
     setExporting(true)
     try {
-      const response = await fetch('/api/backup/export', {
+      const res = await fetch('/api/backup/export', {
         method: 'POST',
-        headers: {
-          'X-ND-Authorization': `Bearer ${localStorage.getItem('token')}`,
-        },
+        headers: { 'X-ND-Authorization': 'Bearer ' + getToken() },
       })
-      const data = await response.json()
+      const data = await res.json()
       if (data.data) {
         notify('备份成功: ' + data.data.file_path, 'success')
         loadBackups()
       }
     } catch (err) {
-      notify('备份失败: ' + err.message, 'error')
+      notify('备份失败', 'error')
     }
     setExporting(false)
   }
@@ -112,13 +99,13 @@ const BackupPage = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-ND-Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'X-ND-Authorization': 'Bearer ' + getToken(),
         },
         body: JSON.stringify(config),
       })
       notify('配置已保存', 'success')
     } catch (err) {
-      notify('保存失败: ' + err.message, 'error')
+      notify('保存失败', 'error')
     }
   }
 
@@ -126,11 +113,11 @@ const BackupPage = () => {
     if (!importFile) return
     setImporting(true)
     try {
-      const response = await fetch('/api/backup/import', {
+      const res = await fetch('/api/backup/import', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-ND-Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'X-ND-Authorization': 'Bearer ' + getToken(),
         },
         body: JSON.stringify({
           file_path: importFile.path,
@@ -138,18 +125,18 @@ const BackupPage = () => {
           overwrite_users: true,
         }),
       })
-      const data = await response.json()
+      const data = await res.json()
       if (data.data) {
         const r = data.data
         notify(
-          `恢复成功! 用户:${r.users_imported} 歌单:${r.playlists_imported} 收藏:${r.annotations_imported}`,
+          '恢复成功! 用户:' + r.users_imported + ' 歌单:' + r.playlists_imported + ' 收藏:' + r.annotations_imported,
           'success'
         )
         setImportDialogOpen(false)
         setImportFile(null)
       }
     } catch (err) {
-      notify('恢复失败: ' + err.message, 'error')
+      notify('恢复失败', 'error')
     }
     setImporting(false)
   }
@@ -161,25 +148,27 @@ const BackupPage = () => {
   }
 
   const formatDate = (dateStr) => {
-    const d = new Date(dateStr)
-    return d.toLocaleString('zh-CN')
+    try {
+      return new Date(dateStr).toLocaleString('zh-CN')
+    } catch (e) {
+      return dateStr
+    }
   }
 
   return (
-    <>
+    <div>
       <Title title="备份与恢复" />
       <Box p={2}>
-        {/* 快捷操作 */}
         <Card style={{ marginBottom: 16 }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
-              💾 备份操作
+              备份操作
             </Typography>
-            <Box display="flex" gap={2} flexWrap="wrap">
+            <Box display="flex" style={{ gap: 16 }} flexWrap="wrap">
               <Button
                 variant="contained"
                 color="primary"
-                startIcon={exporting ? <CircularProgress size={20} /> : <BackupIcon />}
+                startIcon={exporting ? <CircularProgress size={20} /> : <SaveIcon />}
                 onClick={handleExport}
                 disabled={exporting}
               >
@@ -187,7 +176,7 @@ const BackupPage = () => {
               </Button>
               <Button
                 variant="outlined"
-                startIcon={<RestoreIcon />}
+                startIcon={<UndoIcon />}
                 onClick={() => setImportDialogOpen(true)}
               >
                 恢复备份
@@ -199,14 +188,13 @@ const BackupPage = () => {
           </CardContent>
         </Card>
 
-        {/* 定时备份配置 */}
         <Card style={{ marginBottom: 16 }}>
           <CardContent>
             <Typography variant="h6" gutterBottom>
               <SettingsIcon style={{ verticalAlign: 'middle', marginRight: 8 }} />
               定时备份配置
             </Typography>
-            <Box display="flex" flexDirection="column" gap={2} maxWidth={400}>
+            <Box display="flex" flexDirection="column" style={{ gap: 16, maxWidth: 400 }}>
               <FormControlLabel
                 control={
                   <Switch
@@ -241,11 +229,10 @@ const BackupPage = () => {
           </CardContent>
         </Card>
 
-        {/* 备份列表 */}
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom>
-              📋 备份文件列表
+              备份文件列表
             </Typography>
             {backups.length === 0 ? (
               <Alert severity="info">暂无备份文件，点击上方"立即备份"创建第一个备份</Alert>
@@ -261,19 +248,19 @@ const BackupPage = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {backups.map((backup) => (
-                      <TableRow key={backup.name}>
+                    {backups.map((bk) => (
+                      <TableRow key={bk.name}>
                         <TableCell>
-                          <Chip icon={<BackupIcon />} label={backup.name} size="small" variant="outlined" />
+                          <Chip label={bk.name} size="small" variant="outlined" />
                         </TableCell>
-                        <TableCell>{formatSize(backup.size)}</TableCell>
-                        <TableCell>{formatDate(backup.created_at)}</TableCell>
+                        <TableCell>{formatSize(bk.size)}</TableCell>
+                        <TableCell>{formatDate(bk.created_at)}</TableCell>
                         <TableCell align="right">
                           <IconButton
                             size="small"
                             title="恢复此备份"
                             onClick={() => {
-                              setImportFile(backup)
+                              setImportFile(bk)
                               setImportDialogOpen(true)
                             }}
                           >
@@ -290,7 +277,6 @@ const BackupPage = () => {
         </Card>
       </Box>
 
-      {/* 恢复确认对话框 */}
       <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>恢复备份</DialogTitle>
         <DialogContent>
@@ -315,13 +301,13 @@ const BackupPage = () => {
             color="primary"
             variant="contained"
             disabled={!importFile || importing}
-            startIcon={importing ? <CircularProgress size={20} /> : <RestoreIcon />}
+            startIcon={importing ? <CircularProgress size={20} /> : <UndoIcon />}
           >
             {importing ? '恢复中...' : '确认恢复'}
           </Button>
         </DialogActions>
       </Dialog>
-    </>
+    </div>
   )
 }
 
