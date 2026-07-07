@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
+	. "github.com/Masterminds/squirrel"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
-	". "github.com/Masterminds/squirrel"
 	"github.com/navidrome/navidrome/model/id"
 )
 
