@@ -82,12 +82,10 @@ jobs:
           echo "ImageID: ${{ steps.docker-push.outputs.imageid }}"
           echo "=== Tags pushed ==="
           echo "${{ steps.meta.outputs.tags }}"
-          echo "=== Attempting to pull and verify ==="
-          DIGEST="${{ steps.docker-push.outputs.digest }}"
-          if [ -n "$DIGEST" ]; then
-            echo "Pulling by digest: $DIGEST"
-            docker pull "ghcr.io/${{ github.repository }}@$DIGEST" || echo "Pull by digest failed"
-          fi
+          echo "=== Attempting to pull latest tag ==="
+          docker pull "ghcr.io/${{ github.repository }}:latest" && echo "PULL SUCCESS" || echo "PULL FAILED"
+          echo "=== Image inspect ==="
+          docker images --digests "ghcr.io/${{ github.repository }}" | head -5
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
