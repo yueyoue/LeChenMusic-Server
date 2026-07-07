@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"context"
+	"crypto/md5"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,7 +13,6 @@ import (
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/id"
-	"github.com/navidrome/navidrome/persistence"
 )
 
 // [LeChenMusic-START:audiobook]
@@ -84,11 +84,14 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 
 		// This directory is an audiobook
 		relPath, _ := filepath.Rel(library.Path, path)
-		bookHash := persistence.AudiobookHash(relPath)
+		bookHash := audiobookHash(relPath)
 
 		// Check if already exists
 		existing, existErr := repo.GetAll(model.QueryOptions{
-			Filters: model.And{model.Eq{"library_id": library.ID}, model.Eq{"path": relPath}},
+			Filters: map[string]interface{}{
+				"library_id": library.ID,
+				"path":       relPath,
+			},
 		})
 		if existErr == nil && len(existing) > 0 {
 			book := existing[0]
@@ -183,7 +186,6 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 		return audioFiles[i].name < audioFiles[j].name
 	})
 
-	var totalDuration int
 	var totalSize int64
 	for i, af := range audioFiles {
 		chapterPath := filepath.Join(audiobookPath, af.name)
@@ -199,7 +201,7 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 			AudiobookID:   book.ID,
 			Title:         chapterTitle,
 			ChapterNumber: i + 1,
-			Duration:      0, // TODO: parse from audio metadata
+			Duration:      0,
 			Format:        format,
 			FileSize:      fileSize,
 			Path:          af.path,
@@ -212,11 +214,15 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 	}
 
 	book.ChapterCount = len(audioFiles)
-	book.TotalDuration = totalDuration
+	book.TotalDuration = 0
 	book.Size = totalSize
 	if book.Title == "" {
 		book.Title = filepath.Base(audiobookPath)
 	}
+}
+
+func audiobookHash(path string) string {
+	return fmt.Sprintf("%x", md5.Sum([]byte(path)))
 }
 
 func parseAudiobookDirName(name string) (author, title string) {
