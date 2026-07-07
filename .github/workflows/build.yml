@@ -65,6 +65,7 @@ jobs:
             type=sha,prefix=
 
       - name: Build and push Docker image
+        id: docker-push
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -72,6 +73,21 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Verify GHCR push
+        run: |
+          echo "=== Docker Push Result ==="
+          echo "Outcome: ${{ steps.docker-push.outcome }}"
+          echo "Digest: ${{ steps.docker-push.outputs.digest }}"
+          echo "ImageID: ${{ steps.docker-push.outputs.imageid }}"
+          echo "=== Tags pushed ==="
+          echo "${{ steps.meta.outputs.tags }}"
+          echo "=== Attempting to pull and verify ==="
+          DIGEST="${{ steps.docker-push.outputs.digest }}"
+          if [ -n "$DIGEST" ]; then
+            echo "Pulling by digest: $DIGEST"
+            docker pull "ghcr.io/${{ github.repository }}@$DIGEST" || echo "Pull by digest failed"
+          fi
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
