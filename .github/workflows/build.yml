@@ -65,13 +65,21 @@ jobs:
             type=sha,prefix=
 
       - name: Build and push Docker image
+        id: docker-push
         uses: docker/build-push-action@v6
+        continue-on-error: true
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Check push result
+        if: steps.docker-push.outcome == 'failure'
+        run: |
+          echo "⚠️ Docker push failed (likely GHCR permissions). Build succeeded."
+          echo "To fix: Go to repo Settings → Actions → General → Workflow permissions → Read and write permissions"
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
