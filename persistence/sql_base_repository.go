@@ -246,6 +246,17 @@ func (r sqlRepository) applyLibraryFilter(sq SelectBuilder, tableName ...string)
 		"SELECT ul.library_id FROM user_library ul WHERE ul.user_id = ?)", user.ID))
 }
 
+// excludeAudiobookLibraries adds a filter to exclude content from audiobook libraries.
+// This is used by music-specific repositories (album, mediafile, artist) to prevent
+// audiobook content from appearing in music views.
+func (r sqlRepository) excludeAudiobookLibraries(sq SelectBuilder, tableName ...string) SelectBuilder {
+	table := r.tableName
+	if len(tableName) > 0 {
+		table = tableName[0]
+	}
+	return sq.Where(Expr(table+".library_id NOT IN (SELECT id FROM library WHERE media_type = 'audiobook')"))
+}
+
 // userSeesAllLibraries reports whether the visible set already covers every library, so a
 // library filter would exclude nothing.
 func (r sqlRepository) userSeesAllLibraries(visible []int) bool {
