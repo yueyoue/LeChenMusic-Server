@@ -74,6 +74,7 @@ func (api *Router) routes() http.Handler {
 		api.addRadioRoute(r)
 		api.addAudiobookRoute(r) // [LeChenMusic] audiobook routes
 		api.addBackupRoute(r)    // [LeChenMusic] backup & restore routes
+		api.addVersionRoute(r)   // [LeChenMusic] version check
 		api.R(r, "/tag", model.Tag{}, true)
 		if conf.Server.EnableSharing {
 			api.RX(r, "/share", api.share.NewRepository, true)
@@ -267,3 +268,4 @@ func adminOnlyMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
