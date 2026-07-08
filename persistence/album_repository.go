@@ -223,7 +223,8 @@ func (r *albumRepository) selectAlbum(options ...model.QueryOptions) SelectBuild
 	sql := r.newSelect(options...).Columns("album.*", "library.path as library_path", "library.name as library_name").
 		LeftJoin("library on album.library_id = library.id")
 	sql = r.withAnnotation(sql, "album.id")
-	return r.applyLibraryFilter(sql)
+	sql = r.applyLibraryFilter(sql)
+	return r.excludeAudiobookLibraries(sql)
 }
 
 func (r *albumRepository) Get(id string) (*model.Album, error) {
