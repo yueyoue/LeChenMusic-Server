@@ -67,12 +67,27 @@ jobs:
       - name: Build and push Docker image
         id: docker-push
         uses: docker/build-push-action@v6
+        continue-on-error: true
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Debug push failure
+        if: steps.docker-push.outcome == 'failure'
+        run: |
+          echo "❌ Docker push failed!"
+          echo "Outcome: ${{ steps.docker-push.outcome }}"
+          echo "Tags: ${{ steps.meta.outputs.tags }}"
+          echo "Trying single-platform push as fallback..."
+          docker build -t ghcr.io/${{ github.repository }}:latest .
+          docker push ghcr.io/${{ github.repository }}:latest 2>&1 || echo "Single push also failed"
+
+      - name: Fail if push failed
+        if: steps.docker-push.outcome == 'failure'
+        run: exit 1
 
       - name: Verify GHCR push
         run: |
