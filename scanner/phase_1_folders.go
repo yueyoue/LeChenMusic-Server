@@ -29,8 +29,12 @@ import (
 func createPhaseFolders(ctx context.Context, state *scanState, ds model.DataStore, cw artwork.CacheWarmer) *phaseFolders {
 	var jobs []*scanJob
 
-	// Create scan jobs for all libraries
+	// Create scan jobs for all libraries (skip audiobook libraries - they are scanned in Phase 5)
 	for _, lib := range state.libraries {
+		// Skip audiobook libraries - they have their own scanner
+		if lib.MediaType == "audiobook" {
+			continue
+		}
 		// Get target folders for this library if selective scan
 		var targetFolders []string
 		if state.isSelectiveScan() {
