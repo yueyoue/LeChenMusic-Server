@@ -417,6 +417,9 @@
         "size": "大小",
         "created_at": "创建时间"
       }
+    },
+    "audiobook": {
+      "name": "有声书"
     }
   },
   "ra": {
@@ -642,7 +645,8 @@
     "albumList": "专辑",
     "playlists": "歌单",
     "sharedPlaylists": "共享的歌单",
-    "about": "关于"
+    "about": "关于",
+    "audiobook": "有声书"
   },
   "player": {
     "playListsText": "播放队列",

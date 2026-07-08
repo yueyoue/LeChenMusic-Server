@@ -19,6 +19,7 @@ import album from './album'
 import artist from './artist'
 import playlist from './playlist'
 import radio from './radio'
+import audiobook from './audiobook'
 import share from './share'
 import library from './library'
 import plugin from './plugin'
@@ -130,6 +131,10 @@ const Admin = (props) => {
         <Resource
           name="radio"
           {...(permissions === 'admin' ? radio.admin : radio.all)}
+        />,
+        <Resource
+          name="audiobook"
+          {...(permissions === 'admin' ? audiobook.admin : audiobook.all)}
         />,
         config.enableSharing && <Resource name="share" {...share} />,
         <Resource

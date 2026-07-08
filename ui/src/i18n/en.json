@@ -419,6 +419,9 @@
         "size": "Size",
         "created_at": "Created At"
       }
+    },
+    "audiobook": {
+      "name": "Audiobook |||| Audiobooks"
     }
   },
   "ra": {
@@ -644,7 +647,8 @@
     "albumList": "Albums",
     "playlists": "Playlists",
     "sharedPlaylists": "Shared Playlists",
-    "about": "About"
+    "about": "About",
+    "audiobook": "Audiobooks"
   },
   "player": {
     "playListsText": "Play Queue",
