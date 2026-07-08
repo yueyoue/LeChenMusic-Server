@@ -94,6 +94,7 @@ func (r *libraryRepository) Put(l *model.Library) error {
 			"path":              l.Path,
 			"remote_path":       l.RemotePath,
 			"default_new_users": l.DefaultNewUsers,
+			"media_type":        l.MediaType,
 			"updated_at":        l.UpdatedAt,
 		}
 		sq := Update(r.tableName).SetMap(cols).Where(Eq{"id": l.ID})
@@ -354,3 +355,4 @@ func (r *libraryRepository) Update(id string, entity any, cols ...string) error 
 
 var _ model.LibraryRepository = (*libraryRepository)(nil)
 var _ rest.Repository = (*libraryRepository)(nil)
+
