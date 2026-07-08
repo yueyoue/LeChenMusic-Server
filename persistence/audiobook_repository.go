@@ -94,7 +94,12 @@ func (r *audiobookRepository) PutChapter(chapter *model.AudiobookChapter) error 
 		chapter.ID = id.NewRandom()
 	}
 	chapter.CreatedAt = time.Now()
-	_, err := r.put(chapter.ID, chapter)
+	values, err := toSQLArgs(chapter)
+	if err != nil {
+		return err
+	}
+	sq := Insert("audiobook_chapter").SetMap(values)
+	_, err = r.executeSQL(sq)
 	if err == nil {
 		r.updateAudiobookStats(chapter.AudiobookID)
 	}
@@ -279,3 +284,4 @@ func AudiobookCoverExists(path string) bool {
 }
 
 // [LeChenMusic-END:audiobook]
+
