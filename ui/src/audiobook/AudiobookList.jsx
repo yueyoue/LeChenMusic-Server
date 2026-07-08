@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from 'react'
 import {
-  List,
-  SimpleList,
-  useDataProvider,
   useTranslate,
   useRefresh,
 } from 'react-admin'
@@ -13,11 +10,11 @@ import {
   Box,
   Chip,
   makeStyles,
-  useMediaQuery,
   IconButton,
 } from '@material-ui/core'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
 import PlayArrowIcon from '@material-ui/icons/PlayArrow'
+import { useLocation } from 'react-router-dom'
 
 const useStyles = makeStyles((theme) => ({
   card: {
@@ -56,15 +53,25 @@ const useStyles = makeStyles((theme) => ({
 const AudiobookList = () => {
   const classes = useStyles()
   const translate = useTranslate()
+  const location = useLocation()
   const [audiobooks, setAudiobooks] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+
+  // Parse genre from URL query
+  const params = new URLSearchParams(location.search)
+  const genreFilter = params.get('genre')
+  const isStarred = location.pathname.includes('/starred')
 
   useEffect(() => {
     const fetchAudiobooks = async () => {
       try {
         const token = localStorage.getItem('token')
-        const response = await fetch('/api/audiobook', {
+        let url = '/api/audiobook'
+        if (isStarred) {
+          url = '/api/audiobook/starred'
+        }
+        const response = await fetch(url, {
           headers: {
             'X-ND-Authorization': `Bearer ${token}`,
           },
@@ -73,7 +80,12 @@ const AudiobookList = () => {
           throw new Error('Failed to fetch')
         }
         const data = await response.json()
-        setAudiobooks(data.data || [])
+        let books = data.data || []
+        // Filter by genre if specified
+        if (genreFilter) {
+          books = books.filter((b) => b.genre === genreFilter)
+        }
+        setAudiobooks(books)
       } catch (err) {
         setError(err.message)
       } finally {
@@ -81,7 +93,13 @@ const AudiobookList = () => {
       }
     }
     fetchAudiobooks()
-  }, [])
+  }, [genreFilter, isStarred])
+
+  const getTitle = () => {
+    if (isStarred) return '⭐ 收藏的有声书'
+    if (genreFilter) return `📖 ${genreFilter}`
+    return '📖 全部有声书'
+  }
 
   if (loading) {
     return (
@@ -104,7 +122,7 @@ const AudiobookList = () => {
       <Box className={classes.empty}>
         <MenuBookIcon style={{ fontSize: 48, opacity: 0.3 }} />
         <Typography style={{ marginTop: 8 }}>
-          暂无有声书
+          {genreFilter ? `暂无${genreFilter}` : '暂无有声书'}
         </Typography>
       </Box>
     )
@@ -113,7 +131,7 @@ const AudiobookList = () => {
   return (
     <Box p={1}>
       <Typography variant="h6" style={{ padding: '8px 16px', fontWeight: 600 }}>
-        📖 有声书 ({audiobooks.length})
+        {getTitle()} ({audiobooks.length})
       </Typography>
       {audiobooks.map((book) => (
         <Card
@@ -121,7 +139,6 @@ const AudiobookList = () => {
           className={classes.card}
           elevation={0}
           onClick={() => {
-            // Navigate to audiobook detail - for now just show info
             window.location.hash = `#/audiobook/${book.id}`
           }}
         >
