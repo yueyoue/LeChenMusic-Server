@@ -20,6 +20,7 @@ import artist from './artist'
 import playlist from './playlist'
 import radio from './radio'
 import audiobook from './audiobook'
+import narrator from './narrator'
 import share from './share'
 import library from './library'
 import plugin from './plugin'
@@ -135,6 +136,10 @@ const Admin = (props) => {
         <Resource
           name="audiobook"
           {...(permissions === 'admin' ? audiobook.admin : audiobook.all)}
+        />,
+        <Resource
+          name="narrator"
+          {...(permissions === 'admin' ? narrator.admin : narrator.all)}
         />,
         config.enableSharing && <Resource name="share" {...share} />,
         <Resource
