@@ -136,6 +136,7 @@ func mediaFileRecentlyAddedSort() string {
 func (r *mediaFileRepository) CountAll(options ...model.QueryOptions) (int64, error) {
 	query := r.newSelect()
 	query = r.applyLibraryFilter(query)
+	query = r.excludeAudiobookLibraries(query)
 	// The annotation join is expensive with count(distinct) and pointless unless a filter uses it.
 	if filtersNeedAnnotation(r.applyFilters(query, options...)) {
 		query = r.withAnnotation(query, "media_file.id")
