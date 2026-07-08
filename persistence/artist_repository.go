@@ -178,8 +178,9 @@ func artistLibraryIdFilter(_ string, value any) Sqlizer {
 func (r *artistRepository) applyLibraryFilterToArtistQuery(query SelectBuilder) SelectBuilder {
 	user := loggedUser(r.ctx)
 	// Join with library_artist first to ensure only artists with content in libraries are included
-	// Exclude artists with empty stats (no actual content in the library)
-	query = query.Join("library_artist on library_artist.artist_id = artist.id")
+	// Exclude artists from audiobook libraries
+	query = query.Join("library_artist on library_artist.artist_id = artist.id").
+		Join("library on library.id = library_artist.library_id AND library.media_type != 'audiobook'")
 	//query = query.Join("library_artist on library_artist.artist_id = artist.id AND library_artist.stats != '{}'")
 
 	// Admin users see all artists from all libraries, no additional filtering needed
