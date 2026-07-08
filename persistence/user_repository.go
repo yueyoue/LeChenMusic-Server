@@ -76,7 +76,7 @@ func (r *userRepository) selectUserWithLibraries(options ...model.QueryOptions) 
 				'name', library.name,
 				'path', library.path,
 				'remote_path', library.remote_path,
-				'media_type', library.media_type,
+				'mediaType', library.media_type,
 				'last_scan_at', library.last_scan_at,
 				'last_scan_started_at', library.last_scan_started_at,
 				'full_scan_in_progress', library.full_scan_in_progress,
