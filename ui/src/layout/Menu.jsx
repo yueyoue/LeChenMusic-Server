@@ -217,7 +217,7 @@ const Menu = ({ dense = false }) => {
           sidebarIsOpen={open}
           dense={dense}
         />
-        {config.devSidebarPlaylists {config.devSidebarPlaylists && open ? ({config.devSidebarPlaylists && open ? ( open ? (
+        {config.devSidebarPlaylists && open ? (
         <>
           <Divider />
           <PlaylistsSubMenu
@@ -235,4 +235,5 @@ const Menu = ({ dense = false }) => {
 }
 
 export default Menu
+
 
