@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import { useTranslate, MenuItemLink, getResources } from 'react-admin'
 import ViewListIcon from '@material-ui/icons/ViewList'
 import AlbumIcon from '@material-ui/icons/Album'
+import MenuBookIcon from '@material-ui/icons/MenuBook'
 import SubMenu from './SubMenu'
 import { humanize, pluralize } from 'inflection'
 import albumLists from '../album/albumLists'
@@ -53,9 +54,9 @@ const Menu = ({ dense = false }) => {
   const classes = useStyles({ addPadding: queue.length > 0 })
   const resources = useSelector(getResources)
 
-  // TODO State is not persisted in mobile when you close the sidebar menu. Move to redux?
   const [state, setState] = useState({
     menuAlbumList: true,
+    menuAudiobook: true,
     menuPlaylists: true,
     menuSharedPlaylists: true,
   })
@@ -126,6 +127,87 @@ const Menu = ({ dense = false }) => {
         )}
       </SubMenu>
       {resources.filter(subItems(undefined)).map(renderResourceMenuItemLink)}
+      <SubMenu
+        handleToggle={() => handleToggle('menuAudiobook')}
+        isOpen={state.menuAudiobook}
+        sidebarIsOpen={open}
+        name="menu.audiobook"
+        icon={<MenuBookIcon />}
+        dense={dense}
+      >
+        <MenuItemLink
+          to="/audiobook"
+          activeClassName={classes.active}
+          primaryText="全部有声书"
+          leftIcon={<span style={{ fontSize: 16 }}>📖</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
+        <MenuItemLink
+          to="/audiobook?genre=有声读物"
+          activeClassName={classes.active}
+          primaryText="有声读物"
+          leftIcon={<span style={{ fontSize: 16 }}>📖</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
+        <MenuItemLink
+          to="/audiobook?genre=评书"
+          activeClassName={classes.active}
+          primaryText="评书"
+          leftIcon={<span style={{ fontSize: 16 }}>🎤</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
+        <MenuItemLink
+          to="/audiobook?genre=相声"
+          activeClassName={classes.active}
+          primaryText="相声"
+          leftIcon={<span style={{ fontSize: 16 }}>😂</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
+        <MenuItemLink
+          to="/audiobook?genre=戏曲"
+          activeClassName={classes.active}
+          primaryText="戏曲"
+          leftIcon={<span style={{ fontSize: 16 }}>🎭</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
+        <MenuItemLink
+          to="/audiobook?genre=儿童"
+          activeClassName={classes.active}
+          primaryText="儿童"
+          leftIcon={<span style={{ fontSize: 16 }}>👶</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
+        <MenuItemLink
+          to="/audiobook?genre=教育"
+          activeClassName={classes.active}
+          primaryText="教育"
+          leftIcon={<span style={{ fontSize: 16 }}>🎓</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
+        <MenuItemLink
+          to="/audiobook/starred"
+          activeClassName={classes.active}
+          primaryText="收藏"
+          leftIcon={<span style={{ fontSize: 16 }}>⭐</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
+      </SubMenu>
+      <MenuItemLink
+        to="/narrator"
+        activeClassName={classes.active}
+        primaryText="演播者"
+        leftIcon={<span style={{ fontSize: 18 }}>🎤</span>}
+        sidebarIsOpen={open}
+        dense={dense}
+      />
       {config.devSidebarPlaylists && open ? (
         <>
           <Divider />
