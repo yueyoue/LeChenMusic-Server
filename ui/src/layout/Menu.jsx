@@ -6,6 +6,7 @@ import { useTranslate, MenuItemLink, getResources } from 'react-admin'
 import ViewListIcon from '@material-ui/icons/ViewList'
 import AlbumIcon from '@material-ui/icons/Album'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
+import SystemUpdateIcon from '@material-ui/icons/SystemUpdate'
 import SubMenu from './SubMenu'
 import { humanize, pluralize } from 'inflection'
 import albumLists from '../album/albumLists'
@@ -208,7 +209,15 @@ const Menu = ({ dense = false }) => {
         sidebarIsOpen={open}
         dense={dense}
       />
-      {config.devSidebarPlaylists && open ? (
+      <MenuItemLink
+          to="/settings/version"
+          activeClassName={classes.active}
+          primaryText="版本更新"
+          leftIcon={<span style={{ fontSize: 18 }}>⚙️</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
+        {config.devSidebarPlaylists {config.devSidebarPlaylists && open ? ({config.devSidebarPlaylists && open ? ( open ? (
         <>
           <Divider />
           <PlaylistsSubMenu
@@ -226,3 +235,4 @@ const Menu = ({ dense = false }) => {
 }
 
 export default Menu
+
