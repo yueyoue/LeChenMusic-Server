@@ -6,7 +6,7 @@ import {
 import SystemUpdateIcon from '@material-ui/icons/SystemUpdate'
 import CheckCircleIcon from '@material-ui/icons/CheckCircle'
 import ErrorIcon from '@material-ui/icons/Error'
-import ContentCopyIcon from '@material-ui/icons/ContentCopy'
+import FileCopyIcon from '@material-ui/icons/FileCopy'
 
 const useStyles = makeStyles((theme) => ({
   root: { padding: 16, maxWidth: 600 },
@@ -209,7 +209,7 @@ const VersionPage = () => {
                     {updateInfo.updateCommand}
                   </Typography>
                   <Box className={classes.copyBtn} onClick={copyCommand}>
-                    <ContentCopyIcon style={{ fontSize: 16, color: 'text.secondary' }} />
+                    <FileCopyIcon style={{ fontSize: 16, color: 'text.secondary' }} />
                   </Box>
                 </Box>
                 {copied && (
@@ -227,3 +227,4 @@ const VersionPage = () => {
 }
 
 export default VersionPage
+
