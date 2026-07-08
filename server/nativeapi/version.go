@@ -7,11 +7,16 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/navidrome/navidrome/consts"
 	"github.com/navidrome/navidrome/log"
 )
 
 // [LeChenMusic-START:version-check]
+
+// These are set via ldflags at build time
+var (
+	gitSha = "dev"
+	gitTag = "dev"
+)
 
 func (api *Router) addVersionRoute(r chi.Router) {
 	r.Route("/version", func(r chi.Router) {
@@ -21,7 +26,7 @@ func (api *Router) addVersionRoute(r chi.Router) {
 }
 
 type versionInfo struct {
-	CurrentSHA   string `json:"currentSha"`
+	CurrentSHA   string `json:"currentSHA"`
 	CurrentTag   string `json:"currentTag"`
 	ServerName   string `json:"serverName"`
 	ServerURL    string `json:"serverUrl"`
@@ -30,8 +35,8 @@ type versionInfo struct {
 
 func getVersion(w http.ResponseWriter, r *http.Request) {
 	info := versionInfo{
-		CurrentSHA:   consts.GitSHA,
-		CurrentTag:   consts.GitTag,
+		CurrentSHA:   gitSha,
+		CurrentTag:   gitTag,
 		ServerName:   "LeChenMusic",
 		ServerURL:    "https://github.com/yueyoue/LeChenMusic-Server",
 		GitHubAPIURL: "https://api.github.com/repos/yueyoue/LeChenMusic-Server",
@@ -54,7 +59,6 @@ type updateInfo struct {
 func checkUpdate(w http.ResponseWriter, r *http.Request) {
 	client := &http.Client{Timeout: 10 * time.Second}
 
-	// Get latest release from GitHub
 	req, _ := http.NewRequest("GET", "https://api.github.com/repos/yueyoue/LeChenMusic-Server/releases/latest", nil)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
@@ -67,7 +71,6 @@ func checkUpdate(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		// No releases yet, fall back to latest commit
 		checkLatestCommit(w, r)
 		return
 	}
@@ -85,7 +88,7 @@ func checkUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	currentSHA := consts.GitSHA
+	currentSHA := gitSha
 	hasUpdate := release.TagName != currentSHA && release.TagName != ""
 
 	info := updateInfo{
@@ -133,7 +136,7 @@ func checkLatestCommit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	latest := commits[0]
-	currentSHA := consts.GitSHA
+	currentSHA := gitSha
 	shortSHA := latest.SHA
 	if len(shortSHA) > 8 {
 		shortSHA = shortSHA[:8]
