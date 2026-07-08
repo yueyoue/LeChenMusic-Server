@@ -188,7 +188,8 @@ func (r *mediaFileRepository) selectMediaFile(options ...model.QueryOptions) Sel
 		LeftJoin("library on media_file.library_id = library.id")
 	sql = r.withAnnotation(sql, "media_file.id")
 	sql = r.withBookmark(sql, "media_file.id")
-	return r.applyLibraryFilter(sql)
+	sql = r.applyLibraryFilter(sql)
+	return r.excludeAudiobookLibraries(sql)
 }
 
 func (r *mediaFileRepository) Get(id string) (*model.MediaFile, error) {
