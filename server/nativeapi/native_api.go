@@ -61,16 +61,14 @@ func (api *Router) routes() http.Handler {
 	api.RX(r, "/translation", newTranslationRepository, false)
 
 	// Public audiobook cover (accepts token as query param for <img> tags)
-	r.Route("/audiobook", func(r chi.Router) {
-		r.Get("/{id}/cover", func(w http.ResponseWriter, r *http.Request) {
-			// Try to authenticate from query param
-			token := r.URL.Query().Get("token")
-			if token != "" {
-				r.Header.Set("Authorization", "Bearer "+token)
-			}
-			h := &audiobookHandler{ds: api.ds}
-			h.cover(w, r)
-		})
+	r.Get("/audiobook/{id}/cover", func(w http.ResponseWriter, req *http.Request) {
+		// Manually authenticate from query param
+		token := req.URL.Query().Get("token")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		h := &audiobookHandler{ds: api.ds}
+		h.cover(w, req)
 	})
 
 	// Protected
