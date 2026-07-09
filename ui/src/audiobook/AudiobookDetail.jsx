@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import {
   Typography, Box, Card, CardContent, makeStyles, IconButton,
-  Chip, Button, LinearProgress, Tooltip
+  Chip, Button, LinearProgress, Tooltip, Dialog, DialogTitle,
+  DialogContent, DialogActions, TextField
 } from '@material-ui/core'
 import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import PauseIcon from '@material-ui/icons/Pause'
@@ -12,6 +13,7 @@ import ArrowBackIcon from '@material-ui/icons/ArrowBack'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
 import AccessTimeIcon from '@material-ui/icons/AccessTime'
 import PersonIcon from '@material-ui/icons/Person'
+import EditIcon from '@material-ui/icons/Edit'
 
 const useStyles = makeStyles((theme) => ({
   root: { padding: 16 },
@@ -51,6 +53,7 @@ const useStyles = makeStyles((theme) => ({
   progress: { marginBottom: 16 },
   backBtn: { marginBottom: 16 },
   sectionTitle: { fontSize: 16, fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 },
+  topBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
 }))
 
 const formatDuration = (seconds) => {
@@ -68,6 +71,21 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
   const [progress, setProgress] = useState(null)
   const [loading, setLoading] = useState(true)
   const [bgColor, setBgColor] = useState(null)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editForm, setEditForm] = useState({})
+  const [saving, setSaving] = useState(false)
+
+  const getToken = () => localStorage.getItem('token')
+
+  const getAuthHeaders = () => ({
+    'X-ND-Authorization': `Bearer ${getToken()}`
+  })
+
+  // Build cover URL with auth token as query param (for <img> tags which can't send headers)
+  const getCoverUrl = (bookId) => {
+    const token = getToken()
+    return `/api/audiobook/${bookId}/cover${token ? '?token=' + token : ''}`
+  }
 
   // Extract dominant color from cover
   const extractColor = (imageUrl) => {
@@ -92,8 +110,7 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const token = localStorage.getItem('token')
-        const headers = { 'X-ND-Authorization': `Bearer ${token}` }
+        const headers = getAuthHeaders()
         const [bookRes, progressRes] = await Promise.all([
           fetch(`/api/audiobook/${id}`, { headers }),
           fetch(`/api/audiobook/${id}/progress`, { headers }),
@@ -103,9 +120,8 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
           if (data.data) {
             setBook(data.data.book)
             setChapters(data.data.chapters || [])
-            if (data.data.book?.coverPath) {
-              extractColor(`/api/audiobook/${id}/cover`)
-            }
+            // Always try to extract color from cover
+            extractColor(getCoverUrl(id))
           }
         }
         if (progressRes.ok) {
@@ -138,6 +154,43 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
     if (chapters.length > 0) handlePlay(chapters[0])
   }
 
+  const handleEditOpen = () => {
+    setEditForm({
+      title: book.title || '',
+      author: book.author || '',
+      narrator: book.narrator || '',
+      description: book.description || '',
+      genre: book.genre || '',
+      series: book.series || '',
+    })
+    setEditOpen(true)
+  }
+
+  const handleEditSave = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/audiobook/${id}/metadata`, {
+        method: 'PUT',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(editForm),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data) {
+          setBook(data.data)
+        }
+        setEditOpen(false)
+      }
+    } catch (err) {
+      console.error('Failed to save:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) {
     return <Box p={4} textAlign="center"><Typography>Loading...</Typography></Box>
   }
@@ -148,18 +201,30 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
 
   return (
     <Box className={classes.root} style={bgColor ? { background: bgColor, borderRadius: 12, padding: 16 } : {}}>
-      <IconButton className={classes.backBtn} onClick={onBack}>
-        <ArrowBackIcon />
-      </IconButton>
+      <Box className={classes.topBar}>
+        <IconButton className={classes.backBtn} onClick={onBack || (() => { window.location.hash = '#/audiobook' })}>
+          <ArrowBackIcon />
+        </IconButton>
+        <Tooltip title="编辑有声书信息">
+          <IconButton onClick={handleEditOpen}>
+            <EditIcon />
+          </IconButton>
+        </Tooltip>
+      </Box>
 
       <Box className={classes.header}>
-        {book.coverPath ? (
-          <img src={`/api/audiobook/${book.id}/cover`} alt={book.title} className={classes.cover} />
-        ) : (
-          <Box className={classes.coverPlaceholder}>
-            <MenuBookIcon style={{ fontSize: 48, opacity: 0.3 }} />
-          </Box>
-        )}
+        <img
+          src={getCoverUrl(book.id)}
+          alt={book.title}
+          className={classes.cover}
+          onError={(e) => {
+            e.target.style.display = 'none'
+            e.target.nextSibling.style.display = 'flex'
+          }}
+        />
+        <Box className={classes.coverPlaceholder} style={{ display: 'none' }}>
+          <MenuBookIcon style={{ fontSize: 48, opacity: 0.3 }} />
+        </Box>
         <Box className={classes.meta}>
           <Typography className={classes.title}>{book.title}</Typography>
           {book.author && (
@@ -251,6 +316,73 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
           )
         })}
       </Box>
+
+      {/* Edit Dialog */}
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>编辑有声书信息</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="有声书名称"
+            value={editForm.title || ''}
+            onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="作者"
+            value={editForm.author || ''}
+            onChange={(e) => setEditForm({ ...editForm, author: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="演播者"
+            value={editForm.narrator || ''}
+            onChange={(e) => setEditForm({ ...editForm, narrator: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="分类"
+            value={editForm.genre || ''}
+            onChange={(e) => setEditForm({ ...editForm, genre: e.target.value })}
+            fullWidth
+            margin="normal"
+            select
+            SelectProps={{ native: true }}
+          >
+            <option value="">请选择</option>
+            <option value="有声读物">有声读物</option>
+            <option value="评书">评书</option>
+            <option value="相声">相声</option>
+            <option value="戏曲">戏曲</option>
+            <option value="儿童">儿童</option>
+            <option value="教育">教育</option>
+          </TextField>
+          <TextField
+            label="系列"
+            value={editForm.series || ''}
+            onChange={(e) => setEditForm({ ...editForm, series: e.target.value })}
+            fullWidth
+            margin="normal"
+          />
+          <TextField
+            label="简介"
+            value={editForm.description || ''}
+            onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+            fullWidth
+            margin="normal"
+            multiline
+            rows={3}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditOpen(false)}>取消</Button>
+          <Button onClick={handleEditSave} color="primary" disabled={saving}>
+            {saving ? '保存中...' : '保存'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

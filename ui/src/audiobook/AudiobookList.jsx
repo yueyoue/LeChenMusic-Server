@@ -223,21 +223,15 @@ const AudiobookList = () => {
               onClick={() => { window.location.hash = `#/audiobook/${book.id}` }}
             >
               <Box className={classes.coverWrap}>
-                {book.coverPath ? (
-                  <img
-                    src={`/api/audiobook/${book.id}/cover`}
-                    alt={book.title}
-                    className={classes.cover}
-                    onError={(e) => {
-                      e.target.style.display = 'none'
-                      e.target.parentElement.innerHTML = '<span style="font-size:32px">📖</span>'
-                    }}
-                  />
-                ) : (
-                  <Box className={classes.coverPlaceholder}>
-                    <MenuBookIcon style={{ fontSize: 32, color: 'white', opacity: 0.8 }} />
-                  </Box>
-                )}
+                <img
+                  src={`/api/audiobook/${book.id}/cover?token=${localStorage.getItem('token') || ''}`}
+                  alt={book.title}
+                  className={classes.cover}
+                  onError={(e) => {
+                    e.target.style.display = 'none'
+                    e.target.parentElement.innerHTML = '<span style="font-size:32px">📖</span>'
+                  }}
+                />
               </Box>
               <CardContent className={classes.cardContent}>
                 <Typography className={classes.title}>{book.title}</Typography>

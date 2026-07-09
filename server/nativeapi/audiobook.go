@@ -413,6 +413,8 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 	for _, name := range []string{"cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.jpeg", "folder.png"} {
 		coverPath := filepath.Join(bookPath, name)
 		if _, err := os.Stat(coverPath); err == nil {
+			// Set cache headers for cover images
+			w.Header().Set("Cache-Control", "public, max-age=3600")
 			http.ServeFile(w, r, coverPath)
 			return
 		}

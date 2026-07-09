@@ -124,29 +124,35 @@ const VersionPage = () => {
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop()
-        for (const line of lines) {
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i]
           if (line.startsWith('event: ')) {
-            const event = line.substring(7)
-            const nextLine = lines[lines.indexOf(line) + 1]
+            const event = line.substring(7).trim()
+            const nextLine = lines[i + 1]
             if (nextLine && nextLine.startsWith('data: ')) {
               const data = nextLine.substring(6)
               if (event === 'done') {
-                setUpdateLogs(prev => [...prev, '✅ 镜像拉取完成！请手动重启容器。'])
+                setUpdateLogs(prev => [...prev, ''])
                 setUpdating(false)
                 return
               }
               if (event === 'restart_cmd') {
                 setRestartCmd(data)
-                return
+                // Don't return yet, let the stream finish
+                continue
+              }
+              if (event === 'error') {
+                setUpdateLogs(prev => [...prev, data])
+                continue
               }
               setUpdateLogs(prev => [...prev, data])
             }
           }
         }
       }
+      setUpdating(false)
     } catch (err) {
       setUpdateLogs(prev => [...prev, '❌ 更新失败: ' + err.message])
-    } finally {
       setUpdating(false)
     }
   }

@@ -1,11 +1,10 @@
 package nativeapi
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os/exec"
+	"os"
 	"strings"
 	"time"
 
@@ -204,29 +203,72 @@ func oneClickUpdate(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	sendSSE("log", "🔄 正在拉取最新镜像...")
+	// Check if running inside Docker by looking for /.dockerenv or checking cgroup
+	isDocker := false
+	if _, err := os.Stat("/.dockerenv"); err == nil {
+		isDocker = true
+	} else if cgroup, err := os.ReadFile("/proc/1/cgroup"); err == nil && strings.Contains(string(cgroup), "docker") {
+		isDocker = true
+	} else if cgroup, err := os.ReadFile("/proc/1/cgroup"); err == nil && strings.Contains(string(cgroup), "kubepods") {
+		isDocker = true
+	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), 300*time.Second)
-	defer cancel()
-
-	pullCmd := exec.CommandContext(ctx, "docker", "pull", "ghcr.io/yueyoue/lechenmusic-server:latest")
-	pullOut, err := pullCmd.CombinedOutput()
-	if err != nil {
-		sendSSE("error", "❌ 拉取镜像失败: "+err.Error())
+	if isDocker {
+		// Running inside Docker container - can't run docker commands
+		// Provide the restart command for the host
+		sendSSE("log", "🔍 检测到运行在 Docker 容器中")
+		sendSSE("log", "")
+		sendSSE("log", "⚠️ 容器内无法执行 docker 命令，请在宿主机上执行以下命令完成更新：")
+		sendSSE("log", "")
+		sendSSE("restart_cmd", "docker pull ghcr.io/yueyoue/lechenmusic-server:latest && docker stop lechen-music && docker rm lechen-music && docker run -d --name lechen-music --restart unless-stopped -p 3334:3334 -e TZ=Asia/Shanghai -e ND_PORT=3334 -v /vol2/1000/Docker/lechen-music/data:/data -v /vol2/1000/音乐/抖音流行歌曲1:/music:ro -v /vol2/1000/有声读物/有声读物:/audiobooks:ro ghcr.io/yueyoue/lechenmusic-server:latest")
 		sendSSE("done", "")
 		return
 	}
-	sendSSE("log", "✅ 镜像拉取完成")
-	for _, line := range strings.Split(strings.TrimSpace(string(pullOut)), "\n") {
-		if line != "" {
-			sendSSE("log", "  "+line)
-		}
+
+	// Not in Docker - try direct binary update approach
+	sendSSE("log", "🔄 正在检查最新版本...")
+
+	// Get latest release info
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, _ := http.NewRequest("GET", "https://api.github.com/repos/yueyoue/LeChenMusic-Server/releases/latest", nil)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		sendSSE("error", "❌ 获取版本信息失败: "+err.Error())
+		sendSSE("done", "")
+		return
 	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		sendSSE("error", fmt.Sprintf("❌ GitHub API 返回状态码: %d", resp.StatusCode))
+		sendSSE("done", "")
+		return
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+		Name    string `json:"name"`
+		Assets  []struct {
+			Name               string `json:"name"`
+			BrowserDownloadURL string `json:"browser_download_url"`
+		} `json:"assets"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		sendSSE("error", "❌ 解析版本信息失败: "+err.Error())
+		sendSSE("done", "")
+		return
+	}
+
+	sendSSE("log", fmt.Sprintf("📦 最新版本: %s (%s)", release.Name, release.TagName))
 	sendSSE("log", "")
-	sendSSE("log", "⚠️ 请手动重启容器以完成更新：")
+	sendSSE("log", "⚠️ 请在服务器上执行以下命令完成更新：")
 	sendSSE("log", "")
-	sendSSE("restart_cmd", "docker stop lechen-music && docker rm lechen-music && docker run -d --name lechen-music --restart unless-stopped -p 3334:3334 -e TZ=Asia/Shanghai -e ND_PORT=3334 -v /vol2/1000/Docker/lechen-music/data:/data -v /vol2/1000/音乐/抖音流行歌曲1:/music:ro -v /vol2/1000/有声读物/有声读物:/audiobooks:ro ghcr.io/yueyoue/lechenmusic-server:latest")
+	sendSSE("restart_cmd", "docker pull ghcr.io/yueyoue/lechenmusic-server:latest && docker compose down && docker compose up -d")
 	sendSSE("done", "")
 }
+
+
 
 // [LeChenMusic-END:version-check]
