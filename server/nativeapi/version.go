@@ -137,9 +137,11 @@ func checkLatestCommit(w http.ResponseWriter, r *http.Request) {
 
 	latest := commits[0]
 	currentSHA := gitSha
+	// Use 7-char short SHA to match Docker image tags from GitHub Actions
+	// (docker/metadata-action type=sha defaults to 7 characters)
 	shortSHA := latest.SHA
-	if len(shortSHA) > 8 {
-		shortSHA = shortSHA[:8]
+	if len(shortSHA) > 7 {
+		shortSHA = shortSHA[:7]
 	}
 
 	hasUpdate := latest.SHA != currentSHA
