@@ -7,8 +7,8 @@ import (
 
 var (
 	// This will be set in build time. If not, version will be set to "dev"
-	gitTag string
-	gitSha string
+	GitTag string
+	GitSHA string
 )
 
 // Version holds the version string, with tag and git sha info.
@@ -18,9 +18,9 @@ var (
 // v0.3.2-SNAPSHOT (715f552)
 // master (9ed35cb)
 var Version = func() string {
-	if gitSha == "" {
+	if GitSHA == "" {
 		return "dev"
 	}
-	gitTag = strings.TrimPrefix(gitTag, "v")
-	return fmt.Sprintf("%s (%s)", gitTag, gitSha)
+	tag := strings.TrimPrefix(GitTag, "v")
+	return fmt.Sprintf("%s (%s)", tag, GitSHA)
 }()
