@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"html"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -75,6 +76,17 @@ func (api *Router) routes() http.Handler {
 		api.addAudiobookRoute(r) // [LeChenMusic] audiobook routes
 		api.addBackupRoute(r)    // [LeChenMusic] backup & restore routes
 		api.addVersionRoute(r)   // [LeChenMusic] version check
+		api.addAppManageRoute(r) // [LeChenMusic] app management (version/splash/slides)
+
+		// Serve uploaded app files (splash images, slide images)
+		r.Get("/app/splash/*", func(w http.ResponseWriter, r *http.Request) {
+			path := chi.URLParam(r, "*")
+			http.ServeFile(w, r, filepath.Join("data", "app-uploads", filepath.Base(path)))
+		})
+		r.Get("/app/slide/*", func(w http.ResponseWriter, r *http.Request) {
+			path := chi.URLParam(r, "*")
+			http.ServeFile(w, r, filepath.Join("data", "app-uploads", filepath.Base(path)))
+		})
 		api.R(r, "/tag", model.Tag{}, true)
 		if conf.Server.EnableSharing {
 			api.RX(r, "/share", api.share.NewRepository, true)
