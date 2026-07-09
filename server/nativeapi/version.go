@@ -1,9 +1,11 @@
 package nativeapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ func (api *Router) addVersionRoute(r chi.Router) {
 	r.Route("/version", func(r chi.Router) {
 		r.Get("/", getVersion)
 		r.Get("/check", checkUpdate)
+		r.Post("/update", oneClickUpdate)
 	})
 }
 
@@ -113,8 +116,8 @@ func checkUpdate(w http.ResponseWriter, r *http.Request) {
 				LatestTag:     release.TagName,
 				LatestDate:    release.PublishedAt,
 				Changelog:     release.Body,
-				DownloadURL:   fmt.Sprintf("ghcr.io/yueyoue/lechenmusic-server:%s", release.TagName),
-				UpdateCommand: fmt.Sprintf("docker pull ghcr.io/yueyoue/lechenmusic-server:%s && docker compose down && docker compose up -d", release.TagName),
+				DownloadURL:   "ghcr.io/yueyoue/lechenmusic-server:latest",
+				UpdateCommand: "docker pull ghcr.io/yueyoue/lechenmusic-server:latest && docker compose down && docker compose up -d",
 			}
 			if !hasUpdate {
 				info.LatestSHA = sha
@@ -174,8 +177,8 @@ func checkLatestCommit(w http.ResponseWriter, r *http.Request, currentSHA string
 		LatestTag:     shortSHA,
 		LatestDate:    latest.Commit.Committer.Date,
 		Changelog:     latest.Commit.Message,
-		DownloadURL:   fmt.Sprintf("ghcr.io/yueyoue/lechenmusic-server:%s", shortSHA),
-		UpdateCommand: fmt.Sprintf("docker pull ghcr.io/yueyoue/lechenmusic-server:%s && docker compose down && docker compose up -d", shortSHA),
+		DownloadURL:   "ghcr.io/yueyoue/lechenmusic-server:latest",
+		UpdateCommand: "docker pull ghcr.io/yueyoue/lechenmusic-server:latest && docker compose down && docker compose up -d",
 	}
 	if !hasUpdate {
 		info.LatestSHA = currentSHA
@@ -183,6 +186,62 @@ func checkLatestCommit(w http.ResponseWriter, r *http.Request, currentSHA string
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"data": info})
+}
+
+func oneClickUpdate(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		json.NewEncoder(w).Encode(map[string]any{"error": "streaming not supported"})
+		return
+	}
+
+	sendSSE := func(event, data string) {
+		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data)
+		flusher.Flush()
+	}
+
+	sendSSE("log", "正在拉取最新镜像...")
+
+	ctx, cancel := context.WithTimeout(r.Context(), 300*time.Second)
+	defer cancel()
+
+	// Step 1: docker pull
+	pullCmd := exec.CommandContext(ctx, "docker", "pull", "ghcr.io/yueyoue/lechenmusic-server:latest")
+	pullOut, err := pullCmd.CombinedOutput()
+	if err != nil {
+		sendSSE("error", "拉取镜像失败: "+err.Error())
+		sendSSE("done", "")
+		return
+	}
+	sendSSE("log", "镜像拉取完成: "+string(pullOut))
+
+	// Step 2: restart container
+	sendSSE("log", "正在重启容器...")
+
+	// Try docker compose
+	composeDown := exec.CommandContext(ctx, "docker", "compose", "down")
+	composeDown.Dir = "/"
+	composeDown.Run()
+
+	composeUp := exec.CommandContext(ctx, "docker", "compose", "up", "-d")
+	composeUp.Dir = "/"
+	out, err := composeUp.CombinedOutput()
+	if err != nil {
+		// Fallback: try to restart the named container
+		sendSSE("log", "docker compose 不可用，尝试重启容器...")
+		exec.CommandContext(ctx, "docker", "stop", "lechen-music").Run()
+		exec.CommandContext(ctx, "docker", "rm", "lechen-music").Run()
+		sendSSE("log", "旧容器已停止，请手动重新创建容器")
+		sendSSE("done", "")
+		return
+	}
+
+	sendSSE("log", "容器已重启: "+string(out))
+	sendSSE("done", "")
 }
 
 // [LeChenMusic-END:version-check]
