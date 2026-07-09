@@ -17,42 +17,98 @@ import {
 import MenuBookIcon from '@material-ui/icons/MenuBook'
 import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import SearchIcon from '@material-ui/icons/Search'
+import PersonIcon from '@material-ui/icons/Person'
 import { useLocation } from 'react-router-dom'
 
 const useStyles = makeStyles((theme) => ({
+  root: { padding: 12 },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+    gap: 12,
+    padding: '0 4px',
+  },
   card: {
-    marginBottom: 8,
     cursor: 'pointer',
+    borderRadius: 12,
+    overflow: 'hidden',
+    transition: 'transform 0.2s, box-shadow 0.2s',
     '&:hover': {
-      backgroundColor: theme.palette.action.hover,
+      transform: 'translateY(-2px)',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
     },
   },
+  coverWrap: {
+    position: 'relative',
+    width: '100%',
+    paddingTop: '133%', /* 3:4 aspect ratio */
+    backgroundColor: theme.palette.grey[200],
+    borderRadius: '12px 12px 0 0',
+    overflow: 'hidden',
+  },
   cover: {
-    width: 60,
-    height: 60,
-    borderRadius: 4,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
     objectFit: 'cover',
-    backgroundColor: theme.palette.grey[300],
+  },
+  coverPlaceholder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+  },
+  cardContent: {
+    padding: '8px 10px !important',
+    '&:last-child': { paddingBottom: '8px !important' },
   },
   title: {
     fontWeight: 600,
-    fontSize: 14,
+    fontSize: 13,
+    lineHeight: 1.3,
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
+    marginBottom: 4,
   },
   sub: {
-    fontSize: 12,
+    fontSize: 11,
     color: theme.palette.text.secondary,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 4,
+  },
+  narratorBadge: {
+    fontSize: 10,
+    padding: '1px 6px',
+    borderRadius: 4,
+    backgroundColor: theme.palette.primary.light + '20',
+    color: theme.palette.primary.main,
+    fontWeight: 500,
   },
   genre: {
-    fontSize: 11,
+    fontSize: 10,
     marginRight: 4,
+    height: 20,
   },
   empty: {
     textAlign: 'center',
-    padding: 40,
+    padding: 60,
     color: theme.palette.text.secondary,
   },
-  search: {
-    marginBottom: 12,
+  search: { marginBottom: 12 },
+  header: {
+    padding: '8px 16px',
+    fontWeight: 600,
+    fontSize: 16,
   },
 }))
 
@@ -66,7 +122,6 @@ const AudiobookList = () => {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
 
-  // Parse genre from URL query
   const params = new URLSearchParams(location.search)
   const genreFilter = params.get('genre')
   const isStarred = location.pathname.includes('/starred')
@@ -76,23 +131,14 @@ const AudiobookList = () => {
       try {
         const token = localStorage.getItem('token')
         let url = '/api/audiobook'
-        if (isStarred) {
-          url = '/api/audiobook/starred'
-        }
+        if (isStarred) url = '/api/audiobook/starred'
         const response = await fetch(url, {
-          headers: {
-            'X-ND-Authorization': `Bearer ${token}`,
-          },
+          headers: { 'X-ND-Authorization': `Bearer ${token}` },
         })
-        if (!response.ok) {
-          throw new Error('Failed to fetch')
-        }
+        if (!response.ok) throw new Error('Failed to fetch')
         const data = await response.json()
         let books = data.data || []
-        // Filter by genre if specified
-        if (genreFilter) {
-          books = books.filter((b) => b.genre === genreFilter)
-        }
+        if (genreFilter) books = books.filter((b) => b.genre === genreFilter)
         setAudiobooks(books)
       } catch (err) {
         setError(err.message)
@@ -103,12 +149,8 @@ const AudiobookList = () => {
     fetchAudiobooks()
   }, [genreFilter, isStarred])
 
-  // Search
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults(null)
-      return
-    }
+    if (!searchQuery.trim()) { setSearchResults(null); return }
     const timer = setTimeout(async () => {
       try {
         const token = localStorage.getItem('token')
@@ -119,9 +161,7 @@ const AudiobookList = () => {
           const data = await res.json()
           setSearchResults(data.data || [])
         }
-      } catch (err) {
-        console.error('Search failed:', err)
-      }
+      } catch (err) { console.error('Search failed:', err) }
     }, 300)
     return () => clearTimeout(timer)
   }, [searchQuery])
@@ -135,29 +175,19 @@ const AudiobookList = () => {
   const displayBooks = searchResults !== null ? searchResults : audiobooks
 
   if (loading) {
-    return (
-      <Box p={2} textAlign="center">
-        <Typography>{translate('ra.loading')}...</Typography>
-      </Box>
-    )
+    return <Box p={2} textAlign="center"><Typography>{translate('ra.loading')}...</Typography></Box>
   }
-
   if (error) {
-    return (
-      <Box p={2} textAlign="center">
-        <Typography color="error">{error}</Typography>
-      </Box>
-    )
+    return <Box p={2} textAlign="center"><Typography color="error">{error}</Typography></Box>
   }
 
   return (
-    <Box p={1}>
-      <Typography variant="h6" style={{ padding: '8px 16px', fontWeight: 600 }}>
+    <Box className={classes.root}>
+      <Typography className={classes.header}>
         {getTitle()} ({displayBooks.length})
       </Typography>
 
-      {/* Search bar */}
-      <Box px={2} mb={1}>
+      <Box px={1} mb={1}>
         <TextField
           className={classes.search}
           fullWidth
@@ -184,17 +214,15 @@ const AudiobookList = () => {
           </Typography>
         </Box>
       ) : (
-        displayBooks.map((book) => (
-          <Card
-            key={book.id}
-            className={classes.card}
-            elevation={0}
-            onClick={() => {
-              window.location.hash = `#/audiobook/${book.id}`
-            }}
-          >
-            <CardContent style={{ display: 'flex', padding: '8px 16px' }}>
-              <Box className={classes.cover} display="flex" alignItems="center" justifyContent="center">
+        <Box className={classes.grid}>
+          {displayBooks.map((book) => (
+            <Card
+              key={book.id}
+              className={classes.card}
+              elevation={2}
+              onClick={() => { window.location.hash = `#/audiobook/${book.id}` }}
+            >
+              <Box className={classes.coverWrap}>
                 {book.coverPath ? (
                   <img
                     src={`/api/audiobook/${book.id}/cover`}
@@ -202,33 +230,31 @@ const AudiobookList = () => {
                     className={classes.cover}
                     onError={(e) => {
                       e.target.style.display = 'none'
-                      e.target.parentElement.innerHTML = '<span style="font-size:24px">📖</span>'
+                      e.target.parentElement.innerHTML = '<span style="font-size:32px">📖</span>'
                     }}
                   />
                 ) : (
-                  <MenuBookIcon style={{ fontSize: 24, opacity: 0.5 }} />
+                  <Box className={classes.coverPlaceholder}>
+                    <MenuBookIcon style={{ fontSize: 32, color: 'white', opacity: 0.8 }} />
+                  </Box>
                 )}
               </Box>
-              <Box ml={1.5} flex={1} overflow="hidden">
-                <Typography className={classes.title} noWrap>
-                  {book.title}
-                </Typography>
-                <Typography className={classes.sub} noWrap>
-                  {book.author && `${book.author}`}
-                  {book.narrator && ` · 🎙️ ${book.narrator}`}
-                </Typography>
-                <Box mt={0.5} display="flex" alignItems="center">
-                  {book.genre && (
-                    <Chip label={book.genre} size="small" className={classes.genre} />
+              <CardContent className={classes.cardContent}>
+                <Typography className={classes.title}>{book.title}</Typography>
+                <Box className={classes.sub}>
+                  {book.author && <span>{book.author}</span>}
+                  {book.narrator && (
+                    <span className={classes.narratorBadge}>🎙️ {book.narrator}</span>
                   )}
-                  <Typography className={classes.sub}>
-                    {book.chapterCount} 章
-                  </Typography>
                 </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        ))
+                <Box mt={0.5} display="flex" alignItems="center" gap={0.5}>
+                  {book.genre && <Chip label={book.genre} size="small" className={classes.genre} />}
+                  <Typography className={classes.sub}>{book.chapterCount}章</Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          ))}
+        </Box>
       )}
     </Box>
   )
