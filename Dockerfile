@@ -80,8 +80,8 @@ RUN --mount=type=bind,source=. \
     # -latomic is required on 32-bit arm (arm/v6, arm/v7) so SQLite's 64-bit atomics resolve.
     go build -tags=${BUILD_TAGS} -ldflags="-w -s \
         -linkmode=external -extldflags '-latomic' \
-        -X github.com/navidrome/navidrome/consts.gitSha=${GIT_SHA} \
-        -X github.com/navidrome/navidrome/consts.gitTag=${GIT_TAG}" \
+        -X github.com/navidrome/navidrome/consts.GitSHA=${GIT_SHA} \
+        -X github.com/navidrome/navidrome/consts.GitTag=${GIT_TAG}" \
         -o /out/navidrome .
     # Fail the build if the binary is accidentally statically linked: dlopen (and
     # therefore native libwebp detection) only works with a dynamic interpreter.
@@ -134,8 +134,8 @@ RUN --mount=type=bind,source=. \
     fi
 
     go build -tags=netgo,sqlite_fts5 -ldflags="${LD_EXTRA} -w -s \
-        -X github.com/navidrome/navidrome/consts.gitSha=${GIT_SHA} \
-        -X github.com/navidrome/navidrome/consts.gitTag=${GIT_TAG}" \
+        -X github.com/navidrome/navidrome/consts.GitSHA=${GIT_SHA} \
+        -X github.com/navidrome/navidrome/consts.GitTag=${GIT_TAG}" \
         -o /out/navidrome${EXT} .
 EOT
 
@@ -174,4 +174,5 @@ WORKDIR /app
 ENV PATH="/app:${PATH}"
 
 ENTRYPOINT ["/app/navidrome"]
+
 
