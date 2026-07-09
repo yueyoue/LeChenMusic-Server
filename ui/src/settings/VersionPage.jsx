@@ -54,6 +54,8 @@ const VersionPage = () => {
   const [updateInfo, setUpdateInfo] = useState(null)
   const [error, setError] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const [updateLogs, setUpdateLogs] = useState([])
 
   useEffect(() => {
     fetchVersion()
@@ -100,6 +102,45 @@ const VersionPage = () => {
       navigator.clipboard.writeText(updateInfo.updateCommand)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
+  const oneClickUpdate = async () => {
+    setUpdating(true)
+    setUpdateLogs(['🚀 开始一键更新...'])
+    try {
+      const token = localStorage.getItem('token')
+      const headers = { 'X-ND-Authorization': `Bearer ${token}` }
+      const res = await fetch('/api/version/update', { method: 'POST', headers })
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            const event = line.substring(7)
+            const nextLine = lines[lines.indexOf(line) + 1]
+            if (nextLine && nextLine.startsWith('data: ')) {
+              const data = nextLine.substring(6)
+              if (event === 'done') {
+                setUpdateLogs(prev => [...prev, '✅ 更新完成！页面即将刷新...'])
+                setTimeout(() => window.location.reload(), 3000)
+                return
+              }
+              setUpdateLogs(prev => [...prev, data])
+            }
+          }
+        }
+      }
+    } catch (err) {
+      setUpdateLogs(prev => [...prev, '❌ 更新失败: ' + err.message])
+    } finally {
+      setUpdating(false)
     }
   }
 
@@ -196,27 +237,54 @@ const VersionPage = () => {
             </Card>
           )}
 
-          {/* Update Command */}
-          {updateInfo.hasUpdate && updateInfo.updateCommand && (
+          {/* One-Click Update + Command */}
+          {updateInfo.hasUpdate && (
             <Card className={classes.card} elevation={0}>
               <CardContent>
-                <Typography style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>更新命令</Typography>
-                <Typography style={{ fontSize: 12, color: 'text.secondary', marginBottom: 8 }}>
-                  在服务器上执行以下命令更新：
-                </Typography>
-                <Box className={classes.commandBox}>
-                  <Typography style={{ fontFamily: 'monospace', fontSize: 13 }}>
-                    {updateInfo.updateCommand}
-                  </Typography>
-                  <Box className={classes.copyBtn} onClick={copyCommand}>
-                    <FileCopyIcon style={{ fontSize: 16, color: 'text.secondary' }} />
+                <Typography style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>更新方式</Typography>
+                
+                {/* One-click update button */}
+                <Button
+                  variant="contained"
+                  color="secondary"
+                  style={{ borderRadius: 20, textTransform: 'none', fontWeight: 600, marginBottom: 16 }}
+                  onClick={oneClickUpdate}
+                  disabled={updating}
+                  startIcon={updating ? <CircularProgress size={18} /> : <SystemUpdateIcon />}
+                >
+                  {updating ? '更新中...' : '🚀 一键更新'}
+                </Button>
+
+                {/* Update logs */}
+                {updateLogs.length > 0 && (
+                  <Box className={classes.commandBox} style={{ maxHeight: 200, overflow: 'auto', marginTop: 8 }}>
+                    {updateLogs.map((log, i) => (
+                      <Typography key={i} style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 1.8 }}>
+                        {log}
+                      </Typography>
+                    ))}
                   </Box>
-                </Box>
-                {copied && (
-                  <Typography style={{ fontSize: 12, color: '#2ed573', marginTop: 8 }}>
-                    ✅ 已复制到剪贴板
-                  </Typography>
                 )}
+
+                {/* Manual command fallback */}
+                <Box mt={2}>
+                  <Typography style={{ fontSize: 12, color: 'text.secondary', marginBottom: 8 }}>
+                    或手动在服务器上执行：
+                  </Typography>
+                  <Box className={classes.commandBox}>
+                    <Typography style={{ fontFamily: 'monospace', fontSize: 13 }}>
+                      {updateInfo.updateCommand}
+                    </Typography>
+                    <Box className={classes.copyBtn} onClick={copyCommand}>
+                      <FileCopyIcon style={{ fontSize: 16, color: 'text.secondary' }} />
+                    </Box>
+                  </Box>
+                  {copied && (
+                    <Typography style={{ fontSize: 12, color: '#2ed573', marginTop: 8 }}>
+                      ✅ 已复制到剪贴板
+                    </Typography>
+                  )}
+                </Box>
               </CardContent>
             </Card>
           )}
