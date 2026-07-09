@@ -28,29 +28,41 @@ func (api *Router) Stream(w http.ResponseWriter, r *http.Request) (*responses.Su
 	format, _ := p.String("format")
 	timeOffset := p.IntOr("timeOffset", 0)
 
+	// Try as regular media file first
 	mf, err := api.ds.MediaFile(ctx).Get(id)
-	if err != nil {
-		return nil, err
-	}
-
-	streamReq := api.transcodeDecision.ResolveRequest(ctx, mf, format, maxBitRate, timeOffset)
-	stream, err := api.streamer.NewStream(ctx, mf, streamReq)
-	if err != nil {
-		return nil, err
-	}
-
-	// Make sure the stream will be closed at the end, to avoid leakage
-	defer func() {
-		if err := stream.Close(); err != nil && log.IsGreaterOrEqualTo(log.LevelDebug) {
-			log.Error("Error closing stream", "id", id, "file", stream.Name(), err)
+	if err == nil {
+		streamReq := api.transcodeDecision.ResolveRequest(ctx, mf, format, maxBitRate, timeOffset)
+		stream, err := api.streamer.NewStream(ctx, mf, streamReq)
+		if err != nil {
+			return nil, err
 		}
-	}()
+		defer func() {
+			if err := stream.Close(); err != nil && log.IsGreaterOrEqualTo(log.LevelDebug) {
+				log.Error("Error closing stream", "id", id, "file", stream.Name(), err)
+			}
+		}()
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Content-Duration", strconv.FormatFloat(float64(stream.Duration()), 'G', -1, 32))
+		_, err = stream.Serve(ctx, w, r)
+		return nil, err
+	}
 
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("X-Content-Duration", strconv.FormatFloat(float64(stream.Duration()), 'G', -1, 32))
-
-	_, err = stream.Serve(ctx, w, r)
-	return nil, err
+	// If not found as media file, try as audiobook chapter
+	chapter, err := api.ds.Audiobook(ctx).GetChapter(id)
+	if err != nil {
+		return nil, newError(responses.ErrorDataNotFound, "id not found")
+	}
+	book, err := api.ds.Audiobook(ctx).Get(chapter.AudiobookID)
+	if err != nil {
+		return nil, newError(responses.ErrorDataNotFound, "audiobook not found")
+	}
+	lib, err := api.ds.Library(ctx).Get(book.LibraryID)
+	if err != nil {
+		return nil, newError(responses.ErrorDataNotFound, "library not found")
+	}
+	filePath := fmt.Sprintf("%s/%s/%s", lib.Path, book.Path, chapter.Path)
+	http.ServeFile(w, r, filePath)
+	return nil, nil
 }
 
 func (api *Router) Download(w http.ResponseWriter, r *http.Request) (*responses.Subsonic, error) {

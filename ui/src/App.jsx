@@ -24,7 +24,6 @@ import share from './share'
 import library from './library'
 import plugin from './plugin'
 import { Player } from './audioplayer'
-import AudiobookPlayerContainer from './audiobook/AudiobookPlayerContainer'
 import customRoutes from './routes'
 import {
   libraryReducer,
@@ -188,7 +187,6 @@ const Admin = (props) => {
         <Resource name="insights" />,
         <Resource name="config" />,
         <Player />,
-        <AudiobookPlayerContainer />,
       ]}
     </RAAdmin>
   )

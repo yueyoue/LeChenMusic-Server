@@ -1,19 +1,21 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
+import { useDispatch, useSelector } from 'react-redux'
 import {
   Typography, Box, Card, CardContent, makeStyles, IconButton,
   Chip, Button, LinearProgress, Tooltip, Dialog, DialogTitle,
-  DialogContent, DialogActions, TextField
+  DialogContent, DialogActions, TextField, List, ListItem, ListItemText
 } from '@material-ui/core'
 import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import PauseIcon from '@material-ui/icons/Pause'
 import QueueMusicIcon from '@material-ui/icons/QueueMusic'
-import BookmarkIcon from '@material-ui/icons/Bookmark'
-import ShareIcon from '@material-ui/icons/Share'
 import ArrowBackIcon from '@material-ui/icons/ArrowBack'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
 import AccessTimeIcon from '@material-ui/icons/AccessTime'
 import PersonIcon from '@material-ui/icons/Person'
 import EditIcon from '@material-ui/icons/Edit'
+import RefreshIcon from '@material-ui/icons/Refresh'
+import subsonic from '../subsonic'
+import { playTracks, addTracks } from '../actions'
 
 const useStyles = makeStyles((theme) => ({
   root: { padding: 16 },
@@ -49,10 +51,7 @@ const useStyles = makeStyles((theme) => ({
   chapterNum: { width: 36, fontSize: 13, color: theme.palette.text.secondary, textAlign: 'center' },
   chapterTitle: { flex: 1, fontSize: 14, marginLeft: 8 },
   chapterDuration: { fontSize: 12, color: theme.palette.text.secondary, marginLeft: 8 },
-  chapterPlay: { marginLeft: 8 },
   progress: { marginBottom: 16 },
-  backBtn: { marginBottom: 16 },
-  sectionTitle: { fontSize: 16, fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 },
   topBar: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
 }))
 
@@ -64,8 +63,47 @@ const formatDuration = (seconds) => {
   return `${m}m`
 }
 
-const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) => {
+/**
+ * Convert audiobook chapters to song-like format for the music player
+ */
+const chaptersToSongs = (book, chapters) => {
+  const songs = {}
+  const ids = []
+  const token = localStorage.getItem('token')
+  const coverUrl = `/api/audiobook/${book.id}/cover${token ? '?token=' + token : ''}`
+  
+  chapters.forEach((ch) => {
+    const songId = ch.id
+    ids.push(songId)
+    songs[songId] = {
+      id: songId,
+      title: ch.title,
+      artist: book.narrator || book.author || '未知',
+      album: book.title,
+      albumId: `audiobook-${book.id}`,
+      artistId: '',
+      track: ch.chapterNumber,
+      duration: ch.duration || 0,
+      year: book.year || 0,
+      genre: book.genre || '有声读物',
+      contentType: 'audio/mpeg',
+      suffix: ch.format || 'mp3',
+      size: ch.fileSize || 0,
+      bitRate: 0,
+      // Mark as audiobook for the player
+      isAudiobook: true,
+      audiobookId: book.id,
+      chapterId: ch.id,
+      // Use audiobook cover URL directly
+      coverArtUrl: coverUrl,
+    }
+  })
+  return { songs, ids }
+}
+
+const AudiobookDetail = ({ id, onBack }) => {
   const classes = useStyles()
+  const dispatch = useDispatch()
   const [book, setBook] = useState(null)
   const [chapters, setChapters] = useState([])
   const [progress, setProgress] = useState(null)
@@ -76,13 +114,12 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
   const [saving, setSaving] = useState(false)
   const [rescanning, setRescanning] = useState(false)
 
+  const currentPlaying = useSelector((state) => state.player.currentPlaying)
+  const isPlayingCurrent = currentPlaying?.albumId === `audiobook-${id}`
+
   const getToken = () => localStorage.getItem('token')
+  const getAuthHeaders = () => ({ 'X-ND-Authorization': `Bearer ${getToken()}` })
 
-  const getAuthHeaders = () => ({
-    'X-ND-Authorization': `Bearer ${getToken()}`
-  })
-
-  // Build cover URL with auth token as query param (for <img> tags which can't send headers)
   const getCoverUrl = (bookId) => {
     const token = getToken()
     return `/api/audiobook/${bookId}/cover${token ? '?token=' + token : ''}`
@@ -95,17 +132,14 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
       img.crossOrigin = 'anonymous'
       img.onload = () => {
         const canvas = document.createElement('canvas')
-        canvas.width = 1
-        canvas.height = 1
+        canvas.width = 1; canvas.height = 1
         const ctx = canvas.getContext('2d')
         ctx.drawImage(img, 0, 0, 1, 1)
         const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
         setBgColor(`linear-gradient(135deg, rgb(${r},${g},${b}) 0%, rgba(${r},${g},${b},0.3) 100%)`)
       }
       img.src = imageUrl
-    } catch (e) {
-      // ignore
-    }
+    } catch (e) {}
   }
 
   useEffect(() => {
@@ -121,7 +155,6 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
           if (data.data) {
             setBook(data.data.book)
             setChapters(data.data.chapters || [])
-            // Always try to extract color from cover
             extractColor(getCoverUrl(id))
           }
         }
@@ -138,60 +171,40 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
     fetchData()
   }, [id])
 
-  const handlePlay = (chapter) => {
-    if (onPlay) {
-      onPlay(book, chapters, chapter)
-    }
-  }
+  // Play a specific chapter using the music player
+  const handlePlayChapter = useCallback((chapter) => {
+    if (!book || !chapters.length) return
+    const { songs, ids } = chaptersToSongs(book, chapters)
+    dispatch(playTracks(songs, ids, chapter.id))
+  }, [book, chapters, dispatch])
 
-  const handleContinue = () => {
+  // Play all chapters from the beginning
+  const handlePlayAll = useCallback(() => {
+    if (!book || !chapters.length) return
+    const { songs, ids } = chaptersToSongs(book, chapters)
+    dispatch(playTracks(songs, ids, ids[0]))
+  }, [book, chapters, dispatch])
+
+  // Continue from last position
+  const handleContinue = useCallback(() => {
     if (progress && progress.chapterId) {
       const chapter = chapters.find(c => c.id === progress.chapterId)
       if (chapter) {
-        handlePlay(chapter)
+        handlePlayChapter(chapter)
         return
       }
     }
-    if (chapters.length > 0) handlePlay(chapters[0])
-  }
+    handlePlayAll()
+  }, [progress, chapters, handlePlayChapter, handlePlayAll])
 
-  const handleEditOpen = () => {
-    setEditForm({
-      title: book.title || '',
-      author: book.author || '',
-      narrator: book.narrator || '',
-      description: book.description || '',
-      genre: book.genre || '',
-      series: book.series || '',
-    })
-    setEditOpen(true)
-  }
+  // Add to queue
+  const handleAddToQueue = useCallback(() => {
+    if (!book || !chapters.length) return
+    const { songs, ids } = chaptersToSongs(book, chapters)
+    dispatch(addTracks(songs, ids))
+  }, [book, chapters, dispatch])
 
-  const handleEditSave = async () => {
-    setSaving(true)
-    try {
-      const res = await fetch(`/api/audiobook/${id}/metadata`, {
-        method: 'PUT',
-        headers: {
-          ...getAuthHeaders(),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(editForm),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (data.data) {
-          setBook(data.data)
-        }
-        setEditOpen(false)
-      }
-    } catch (err) {
-      console.error('Failed to save:', err)
-    } finally {
-      setSaving(false)
-    }
-  }
-
+  // Rescan chapters
   const handleRescan = async () => {
     setRescanning(true)
     try {
@@ -213,24 +226,59 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
     }
   }
 
+  // Edit metadata
+  const handleEditOpen = () => {
+    setEditForm({
+      title: book.title || '',
+      author: book.author || '',
+      narrator: book.narrator || '',
+      description: book.description || '',
+      genre: book.genre || '',
+      series: book.series || '',
+    })
+    setEditOpen(true)
+  }
+
+  const handleEditSave = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/audiobook/${id}/metadata`, {
+        method: 'PUT',
+        headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data) setBook(data.data)
+        setEditOpen(false)
+      }
+    } catch (err) {
+      console.error('Failed to save:', err)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   if (loading) {
     return <Box p={4} textAlign="center"><Typography>Loading...</Typography></Box>
   }
-
   if (!book) {
     return <Box p={4} textAlign="center"><Typography>Audiobook not found</Typography></Box>
   }
 
+  // Check which chapter is currently playing
+  const currentPlayingId = currentPlaying?.id
+
   return (
     <Box className={classes.root} style={bgColor ? { background: bgColor, borderRadius: 12, padding: 16 } : {}}>
       <Box className={classes.topBar}>
-        <IconButton className={classes.backBtn} onClick={onBack || (() => { window.location.hash = '#/audiobook' })}>
+        <IconButton onClick={onBack || (() => { window.location.hash = '#/audiobook' })}>
           <ArrowBackIcon />
         </IconButton>
         <Box>
           <Tooltip title="重新扫描章节">
             <IconButton onClick={handleRescan} disabled={rescanning}>
-              <span style={{ fontSize: 18 }}>{rescanning ? '⏳' : '🔄'}</span>
+              <RefreshIcon style={rescanning ? { animation: 'spin 1s linear infinite' } : {}} />
             </IconButton>
           </Tooltip>
           <Tooltip title="编辑有声书信息">
@@ -242,15 +290,8 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
       </Box>
 
       <Box className={classes.header}>
-        <img
-          src={getCoverUrl(book.id)}
-          alt={book.title}
-          className={classes.cover}
-          onError={(e) => {
-            e.target.style.display = 'none'
-            e.target.nextSibling.style.display = 'flex'
-          }}
-        />
+        <img src={getCoverUrl(book.id)} alt={book.title} className={classes.cover}
+          onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }} />
         <Box className={classes.coverPlaceholder} style={{ display: 'none' }}>
           <MenuBookIcon style={{ fontSize: 48, opacity: 0.3 }} />
         </Box>
@@ -263,9 +304,7 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
             </Typography>
           )}
           {book.narrator && (
-            <Typography className={classes.narrator}>
-              🎙️ {book.narrator}
-            </Typography>
+            <Typography className={classes.narrator}>🎙️ {book.narrator}</Typography>
           )}
           {book.genre && <Chip label={book.genre} size="small" className={classes.genre} />}
           <Box className={classes.stats}>
@@ -297,45 +336,34 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
       )}
 
       <Box className={classes.actions}>
-        <Button
-          variant="contained"
-          color="primary"
-          className={classes.playBtn}
-          startIcon={<PlayArrowIcon />}
-          onClick={handleContinue}
-        >
+        <Button variant="contained" color="primary" className={classes.playBtn}
+          startIcon={<PlayArrowIcon />} onClick={handleContinue}>
           {progress ? '继续播放' : '从头播放'}
         </Button>
-        <Button
-          variant="outlined"
-          className={classes.playBtn}
-          startIcon={<QueueMusicIcon />}
-          onClick={() => chapters.length > 0 && handlePlay(chapters[0])}
-        >
-          播放全部
+        <Button variant="outlined" className={classes.playBtn}
+          startIcon={<QueueMusicIcon />} onClick={handleAddToQueue}>
+          加入队列
         </Button>
       </Box>
 
-      <Typography className={classes.sectionTitle}>
+      <Typography style={{ fontSize: 16, fontWeight: 600, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
         📑 章节列表 ({chapters.length})
       </Typography>
 
       <Box className={classes.chapterList}>
         {chapters.map((chapter, idx) => {
-          const isActive = currentChapterId === chapter.id
+          const isActive = currentPlayingId === chapter.id
           return (
-            <Box
-              key={chapter.id}
+            <Box key={chapter.id}
               className={`${classes.chapterItem} ${isActive ? classes.chapterActive : ''}`}
-              onClick={() => handlePlay(chapter)}
-            >
+              onClick={() => handlePlayChapter(chapter)}>
               <Typography className={classes.chapterNum}>{chapter.chapterNumber || idx + 1}</Typography>
               <Typography className={classes.chapterTitle}>{chapter.title}</Typography>
               {chapter.duration > 0 && (
                 <Typography className={classes.chapterDuration}>{formatDuration(chapter.duration)}</Typography>
               )}
-              <Box className={classes.chapterPlay}>
-                {isActive && isPlaying ? (
+              <Box style={{ marginLeft: 8 }}>
+                {isActive ? (
                   <PauseIcon style={{ fontSize: 20, color: 'primary.main' }} />
                 ) : (
                   <PlayArrowIcon style={{ fontSize: 20, color: 'action.active' }} />
@@ -350,36 +378,15 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
       <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>编辑有声书信息</DialogTitle>
         <DialogContent>
-          <TextField
-            label="有声书名称"
-            value={editForm.title || ''}
-            onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-            fullWidth
-            margin="normal"
-          />
-          <TextField
-            label="作者"
-            value={editForm.author || ''}
-            onChange={(e) => setEditForm({ ...editForm, author: e.target.value })}
-            fullWidth
-            margin="normal"
-          />
-          <TextField
-            label="演播者"
-            value={editForm.narrator || ''}
-            onChange={(e) => setEditForm({ ...editForm, narrator: e.target.value })}
-            fullWidth
-            margin="normal"
-          />
-          <TextField
-            label="分类"
-            value={editForm.genre || ''}
-            onChange={(e) => setEditForm({ ...editForm, genre: e.target.value })}
-            fullWidth
-            margin="normal"
-            select
-            SelectProps={{ native: true }}
-          >
+          <TextField label="有声书名称" value={editForm.title || ''}
+            onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} fullWidth margin="normal" />
+          <TextField label="作者" value={editForm.author || ''}
+            onChange={(e) => setEditForm({ ...editForm, author: e.target.value })} fullWidth margin="normal" />
+          <TextField label="演播者" value={editForm.narrator || ''}
+            onChange={(e) => setEditForm({ ...editForm, narrator: e.target.value })} fullWidth margin="normal" />
+          <TextField label="分类" value={editForm.genre || ''}
+            onChange={(e) => setEditForm({ ...editForm, genre: e.target.value })} fullWidth margin="normal"
+            select SelectProps={{ native: true }}>
             <option value="">请选择</option>
             <option value="有声读物">有声读物</option>
             <option value="评书">评书</option>
@@ -388,22 +395,10 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
             <option value="儿童">儿童</option>
             <option value="教育">教育</option>
           </TextField>
-          <TextField
-            label="系列"
-            value={editForm.series || ''}
-            onChange={(e) => setEditForm({ ...editForm, series: e.target.value })}
-            fullWidth
-            margin="normal"
-          />
-          <TextField
-            label="简介"
-            value={editForm.description || ''}
-            onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-            fullWidth
-            margin="normal"
-            multiline
-            rows={3}
-          />
+          <TextField label="系列" value={editForm.series || ''}
+            onChange={(e) => setEditForm({ ...editForm, series: e.target.value })} fullWidth margin="normal" />
+          <TextField label="简介" value={editForm.description || ''}
+            onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} fullWidth margin="normal" multiline rows={3} />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setEditOpen(false)}>取消</Button>

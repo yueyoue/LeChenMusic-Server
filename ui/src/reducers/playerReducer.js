@@ -87,7 +87,8 @@ const mapToAudioLists = (item) => {
     singer: item.artist,
     duration: item.duration,
     musicSrc: makeMusicSrc(trackId),
-    cover: subsonic.getCoverArtUrl(
+    // Use custom cover URL if provided (for audiobooks), otherwise use Subsonic API
+    cover: item.coverArtUrl || subsonic.getCoverArtUrl(
       {
         id: trackId,
         updatedAt: item.updatedAt,
