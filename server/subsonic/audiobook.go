@@ -112,13 +112,13 @@ func toAudiobookID3(book model.Audiobook, chapters model.AudiobookChapters) resp
 
 func toAudiobookChapterChild(ch model.AudiobookChapter) responses.Child {
 	return responses.Child{
-		ID:         ch.ID,
-		Title:      ch.Title,
-		Track:      ch.ChapterNumber,
-		Duration:   ch.Duration,
+		Id:          ch.ID,
+		Title:       ch.Title,
+		Track:       int32(ch.ChapterNumber),
+		Duration:    int32(ch.Duration),
 		ContentType: getContentType(ch.Format),
-		Suffix:     ch.Format,
-		Type:       "audiobook",
+		Suffix:      ch.Format,
+		Type:        "audiobook",
 	}
 }
 
@@ -140,14 +140,6 @@ func getContentType(format string) string {
 		return "audio/x-ms-wma"
 	default:
 		return "audio/mpeg"
-	}
-}
-
-func newResponse() *responses.Subsonic {
-	return &responses.Subsonic{
-		Status:  responses.StatusOK,
-		Version: Version,
-		Type:    "LeChenMusic",
 	}
 }
 

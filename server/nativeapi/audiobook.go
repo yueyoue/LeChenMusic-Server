@@ -55,7 +55,7 @@ func (h *audiobookHandler) list(w http.ResponseWriter, r *http.Request) {
 func (h *audiobookHandler) search(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		writeJSON(w, map[string]any{"data": []})
+		writeJSON(w, map[string]any{"data": []any{}})
 		return
 	}
 	repo := h.ds.Audiobook(r.Context())
