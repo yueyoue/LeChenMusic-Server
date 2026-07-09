@@ -202,7 +202,6 @@ const Menu = ({ dense = false }) => {
         />
       </SubMenu>
       <MenuItemLink
-      <MenuItemLink
           to="/settings/version"
           activeClassName={classes.active}
           primaryText="版本更新"
