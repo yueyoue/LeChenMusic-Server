@@ -5,14 +5,21 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 )
 
 // [LeChenMusic-START:audiobook]
+
+var audiobookAudioExts = map[string]bool{
+	".mp3": true, ".m4a": true, ".m4b": true, ".flac": true,
+	".ogg": true, ".wav": true, ".opus": true, ".wma": true, ".aac": true,
+}
 
 func (api *Router) addAudiobookRoute(r chi.Router) {
 	h := &audiobookHandler{ds: api.ds}
@@ -35,6 +42,7 @@ func (api *Router) addAudiobookRoute(r chi.Router) {
 		r.Delete("/{id}/star", h.unstar)
 		r.Put("/{id}/metadata", h.updateMetadata)
 		r.Get("/{id}/cover", h.cover)
+		r.Post("/{id}/rescan", h.rescan)
 	})
 }
 
@@ -420,6 +428,86 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	http.Error(w, "No cover found", 404)
+}
+
+func (h *audiobookHandler) rescan(w http.ResponseWriter, r *http.Request) {
+	bookID := chi.URLParam(r, "id")
+	repo := h.ds.Audiobook(r.Context())
+	book, err := repo.Get(bookID)
+	if err != nil {
+		http.Error(w, "Not found", 404)
+		return
+	}
+	lib, err := h.ds.Library(r.Context()).Get(book.LibraryID)
+	if err != nil {
+		http.Error(w, "Library not found", 404)
+		return
+	}
+
+	// Delete existing chapters
+	_ = repo.DeleteChapters(bookID)
+
+	// Rescan chapters from filesystem
+	bookPath := filepath.Join(lib.Path, book.Path)
+	entries, readErr := os.ReadDir(bookPath)
+	if readErr != nil {
+		http.Error(w, "Cannot read directory: "+readErr.Error(), 500)
+		return
+	}
+
+	type audioFile struct {
+		name string
+		path string
+	}
+	var audioFiles []audioFile
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		if audiobookAudioExts[ext] {
+			audioFiles = append(audioFiles, audioFile{name: e.Name(), path: e.Name()})
+		}
+	}
+
+	sort.Slice(audioFiles, func(i, j int) bool {
+		return audioFiles[i].name < audioFiles[j].name
+	})
+
+	var totalSize int64
+	var chapters []model.AudiobookChapter
+	for i, af := range audioFiles {
+		chapterPath := filepath.Join(bookPath, af.name)
+		chapterTitle := strings.TrimSuffix(af.name, filepath.Ext(af.name))
+		format := strings.TrimPrefix(strings.ToLower(filepath.Ext(af.name)), ".")
+		var fileSize int64
+		if info, err := os.Stat(chapterPath); err == nil {
+			fileSize = info.Size()
+		}
+
+		chapter := model.AudiobookChapter{
+			ID:            af.name, // Use filename as ID for simplicity
+			AudiobookID:   bookID,
+			Title:         chapterTitle,
+			ChapterNumber: i + 1,
+			Duration:      0,
+			Format:        format,
+			FileSize:      fileSize,
+			Path:          af.path,
+		}
+		if err := repo.PutChapter(&chapter); err != nil {
+			log.Error(r.Context(), "Rescan: Error saving chapter", "chapter", chapter.Title, err)
+		}
+		totalSize += fileSize
+		chapters = append(chapters, chapter)
+	}
+
+	// Update book stats
+	book.ChapterCount = len(audioFiles)
+	book.Size = totalSize
+	_ = repo.Put(book)
+
+	writeJSON(w, map[string]any{"data": map[string]any{"book": book, "chapters": chapters}})
 }
 
 func writeJSON(w http.ResponseWriter, data any) {

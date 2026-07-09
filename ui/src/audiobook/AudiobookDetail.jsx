@@ -74,6 +74,7 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
   const [editOpen, setEditOpen] = useState(false)
   const [editForm, setEditForm] = useState({})
   const [saving, setSaving] = useState(false)
+  const [rescanning, setRescanning] = useState(false)
 
   const getToken = () => localStorage.getItem('token')
 
@@ -191,6 +192,27 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
     }
   }
 
+  const handleRescan = async () => {
+    setRescanning(true)
+    try {
+      const res = await fetch(`/api/audiobook/${id}/rescan`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.data) {
+          setBook(data.data.book)
+          setChapters(data.data.chapters || [])
+        }
+      }
+    } catch (err) {
+      console.error('Failed to rescan:', err)
+    } finally {
+      setRescanning(false)
+    }
+  }
+
   if (loading) {
     return <Box p={4} textAlign="center"><Typography>Loading...</Typography></Box>
   }
@@ -205,11 +227,18 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
         <IconButton className={classes.backBtn} onClick={onBack || (() => { window.location.hash = '#/audiobook' })}>
           <ArrowBackIcon />
         </IconButton>
-        <Tooltip title="编辑有声书信息">
-          <IconButton onClick={handleEditOpen}>
-            <EditIcon />
-          </IconButton>
-        </Tooltip>
+        <Box>
+          <Tooltip title="重新扫描章节">
+            <IconButton onClick={handleRescan} disabled={rescanning}>
+              <span style={{ fontSize: 18 }}>{rescanning ? '⏳' : '🔄'}</span>
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="编辑有声书信息">
+            <IconButton onClick={handleEditOpen}>
+              <EditIcon />
+            </IconButton>
+          </Tooltip>
+        </Box>
       </Box>
 
       <Box className={classes.header}>

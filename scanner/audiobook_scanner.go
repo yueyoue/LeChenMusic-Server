@@ -185,6 +185,7 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 	})
 
 	var totalSize int64
+	var successCount int
 	for i, af := range audioFiles {
 		chapterPath := filepath.Join(audiobookPath, af.name)
 		chapterTitle := strings.TrimSuffix(af.name, filepath.Ext(af.name))
@@ -207,11 +208,13 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 		}
 		if err := repo.PutChapter(&chapter); err != nil {
 			log.Error(ctx, "Audiobook scanner: Error saving chapter", "chapter", chapter.Title, err)
+		} else {
+			successCount++
+			totalSize += fileSize
 		}
-		totalSize += fileSize
 	}
 
-	book.ChapterCount = len(audioFiles)
+	book.ChapterCount = successCount
 	book.TotalDuration = 0
 	book.Size = totalSize
 	if book.Title == "" {
