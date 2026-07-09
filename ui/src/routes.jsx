@@ -5,6 +5,7 @@ import AudiobookList from './audiobook/AudiobookList'
 import AudiobookDetail from './audiobook/AudiobookDetail'
 import NarratorList from './audiobook/NarratorList'
 import VersionPage from './settings/VersionPage'
+import AppManagePage from './appmanage/AppManagePage'
 
 const routes = [
   <Route exact path="/personal" render={() => <Personal />} key={'personal'} />,
@@ -13,6 +14,7 @@ const routes = [
   <Route exact path="/audiobook/:id" render={({ match }) => <AudiobookDetail id={match.params.id} />} key={'audiobook-detail'} />,
   <Route exact path="/narrator" render={() => <NarratorList />} key={'narrator'} />,
   <Route exact path="/settings/version" render={() => <VersionPage />} key={'version'} />,
+  <Route exact path="/settings/app" render={() => <AppManagePage />} key={'app-manage'} />,
 ]
 
 export default routes

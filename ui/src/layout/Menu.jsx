@@ -217,6 +217,14 @@ const Menu = ({ dense = false }) => {
           sidebarIsOpen={open}
           dense={dense}
         />
+        <MenuItemLink
+          to="/settings/app"
+          activeClassName={classes.active}
+          primaryText="APP管理"
+          leftIcon={<span style={{ fontSize: 18 }}>📱</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
         {config.devSidebarPlaylists && open ? (
         <>
           <Divider />
