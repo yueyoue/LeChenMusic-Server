@@ -204,43 +204,28 @@ func oneClickUpdate(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	sendSSE("log", "正在拉取最新镜像...")
+	sendSSE("log", "🔄 正在拉取最新镜像...")
 
 	ctx, cancel := context.WithTimeout(r.Context(), 300*time.Second)
 	defer cancel()
 
-	// Step 1: docker pull
 	pullCmd := exec.CommandContext(ctx, "docker", "pull", "ghcr.io/yueyoue/lechenmusic-server:latest")
 	pullOut, err := pullCmd.CombinedOutput()
 	if err != nil {
-		sendSSE("error", "拉取镜像失败: "+err.Error())
+		sendSSE("error", "❌ 拉取镜像失败: "+err.Error())
 		sendSSE("done", "")
 		return
 	}
-	sendSSE("log", "镜像拉取完成: "+string(pullOut))
-
-	// Step 2: restart container
-	sendSSE("log", "正在重启容器...")
-
-	// Try docker compose
-	composeDown := exec.CommandContext(ctx, "docker", "compose", "down")
-	composeDown.Dir = "/"
-	composeDown.Run()
-
-	composeUp := exec.CommandContext(ctx, "docker", "compose", "up", "-d")
-	composeUp.Dir = "/"
-	out, err := composeUp.CombinedOutput()
-	if err != nil {
-		// Fallback: try to restart the named container
-		sendSSE("log", "docker compose 不可用，尝试重启容器...")
-		exec.CommandContext(ctx, "docker", "stop", "lechen-music").Run()
-		exec.CommandContext(ctx, "docker", "rm", "lechen-music").Run()
-		sendSSE("log", "旧容器已停止，请手动重新创建容器")
-		sendSSE("done", "")
-		return
+	sendSSE("log", "✅ 镜像拉取完成")
+	for _, line := range strings.Split(strings.TrimSpace(string(pullOut)), "\n") {
+		if line != "" {
+			sendSSE("log", "  "+line)
+		}
 	}
-
-	sendSSE("log", "容器已重启: "+string(out))
+	sendSSE("log", "")
+	sendSSE("log", "⚠️ 请手动重启容器以完成更新：")
+	sendSSE("log", "")
+	sendSSE("restart_cmd", "docker stop lechen-music && docker rm lechen-music && docker run -d --name lechen-music --restart unless-stopped -p 3334:3334 -e TZ=Asia/Shanghai -e ND_PORT=3334 -v /vol2/1000/Docker/lechen-music/data:/data -v /vol2/1000/音乐/抖音流行歌曲1:/music:ro -v /vol2/1000/有声读物/有声读物:/audiobooks:ro ghcr.io/yueyoue/lechenmusic-server:latest")
 	sendSSE("done", "")
 }
 
