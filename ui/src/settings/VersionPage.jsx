@@ -56,6 +56,8 @@ const VersionPage = () => {
   const [copied, setCopied] = useState(false)
   const [updating, setUpdating] = useState(false)
   const [updateLogs, setUpdateLogs] = useState([])
+  const [restartCmd, setRestartCmd] = useState('')
+  const [cmdCopied, setCmdCopied] = useState(false)
 
   useEffect(() => {
     fetchVersion()
@@ -108,6 +110,7 @@ const VersionPage = () => {
   const oneClickUpdate = async () => {
     setUpdating(true)
     setUpdateLogs(['🚀 开始一键更新...'])
+    setRestartCmd('')
     try {
       const token = localStorage.getItem('token')
       const headers = { 'X-ND-Authorization': `Bearer ${token}` }
@@ -128,8 +131,12 @@ const VersionPage = () => {
             if (nextLine && nextLine.startsWith('data: ')) {
               const data = nextLine.substring(6)
               if (event === 'done') {
-                setUpdateLogs(prev => [...prev, '✅ 更新完成！页面即将刷新...'])
-                setTimeout(() => window.location.reload(), 3000)
+                setUpdateLogs(prev => [...prev, '✅ 镜像拉取完成！请手动重启容器。'])
+                setUpdating(false)
+                return
+              }
+              if (event === 'restart_cmd') {
+                setRestartCmd(data)
                 return
               }
               setUpdateLogs(prev => [...prev, data])
@@ -266,25 +273,53 @@ const VersionPage = () => {
                   </Box>
                 )}
 
-                {/* Manual command fallback */}
-                <Box mt={2}>
-                  <Typography style={{ fontSize: 12, color: 'text.secondary', marginBottom: 8 }}>
-                    或手动在服务器上执行：
-                  </Typography>
-                  <Box className={classes.commandBox}>
-                    <Typography style={{ fontFamily: 'monospace', fontSize: 13 }}>
-                      {updateInfo.updateCommand}
+                {/* Restart command (shown after pull completes) */}
+                {restartCmd && (
+                  <Box mt={2} style={{ backgroundColor: 'rgba(255, 165, 2, 0.08)', borderRadius: 12, padding: 16, border: '1px solid rgba(255, 165, 2, 0.3)' }}>
+                    <Typography style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, color: '#ffa502' }}>
+                      ⚠️ 镜像已就绪，请在服务器上执行以下命令重启：
                     </Typography>
-                    <Box className={classes.copyBtn} onClick={copyCommand}>
-                      <FileCopyIcon style={{ fontSize: 16, color: 'text.secondary' }} />
+                    <Box className={classes.commandBox}>
+                      <Typography style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                        {restartCmd}
+                      </Typography>
+                      <Box className={classes.copyBtn} onClick={() => {
+                        navigator.clipboard.writeText(restartCmd)
+                        setCmdCopied(true)
+                        setTimeout(() => setCmdCopied(false), 2000)
+                      }}>
+                        <FileCopyIcon style={{ fontSize: 16, color: 'text.secondary' }} />
+                      </Box>
                     </Box>
+                    {cmdCopied && (
+                      <Typography style={{ fontSize: 12, color: '#2ed573', marginTop: 8 }}>
+                        ✅ 已复制到剪贴板
+                      </Typography>
+                    )}
                   </Box>
-                  {copied && (
-                    <Typography style={{ fontSize: 12, color: '#2ed573', marginTop: 8 }}>
-                      ✅ 已复制到剪贴板
+                )}
+
+                {/* Manual command fallback */}
+                {!restartCmd && (
+                  <Box mt={2}>
+                    <Typography style={{ fontSize: 12, color: 'text.secondary', marginBottom: 8 }}>
+                      或手动在服务器上执行：
                     </Typography>
-                  )}
-                </Box>
+                    <Box className={classes.commandBox}>
+                      <Typography style={{ fontFamily: 'monospace', fontSize: 13 }}>
+                        {updateInfo.updateCommand}
+                      </Typography>
+                      <Box className={classes.copyBtn} onClick={copyCommand}>
+                        <FileCopyIcon style={{ fontSize: 16, color: 'text.secondary' }} />
+                      </Box>
+                    </Box>
+                    {copied && (
+                      <Typography style={{ fontSize: 12, color: '#2ed573', marginTop: 8 }}>
+                        ✅ 已复制到剪贴板
+                      </Typography>
+                    )}
+                  </Box>
+                )}
               </CardContent>
             </Card>
           )}
