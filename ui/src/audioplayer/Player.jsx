@@ -366,8 +366,14 @@ const Player = () => {
   )
 
   const onCoverClick = useCallback((mode, audioLists, audioInfo) => {
-    if (mode === 'full' && audioInfo?.song?.albumId) {
-      window.location.href = `#/album/${audioInfo.song.albumId}/show`
+    if (mode === 'full' && audioInfo?.song) {
+      const song = audioInfo.song
+      // Check if this is an audiobook chapter
+      if (song.isAudiobook && song.audiobookId) {
+        window.location.href = `#/audiobook/${song.audiobookId}`
+      } else if (song.albumId) {
+        window.location.href = `#/album/${song.albumId}/show`
+      }
     }
   }, [])
 
@@ -477,3 +483,4 @@ const Player = () => {
 }
 
 export { Player }
+
