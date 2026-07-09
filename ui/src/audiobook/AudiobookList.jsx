@@ -130,18 +130,28 @@ const AudiobookList = () => {
     const fetchAudiobooks = async () => {
       try {
         const token = localStorage.getItem('token')
+        if (!token) {
+          setError('请先登录')
+          setLoading(false)
+          return
+        }
         let url = '/api/audiobook'
         if (isStarred) url = '/api/audiobook/starred'
         const response = await fetch(url, {
           headers: { 'X-ND-Authorization': `Bearer ${token}` },
         })
-        if (!response.ok) throw new Error('Failed to fetch')
+        if (!response.ok) {
+          const errText = await response.text().catch(() => '')
+          throw new Error(`服务器错误 (${response.status}): ${errText || response.statusText}`)
+        }
         const data = await response.json()
         let books = data.data || []
         if (genreFilter) books = books.filter((b) => b.genre === genreFilter)
         setAudiobooks(books)
+        setError(null)
       } catch (err) {
-        setError(err.message)
+        console.error('Failed to fetch audiobooks:', err)
+        setError(err.message || '加载失败，请检查网络连接')
       } finally {
         setLoading(false)
       }
@@ -255,3 +265,4 @@ const AudiobookList = () => {
 }
 
 export default AudiobookList
+
