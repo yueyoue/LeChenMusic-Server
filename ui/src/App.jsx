@@ -136,7 +136,6 @@ const Admin = (props) => {
           name="audiobook"
           {...(permissions === 'admin' ? audiobook.admin : audiobook.all)}
         />,
-        <Resource
         config.enableSharing && <Resource name="share" {...share} />,
         <Resource
           name="playlist"
