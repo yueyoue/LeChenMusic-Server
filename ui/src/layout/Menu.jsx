@@ -202,13 +202,6 @@ const Menu = ({ dense = false }) => {
         />
       </SubMenu>
       <MenuItemLink
-        to="/narrator"
-        activeClassName={classes.active}
-        primaryText="演播者"
-        leftIcon={<span style={{ fontSize: 18 }}>🎤</span>}
-        sidebarIsOpen={open}
-        dense={dense}
-      />
       <MenuItemLink
           to="/settings/version"
           activeClassName={classes.active}
