@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/model"
@@ -17,8 +18,10 @@ func (api *Router) addAudiobookRoute(r chi.Router) {
 	h := &audiobookHandler{ds: api.ds}
 	r.Route("/audiobook", func(r chi.Router) {
 		r.Get("/", h.list)
+		r.Get("/search", h.search)
 		r.Get("/genres", h.genres)
 		r.Get("/narrators", h.narrators)
+		r.Get("/narrator/{name}", h.narratorDetail)
 		r.Get("/starred", h.starred)
 		r.Get("/{id}", h.get)
 		r.Get("/{id}/chapters", h.chapters)
@@ -30,6 +33,7 @@ func (api *Router) addAudiobookRoute(r chi.Router) {
 		r.Delete("/{id}/bookmarks/{bookmarkId}", h.deleteBookmark)
 		r.Post("/{id}/star", h.star)
 		r.Delete("/{id}/star", h.unstar)
+		r.Put("/{id}/metadata", h.updateMetadata)
 		r.Get("/{id}/cover", h.cover)
 	})
 }
@@ -46,6 +50,31 @@ func (h *audiobookHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"data": books})
+}
+
+func (h *audiobookHandler) search(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query().Get("q")
+	if query == "" {
+		writeJSON(w, map[string]any{"data": []})
+		return
+	}
+	repo := h.ds.Audiobook(r.Context())
+	books, err := repo.GetAll()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	q := strings.ToLower(query)
+	var results []model.Audiobook
+	for _, b := range books {
+		if strings.Contains(strings.ToLower(b.Title), q) ||
+			strings.Contains(strings.ToLower(b.Author), q) ||
+			strings.Contains(strings.ToLower(b.Narrator), q) ||
+			strings.Contains(strings.ToLower(b.Series), q) {
+			results = append(results, b)
+		}
+	}
+	writeJSON(w, map[string]any{"data": results})
 }
 
 func (h *audiobookHandler) genres(w http.ResponseWriter, r *http.Request) {
@@ -96,6 +125,23 @@ func (h *audiobookHandler) narrators(w http.ResponseWriter, r *http.Request) {
 		narrators = append(narrators, ni{Name: name, Count: count})
 	}
 	writeJSON(w, map[string]any{"data": narrators})
+}
+
+func (h *audiobookHandler) narratorDetail(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	repo := h.ds.Audiobook(r.Context())
+	books, err := repo.GetAll()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	var works []model.Audiobook
+	for _, b := range books {
+		if strings.EqualFold(b.Narrator, name) {
+			works = append(works, b)
+		}
+	}
+	writeJSON(w, map[string]any{"data": map[string]any{"name": name, "works": works}})
 }
 
 func (h *audiobookHandler) starred(w http.ResponseWriter, r *http.Request) {
@@ -299,6 +345,55 @@ func (h *audiobookHandler) unstar(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"status": "ok"})
+}
+
+func (h *audiobookHandler) updateMetadata(w http.ResponseWriter, r *http.Request) {
+	bookID := chi.URLParam(r, "id")
+	repo := h.ds.Audiobook(r.Context())
+	book, err := repo.Get(bookID)
+	if err != nil {
+		http.Error(w, "Not found", 404)
+		return
+	}
+	var req struct {
+		Title       *string `json:"title"`
+		Author      *string `json:"author"`
+		Narrator    *string `json:"narrator"`
+		Description *string `json:"description"`
+		Genre       *string `json:"genre"`
+		Year        *int    `json:"year"`
+		Series      *string `json:"series"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", 400)
+		return
+	}
+	if req.Title != nil {
+		book.Title = *req.Title
+	}
+	if req.Author != nil {
+		book.Author = *req.Author
+	}
+	if req.Narrator != nil {
+		book.Narrator = *req.Narrator
+	}
+	if req.Description != nil {
+		book.Description = *req.Description
+	}
+	if req.Genre != nil {
+		book.Genre = *req.Genre
+	}
+	if req.Year != nil {
+		book.Year = *req.Year
+	}
+	if req.Series != nil {
+		book.Series = *req.Series
+	}
+	if err := repo.Put(book); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, map[string]any{"data": book})
 }
 
 func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {

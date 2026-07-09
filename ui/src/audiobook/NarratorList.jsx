@@ -93,7 +93,8 @@ const NarratorList = () => {
       ) : (
         <Box className={classes.grid}>
           {filtered.map(narrator => (
-            <Card key={narrator.name} className={classes.card} elevation={0}>
+            <Card key={narrator.name} className={classes.card} elevation={0}
+              onClick={() => window.location.hash = `#/narrator/${encodeURIComponent(narrator.name)}`}>
               <Avatar className={classes.avatar}>
                 {narrator.name.charAt(0)}
               </Avatar>

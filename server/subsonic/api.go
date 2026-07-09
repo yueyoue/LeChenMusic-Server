@@ -165,6 +165,15 @@ func (api *Router) routes() http.Handler {
 			h(r, "savePlayQueue", api.SavePlayQueue)
 			h(r, "savePlayQueueByIndex", api.SavePlayQueueByIndex)
 		})
+		// [LeChenMusic-START:audiobook-subsonic]
+		r.Group(func(r chi.Router) {
+			r.Use(getPlayer(api.players))
+			h(r, "getAudiobooks", api.GetAudiobooks)
+			h(r, "getAudiobook", api.GetAudiobook)
+			h(r, "getAudiobookChapters", api.GetAudiobookChapters)
+			hr(r, "streamAudiobookChapter", api.StreamAudiobookChapter)
+		})
+		// [LeChenMusic-END:audiobook-subsonic]
 		r.Group(func(r chi.Router) {
 			r.Use(getPlayer(api.players))
 			h(r, "search2", api.Search2)

@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Typography, Box, makeStyles, IconButton, Slider, Chip,
-  Tooltip, Menu, MenuItem
+  Tooltip, Menu, MenuItem, Dialog, DialogTitle, DialogContent,
+  List, ListItem, ListItemText, ListItemSecondaryAction, Switch,
+  TextField, DialogActions, Button
 } from '@material-ui/core'
 import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import PauseIcon from '@material-ui/icons/Pause'
@@ -16,6 +18,7 @@ import TimerIcon from '@material-ui/icons/Timer'
 import ListIcon from '@material-ui/icons/List'
 import ArrowBackIcon from '@material-ui/icons/ArrowBack'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
+import SkipNext from '@material-ui/icons/SkipNext'
 
 const useStyles = makeStyles((theme) => ({
   root: {
@@ -81,6 +84,9 @@ const useStyles = makeStyles((theme) => ({
     color: theme.palette.text.secondary, fontSize: 11,
     '&:hover': { color: theme.palette.text.primary },
   },
+  extraBtnActive: {
+    color: theme.palette.primary.main,
+  },
   chapterDrawer: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
     maxHeight: '60%', backgroundColor: theme.palette.background.paper,
@@ -94,9 +100,26 @@ const useStyles = makeStyles((theme) => ({
   },
   chapterActive: { backgroundColor: theme.palette.action.selected },
   speedMenu: { minWidth: 80 },
+  timerChip: {
+    position: 'absolute', top: -8, right: -8,
+    fontSize: 9, height: 16,
+  },
+  skipSettings: {
+    padding: '12px 16px',
+    borderTop: '1px solid rgba(128,128,128,0.1)',
+  },
 }))
 
 const SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
+const TIMER_OPTIONS = [
+  { label: '关闭', minutes: 0 },
+  { label: '15 分钟', minutes: 15 },
+  { label: '30 分钟', minutes: 30 },
+  { label: '45 分钟', minutes: 45 },
+  { label: '60 分钟', minutes: 60 },
+  { label: '90 分钟', minutes: 90 },
+  { label: '本章结束', minutes: -1 },
+]
 
 const formatTime = (ms) => {
   if (!ms || ms < 0) return '0:00'
@@ -112,16 +135,64 @@ const AudiobookPlayer = ({
   book, chapters, currentChapter, isPlaying, position, duration,
   playbackSpeed, onPlay, onPause, onSeek, onSkipForward, onSkipBack,
   onPrevChapter, onNextChapter, onChapterSelect, onSpeedChange,
-  onBack, onBookmark, isBookmarked,
+  onBack, onBookmark, isBookmarked, skipIntro, skipOutro, onSkipChange,
 }) => {
   const classes = useStyles()
   const [showChapters, setShowChapters] = useState(false)
   const [showSpeed, setShowSpeed] = useState(null)
+  const [showTimer, setShowTimer] = useState(false)
+  const [showSkipSettings, setShowSkipSettings] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [dragValue, setDragValue] = useState(0)
+  const [timerMinutes, setTimerMinutes] = useState(0)
+  const [timerRemaining, setTimerRemaining] = useState(0)
+  const timerRef = useRef(null)
 
   const currentIdx = chapters.findIndex(c => c.id === currentChapter?.id)
   const progress = duration > 0 ? (position / duration) * 100 : 0
+
+  // Sleep timer
+  useEffect(() => {
+    if (timerMinutes === 0) {
+      setTimerRemaining(0)
+      if (timerRef.current) clearInterval(timerRef.current)
+      return
+    }
+
+    if (timerMinutes === -1) {
+      // Stop at end of chapter
+      setTimerRemaining(-1)
+      return
+    }
+
+    setTimerRemaining(timerMinutes * 60)
+    timerRef.current = setInterval(() => {
+      setTimerRemaining(prev => {
+        if (prev <= 1) {
+          clearInterval(timerRef.current)
+          if (onPause) onPause()
+          setTimerMinutes(0)
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+  }, [timerMinutes])
+
+  // Check chapter end for "stop at chapter end" timer
+  useEffect(() => {
+    if (timerMinutes === -1 && isPlaying && duration > 0) {
+      const remaining = duration - position
+      if (remaining < 2000) {
+        if (onPause) onPause()
+        setTimerMinutes(0)
+      }
+    }
+  }, [position, duration, timerMinutes, isPlaying])
 
   const handleSliderChange = (_, val) => {
     setIsDragging(true)
@@ -131,6 +202,14 @@ const AudiobookPlayer = ({
   const handleSliderCommitted = (_, val) => {
     setIsDragging(false)
     onSeek((val / 100) * duration)
+  }
+
+  const formatTimerRemaining = () => {
+    if (timerMinutes === -1) return '本章结束'
+    if (timerMinutes === 0) return '定时'
+    const m = Math.floor(timerRemaining / 60)
+    const s = timerRemaining % 60
+    return `${m}:${String(s).padStart(2, '0')}`
   }
 
   return (
@@ -208,15 +287,51 @@ const AudiobookPlayer = ({
           {isBookmarked ? <BookmarkIcon style={{ fontSize: 20, color: '#f59e0b' }} /> : <BookmarkBorderIcon style={{ fontSize: 20 }} />}
           <span>书签</span>
         </button>
-        <button className={classes.extraBtn}>
+        <button
+          className={`${classes.extraBtn} ${timerMinutes !== 0 ? classes.extraBtnActive : ''}`}
+          onClick={() => setShowTimer(true)}
+          style={{ position: 'relative' }}
+        >
           <TimerIcon style={{ fontSize: 20 }} />
-          <span>定时</span>
+          <span>{formatTimerRemaining()}</span>
+          {timerMinutes !== 0 && <Chip label="ON" size="small" color="primary" className={classes.timerChip} />}
+        </button>
+        <button className={classes.extraBtn} onClick={() => setShowSkipSettings(!showSkipSettings)}>
+          <SkipNext style={{ fontSize: 20 }} />
+          <span>跳过</span>
         </button>
         <button className={classes.extraBtn} onClick={() => setShowChapters(!showChapters)}>
           <ListIcon style={{ fontSize: 20 }} />
           <span>章节</span>
         </button>
       </Box>
+
+      {/* Skip intro/outro settings */}
+      {showSkipSettings && (
+        <Box className={classes.skipSettings}>
+          <Typography style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>跳过片头片尾（秒）</Typography>
+          <Box display="flex" gap={2} alignItems="center">
+            <Box flex={1}>
+              <Typography style={{ fontSize: 11, color: 'text.secondary', marginBottom: 4 }}>片头</Typography>
+              <TextField
+                type="number" size="small" variant="outlined" fullWidth
+                value={skipIntro || 0}
+                onChange={(e) => onSkipChange && onSkipChange('intro', parseInt(e.target.value) || 0)}
+                inputProps={{ min: 0, max: 300 }}
+              />
+            </Box>
+            <Box flex={1}>
+              <Typography style={{ fontSize: 11, color: 'text.secondary', marginBottom: 4 }}>片尾</Typography>
+              <TextField
+                type="number" size="small" variant="outlined" fullWidth
+                value={skipOutro || 0}
+                onChange={(e) => onSkipChange && onSkipChange('outro', parseInt(e.target.value) || 0)}
+                inputProps={{ min: 0, max: 300 }}
+              />
+            </Box>
+          </Box>
+        </Box>
+      )}
 
       {/* Speed menu */}
       <Menu anchorEl={showSpeed} open={Boolean(showSpeed)} onClose={() => setShowSpeed(null)}>
@@ -226,6 +341,30 @@ const AudiobookPlayer = ({
           </MenuItem>
         ))}
       </Menu>
+
+      {/* Timer dialog */}
+      <Dialog open={showTimer} onClose={() => setShowTimer(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>睡眠定时器</DialogTitle>
+        <DialogContent>
+          <List>
+            {TIMER_OPTIONS.map(opt => (
+              <ListItem
+                key={opt.minutes}
+                button
+                selected={timerMinutes === opt.minutes}
+                onClick={() => { setTimerMinutes(opt.minutes); setShowTimer(false) }}
+              >
+                <ListItemText primary={opt.label} />
+                {timerMinutes === opt.minutes && (
+                  <ListItemSecondaryAction>
+                    <Typography style={{ fontSize: 12, color: 'primary.main' }}>✓</Typography>
+                  </ListItemSecondaryAction>
+                )}
+              </ListItem>
+            ))}
+          </List>
+        </DialogContent>
+      </Dialog>
 
       {/* Chapter drawer */}
       {showChapters && (

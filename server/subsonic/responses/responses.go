@@ -63,6 +63,12 @@ type Subsonic struct {
 	PlayQueueByIndex       *PlayQueueByIndex       `xml:"playQueueByIndex,omitempty" json:"playQueueByIndex,omitempty"`
 	TranscodeDecision      *TranscodeDecision      `xml:"transcodeDecision,omitempty"       json:"transcodeDecision,omitempty"`
 	SonicMatches           *Array[SonicMatch]      `xml:"sonicMatch,omitempty"              json:"sonicMatch,omitempty"`
+
+	// [LeChenMusic-START:audiobook-subsonic]
+	Audiobooks      *Audiobooks      `xml:"audiobooks,omitempty"      json:"audiobooks,omitempty"`
+	Audiobook       *AudiobookID3    `xml:"audiobook,omitempty"       json:"audiobook,omitempty"`
+	AudiobookChapters *AudiobookChapters `xml:"audiobookChapters,omitempty" json:"audiobookChapters,omitempty"`
+	// [LeChenMusic-END:audiobook-subsonic]
 }
 
 const (
@@ -696,3 +702,30 @@ type StreamDetails struct {
 	AudioSamplerate int32  `xml:"audioSamplerate,attr,omitempty" json:"audioSamplerate,omitempty"`
 	AudioBitdepth   int32  `xml:"audioBitdepth,attr,omitempty"   json:"audioBitdepth,omitempty"`
 }
+
+// [LeChenMusic-START:audiobook-subsonic]
+
+type Audiobooks struct {
+	Audiobook []AudiobookID3 `xml:"audiobook" json:"audiobook"`
+}
+
+type AudiobookID3 struct {
+	ID            string  `xml:"id,attr"              json:"id"`
+	Title         string  `xml:"title,attr"           json:"title"`
+	Author        string  `xml:"author,attr,omitempty"  json:"author,omitempty"`
+	Narrator      string  `xml:"narrator,attr,omitempty" json:"narrator,omitempty"`
+	CoverArt      string  `xml:"coverArt,attr,omitempty" json:"coverArt,omitempty"`
+	Duration      int     `xml:"duration,attr"        json:"duration"`
+	Genre         string  `xml:"genre,attr,omitempty"   json:"genre,omitempty"`
+	Year          int     `xml:"year,attr,omitempty"    json:"year,omitempty"`
+	Series        string  `xml:"series,attr,omitempty"  json:"series,omitempty"`
+	ChapterCount  int     `xml:"chapterCount,attr"    json:"chapterCount"`
+	Chapter       []Child `xml:"chapter,omitempty"    json:"chapter,omitempty"`
+	CreatedAt     string  `xml:"createdAt,attr,omitempty" json:"createdAt,omitempty"`
+}
+
+type AudiobookChapters struct {
+	Chapter []Child `xml:"chapter" json:"chapter"`
+}
+
+// [LeChenMusic-END:audiobook-subsonic]

@@ -67,6 +67,27 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
   const [chapters, setChapters] = useState([])
   const [progress, setProgress] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [bgColor, setBgColor] = useState(null)
+
+  // Extract dominant color from cover
+  const extractColor = (imageUrl) => {
+    try {
+      const img = new Image()
+      img.crossOrigin = 'anonymous'
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = 1
+        canvas.height = 1
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, 1, 1)
+        const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+        setBgColor(`linear-gradient(135deg, rgb(${r},${g},${b}) 0%, rgba(${r},${g},${b},0.3) 100%)`)
+      }
+      img.src = imageUrl
+    } catch (e) {
+      // ignore
+    }
+  }
 
   useEffect(() => {
     const fetchData = async () => {
@@ -82,6 +103,9 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
           if (data.data) {
             setBook(data.data.book)
             setChapters(data.data.chapters || [])
+            if (data.data.book?.coverPath) {
+              extractColor(`/api/audiobook/${id}/cover`)
+            }
           }
         }
         if (progressRes.ok) {
@@ -123,7 +147,7 @@ const AudiobookDetail = ({ id, onBack, onPlay, currentChapterId, isPlaying }) =>
   }
 
   return (
-    <Box className={classes.root}>
+    <Box className={classes.root} style={bgColor ? { background: bgColor, borderRadius: 12, padding: 16 } : {}}>
       <IconButton className={classes.backBtn} onClick={onBack}>
         <ArrowBackIcon />
       </IconButton>
