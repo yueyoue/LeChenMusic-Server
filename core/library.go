@@ -58,6 +58,18 @@ func NewLibrary(ds model.DataStore, scanner model.Scanner, watcher Watcher, brok
 	return svc
 }
 
+// detectMediaType checks if a library should be treated as an audiobook library based on name/path keywords.
+// Returns "audiobook" if keywords match, otherwise returns "music".
+func detectMediaType(name, path string) string {
+	keywords := []string{"有声", "audiobook", "评书", "相声", "小说", "戏曲"}
+	for _, kw := range keywords {
+		if strings.Contains(name, kw) || strings.Contains(path, kw) {
+			return "audiobook"
+		}
+	}
+	return "music"
+}
+
 // autoDetectMediaType sets media_type for libraries based on name/path keywords
 func (s *libraryService) autoDetectMediaType() {
 	ctx := context.Background()
@@ -65,18 +77,12 @@ func (s *libraryService) autoDetectMediaType() {
 	if err != nil {
 		return
 	}
-	keywords := []string{"有声", "audiobook", "评书", "相声", "小说", "戏曲"}
+
 	for _, lib := range libs {
 		if lib.MediaType != "" && lib.MediaType != "music" {
 			continue
 		}
-		shouldBeAudiobook := false
-		for _, kw := range keywords {
-			if strings.Contains(lib.Name, kw) || strings.Contains(lib.Path, kw) {
-				shouldBeAudiobook = true
-				break
-			}
-		}
+		shouldBeAudiobook := detectMediaType(lib.Name, lib.Path) == "audiobook"
 		if shouldBeAudiobook {
 			lib.MediaType = "audiobook"
 			_ = s.ds.Library(ctx).Put(&lib)
@@ -195,6 +201,11 @@ func (r *libraryRepositoryWrapper) Save(entity any) (string, error) {
 		return "", err
 	}
 
+	// Auto-detect media type before saving if not explicitly set
+	if lib.MediaType == "" || lib.MediaType == "music" {
+		lib.MediaType = detectMediaType(lib.Name, lib.Path)
+	}
+
 	err := r.LibraryRepository.Put(lib)
 	if err != nil {
 		return "", r.mapError(err)
@@ -231,6 +242,11 @@ func (r *libraryRepositoryWrapper) Update(id string, entity any, _ ...string) er
 	lib.ID = libID
 	if err := r.validateLibrary(lib); err != nil {
 		return err
+	}
+
+	// Auto-detect media type before saving if not explicitly set
+	if lib.MediaType == "" || lib.MediaType == "music" {
+		lib.MediaType = detectMediaType(lib.Name, lib.Path)
 	}
 
 	// Get the original library to check if path changed

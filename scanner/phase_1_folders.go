@@ -8,6 +8,7 @@ import (
 	"maps"
 	"path"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,11 +27,34 @@ import (
 	"github.com/navidrome/navidrome/utils/slice"
 )
 
+// detectLibraryMediaType checks if a library should be treated as audiobook based on name/path keywords.
+func detectLibraryMediaType(name, path string) string {
+	keywords := []string{"有声", "audiobook", "评书", "相声", "小说", "戏曲"}
+	for _, kw := range keywords {
+		if strings.Contains(name, kw) || strings.Contains(path, kw) {
+			return "audiobook"
+		}
+	}
+	return "music"
+}
+
 func createPhaseFolders(ctx context.Context, state *scanState, ds model.DataStore, cw artwork.CacheWarmer) *phaseFolders {
 	var jobs []*scanJob
 
 	// Create scan jobs for all libraries (skip audiobook libraries - they are scanned in Phase 5)
-	for _, lib := range state.libraries {
+	for i, lib := range state.libraries {
+		// Auto-detect media type if not set (safety net for libraries created before fix)
+		if lib.MediaType == "" || lib.MediaType == "music" {
+			detected := detectLibraryMediaType(lib.Name, lib.Path)
+			if detected == "audiobook" {
+				log.Info(ctx, "Scanner: Auto-detected audiobook library", "library", lib.Name, "path", lib.Path)
+				lib.MediaType = "audiobook"
+				state.libraries[i].MediaType = "audiobook"
+				if err := ds.Library(ctx).Put(&lib); err != nil {
+					log.Error(ctx, "Scanner: Error updating library media_type", "library", lib.Name, err)
+				}
+			}
+		}
 		// Skip audiobook libraries - they have their own scanner
 		if lib.MediaType == "audiobook" {
 			continue
