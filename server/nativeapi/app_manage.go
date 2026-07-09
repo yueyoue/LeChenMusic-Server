@@ -76,7 +76,7 @@ func (h *appManageHandler) updateConfig(w http.ResponseWriter, r *http.Request) 
 // uploadApk handles APK file upload
 func (h *appManageHandler) uploadApk(w http.ResponseWriter, r *http.Request) {
 	r.ParseMultipartForm(200 << 20) // 200MB max
-	file, header, err := r.FormFile("apk")
+	file, _, err := r.FormFile("apk")
 	if err != nil {
 		http.Error(w, "No file uploaded", 400)
 		return
