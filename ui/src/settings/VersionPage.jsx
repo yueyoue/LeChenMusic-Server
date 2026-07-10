@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import {
   Typography, Box, Card, CardContent, makeStyles, Button,
-  CircularProgress, Chip, Divider
+  CircularProgress, Chip
 } from '@material-ui/core'
 import SystemUpdateIcon from '@material-ui/icons/SystemUpdate'
 import CheckCircleIcon from '@material-ui/icons/CheckCircle'
@@ -44,6 +44,23 @@ const useStyles = makeStyles((theme) => ({
     borderRadius: 8,
   },
   checkBtn: { borderRadius: 20, textTransform: 'none', fontWeight: 600 },
+  stepBox: {
+    backgroundColor: 'rgba(25, 118, 210, 0.06)',
+    borderRadius: 12, padding: 16, marginTop: 12,
+    border: '1px solid rgba(25, 118, 210, 0.15)',
+  },
+  step: {
+    display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8,
+    '&:last-child': { marginBottom: 0 },
+  },
+  stepNum: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: theme.palette.primary.main,
+    color: '#fff', fontSize: 11, fontWeight: 700,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0, marginTop: 2,
+  },
+  stepText: { fontSize: 13, lineHeight: 1.6 },
 }))
 
 const VersionPage = () => {
@@ -53,15 +70,9 @@ const VersionPage = () => {
   const [versionInfo, setVersionInfo] = useState(null)
   const [updateInfo, setUpdateInfo] = useState(null)
   const [error, setError] = useState(null)
-  const [copied, setCopied] = useState(false)
-  const [updating, setUpdating] = useState(false)
-  const [updateLogs, setUpdateLogs] = useState([])
-  const [restartCmd, setRestartCmd] = useState('')
   const [cmdCopied, setCmdCopied] = useState(false)
 
-  useEffect(() => {
-    fetchVersion()
-  }, [])
+  useEffect(() => { fetchVersion() }, [])
 
   const fetchVersion = async () => {
     try {
@@ -102,58 +113,8 @@ const VersionPage = () => {
   const copyCommand = () => {
     if (updateInfo?.updateCommand) {
       navigator.clipboard.writeText(updateInfo.updateCommand)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    }
-  }
-
-  const oneClickUpdate = async () => {
-    setUpdating(true)
-    setUpdateLogs(['🚀 开始一键更新...'])
-    setRestartCmd('')
-    try {
-      const token = localStorage.getItem('token')
-      const headers = { 'X-ND-Authorization': `Bearer ${token}` }
-      const res = await fetch('/api/version/update', { method: 'POST', headers })
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop()
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i]
-          if (line.startsWith('event: ')) {
-            const event = line.substring(7).trim()
-            const nextLine = lines[i + 1]
-            if (nextLine && nextLine.startsWith('data: ')) {
-              const data = nextLine.substring(6)
-              if (event === 'done') {
-                setUpdateLogs(prev => [...prev, ''])
-                setUpdating(false)
-                return
-              }
-              if (event === 'restart_cmd') {
-                setRestartCmd(data)
-                // Don't return yet, let the stream finish
-                continue
-              }
-              if (event === 'error') {
-                setUpdateLogs(prev => [...prev, data])
-                continue
-              }
-              setUpdateLogs(prev => [...prev, data])
-            }
-          }
-        }
-      }
-      setUpdating(false)
-    } catch (err) {
-      setUpdateLogs(prev => [...prev, '❌ 更新失败: ' + err.message])
-      setUpdating(false)
+      setCmdCopied(true)
+      setTimeout(() => setCmdCopied(false), 2000)
     }
   }
 
@@ -175,7 +136,7 @@ const VersionPage = () => {
           <Box className={classes.versionInfo}>
             <Typography className={classes.label}>版本号</Typography>
             <Typography className={classes.value}>
-              {versionInfo?.currentSHA ? versionInfo.currentSHA.substring(0, 8) : '未知'}
+              {versionInfo?.currentSHA ? versionInfo.currentSHA.substring(0, 7) : '未知'}
             </Typography>
           </Box>
           <Box className={classes.versionInfo}>
@@ -185,7 +146,7 @@ const VersionPage = () => {
           <Box className={classes.versionInfo}>
             <Typography className={classes.label}>仓库</Typography>
             <Typography className={classes.value} style={{ fontSize: 13 }}>
-              <a href={versionInfo?.serverUrl} target="_blank" rel="noopener" style={{ color: 'primary.main' }}>
+              <a href={versionInfo?.serverUrl} target="_blank" rel="noopener" style={{ color: '#1976d2' }}>
                 {versionInfo?.serverUrl}
               </a>
             </Typography>
@@ -207,7 +168,7 @@ const VersionPage = () => {
         </Button>
       </Box>
 
-      {/* Update Status */}
+      {/* Error */}
       {error && (
         <Card className={classes.card} elevation={0}>
           <CardContent className={`${classes.statusCard} ${classes.statusError}`}>
@@ -217,6 +178,7 @@ const VersionPage = () => {
         </Card>
       )}
 
+      {/* Update Status */}
       {updateInfo && (
         <>
           {updateInfo.hasUpdate ? (
@@ -235,7 +197,7 @@ const VersionPage = () => {
             <Card className={classes.card} elevation={0}>
               <CardContent className={`${classes.statusCard} ${classes.statusOk}`}>
                 <CheckCircleIcon style={{ color: '#2ed573', fontSize: 24 }} />
-                <Typography style={{ fontWeight: 600, color: '#2ed573' }}>已是最新版本</Typography>
+                <Typography style={{ fontWeight: 600, color: '#2ed573' }}>已是最新版本 ✓</Typography>
               </CardContent>
             </Card>
           )}
@@ -250,82 +212,55 @@ const VersionPage = () => {
             </Card>
           )}
 
-          {/* One-Click Update + Command */}
+          {/* Update Command */}
           {updateInfo.hasUpdate && (
             <Card className={classes.card} elevation={0}>
               <CardContent>
-                <Typography style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>更新方式</Typography>
-                
-                {/* One-click update button */}
-                <Button
-                  variant="contained"
-                  color="secondary"
-                  style={{ borderRadius: 20, textTransform: 'none', fontWeight: 600, marginBottom: 16 }}
-                  onClick={oneClickUpdate}
-                  disabled={updating}
-                  startIcon={updating ? <CircularProgress size={18} /> : <SystemUpdateIcon />}
-                >
-                  {updating ? '更新中...' : '🚀 一键更新'}
-                </Button>
+                <Typography style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>SSH 更新命令</Typography>
+                <Typography style={{ fontSize: 12, color: 'text.secondary', marginBottom: 12 }}>
+                  登录服务器，进入 docker-compose.yml 所在目录，执行以下命令：
+                </Typography>
 
-                {/* Update logs */}
-                {updateLogs.length > 0 && (
-                  <Box className={classes.commandBox} style={{ maxHeight: 200, overflow: 'auto', marginTop: 8 }}>
-                    {updateLogs.map((log, i) => (
-                      <Typography key={i} style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 1.8 }}>
-                        {log}
-                      </Typography>
-                    ))}
+                <Box className={classes.stepBox}>
+                  <Box className={classes.step}>
+                    <Box className={classes.stepNum}>1</Box>
+                    <Typography className={classes.stepText}>SSH 登录服务器</Typography>
                   </Box>
-                )}
-
-                {/* Restart command (shown after pull completes) */}
-                {restartCmd && (
-                  <Box mt={2} style={{ backgroundColor: 'rgba(255, 165, 2, 0.08)', borderRadius: 12, padding: 16, border: '1px solid rgba(255, 165, 2, 0.3)' }}>
-                    <Typography style={{ fontSize: 14, fontWeight: 600, marginBottom: 8, color: '#ffa502' }}>
-                      ⚠️ 镜像已就绪，请在服务器上执行以下命令重启：
+                  <Box className={classes.step}>
+                    <Box className={classes.stepNum}>2</Box>
+                    <Typography className={classes.stepText}>
+                      进入安装目录：<code style={{ background: 'rgba(0,0,0,0.06)', padding: '2px 6px', borderRadius: 4 }}>
+                        cd /opt/lechenmusic
+                      </code>
                     </Typography>
-                    <Box className={classes.commandBox}>
-                      <Typography style={{ fontFamily: 'monospace', fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                        {restartCmd}
-                      </Typography>
-                      <Box className={classes.copyBtn} onClick={() => {
-                        navigator.clipboard.writeText(restartCmd)
-                        setCmdCopied(true)
-                        setTimeout(() => setCmdCopied(false), 2000)
-                      }}>
-                        <FileCopyIcon style={{ fontSize: 16, color: 'text.secondary' }} />
-                      </Box>
-                    </Box>
-                    {cmdCopied && (
-                      <Typography style={{ fontSize: 12, color: '#2ed573', marginTop: 8 }}>
-                        ✅ 已复制到剪贴板
-                      </Typography>
-                    )}
                   </Box>
+                  <Box className={classes.step}>
+                    <Box className={classes.stepNum}>3</Box>
+                    <Typography className={classes.stepText}>执行更新命令：</Typography>
+                  </Box>
+                </Box>
+
+                <Box className={classes.commandBox}>
+                  <Typography style={{ fontFamily: 'monospace', fontSize: 13, lineHeight: 1.6 }}>
+                    {updateInfo.updateCommand}
+                  </Typography>
+                  <Box className={classes.copyBtn} onClick={copyCommand}>
+                    <FileCopyIcon style={{ fontSize: 16, color: 'text.secondary' }} />
+                  </Box>
+                </Box>
+
+                {cmdCopied && (
+                  <Typography style={{ fontSize: 12, color: '#2ed573', marginTop: 8 }}>
+                    ✅ 已复制到剪贴板
+                  </Typography>
                 )}
 
-                {/* Manual command fallback */}
-                {!restartCmd && (
-                  <Box mt={2}>
-                    <Typography style={{ fontSize: 12, color: 'text.secondary', marginBottom: 8 }}>
-                      或手动在服务器上执行：
-                    </Typography>
-                    <Box className={classes.commandBox}>
-                      <Typography style={{ fontFamily: 'monospace', fontSize: 13 }}>
-                        {updateInfo.updateCommand}
-                      </Typography>
-                      <Box className={classes.copyBtn} onClick={copyCommand}>
-                        <FileCopyIcon style={{ fontSize: 16, color: 'text.secondary' }} />
-                      </Box>
-                    </Box>
-                    {copied && (
-                      <Typography style={{ fontSize: 12, color: '#2ed573', marginTop: 8 }}>
-                        ✅ 已复制到剪贴板
-                      </Typography>
-                    )}
-                  </Box>
-                )}
+                <Box mt={2} p={1.5} style={{ backgroundColor: 'rgba(255,165,2,0.06)', borderRadius: 8 }}>
+                  <Typography style={{ fontSize: 11, color: 'text.secondary' }}>
+                    💡 提示：如果你的安装目录不是 <code>/opt/lechenmusic</code>，请替换为实际路径。
+                    命令会自动拉取最新镜像并重建容器，数据不会丢失。
+                  </Typography>
+                </Box>
               </CardContent>
             </Card>
           )}
@@ -336,4 +271,3 @@ const VersionPage = () => {
 }
 
 export default VersionPage
-
