@@ -136,6 +136,14 @@ const Menu = ({ dense = false }) => {
         sidebarIsOpen={open}
         dense={dense}
       />
+      <MenuItemLink
+        to="/ai-playlist"
+        activeClassName={classes.active}
+        primaryText="🤖 AI 歌单"
+        leftIcon={<span style={{ fontSize: 16 }}>🎵</span>}
+        sidebarIsOpen={open}
+        dense={dense}
+      />
       <SubMenu
         handleToggle={() => handleToggle('menuAudiobook')}
         isOpen={state.menuAudiobook}

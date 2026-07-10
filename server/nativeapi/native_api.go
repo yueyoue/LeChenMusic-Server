@@ -84,7 +84,8 @@ func (api *Router) routes() http.Handler {
 		api.R(r, "/player", model.Player{}, true)
 		api.R(r, "/transcoding", model.Transcoding{}, conf.Server.EnableTranscodingConfig)
 		api.addRadioRoute(r)
-		api.addAudiobookRoute(r) // [LeChenMusic] audiobook routes
+		api.addAudiobookRoute(r)  // [LeChenMusic] audiobook routes
+		api.addAIPlaylistRoute(r) // [LeChenMusic] AI playlist routes
 		api.addBackupRoute(r)    // [LeChenMusic] backup & restore routes
 		api.addVersionRoute(r)   // [LeChenMusic] version check
 		api.addAppManageRoute(r) // [LeChenMusic] app management (version/splash/slides)
