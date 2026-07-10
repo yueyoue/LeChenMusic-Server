@@ -57,6 +57,7 @@ func (h *audiobookHandler) list(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
+	if books == nil { books = model.Audiobooks{} }
 	writeJSON(w, map[string]any{"data": books})
 }
 
@@ -73,7 +74,7 @@ func (h *audiobookHandler) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := strings.ToLower(query)
-	var results []model.Audiobook
+	results := make([]model.Audiobook, 0)
 	for _, b := range books {
 		if strings.Contains(strings.ToLower(b.Title), q) ||
 			strings.Contains(strings.ToLower(b.Author), q) ||
@@ -128,7 +129,7 @@ func (h *audiobookHandler) narrators(w http.ResponseWriter, r *http.Request) {
 			nm[b.Narrator]++
 		}
 	}
-	var narrators []ni
+	narrators := make([]ni, 0)
 	for name, count := range nm {
 		narrators = append(narrators, ni{Name: name, Count: count})
 	}
@@ -164,6 +165,7 @@ func (h *audiobookHandler) starred(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
+	if books == nil { books = model.Audiobooks{} }
 	writeJSON(w, map[string]any{"data": books})
 }
 
@@ -522,3 +524,4 @@ func writeJSON(w http.ResponseWriter, data any) {
 }
 
 // [LeChenMusic-END:audiobook]
+
