@@ -86,6 +86,7 @@ func (api *Router) routes() http.Handler {
 		api.addRadioRoute(r)
 		api.addAudiobookRoute(r)  // [LeChenMusic] audiobook routes
 		api.addAIPlaylistRoute(r) // [LeChenMusic] AI playlist routes
+		api.addErrorLogRoute(r)  // [LeChenMusic] error log route
 		api.addBackupRoute(r)    // [LeChenMusic] backup & restore routes
 		api.addVersionRoute(r)   // [LeChenMusic] version check
 		api.addAppManageRoute(r) // [LeChenMusic] app management (version/splash/slides)

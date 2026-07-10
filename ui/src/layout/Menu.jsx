@@ -144,6 +144,14 @@ const Menu = ({ dense = false }) => {
         sidebarIsOpen={open}
         dense={dense}
       />
+      <MenuItemLink
+        to="/error-log"
+        activeClassName={classes.active}
+        primaryText="🐛 错误日志"
+        leftIcon={<span style={{ fontSize: 16 }}>📋</span>}
+        sidebarIsOpen={open}
+        dense={dense}
+      />
       <SubMenu
         handleToggle={() => handleToggle('menuAudiobook')}
         isOpen={state.menuAudiobook}
