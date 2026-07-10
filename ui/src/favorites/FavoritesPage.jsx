@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import {
   Typography,
   Box,
@@ -13,9 +13,9 @@ import FavoriteIcon from '@material-ui/icons/Favorite'
 import AlbumIcon from '@material-ui/icons/Album'
 import MusicNoteIcon from '@material-ui/icons/MusicNote'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
-import { useTranslate } from 'react-admin'
-import AlbumGridView from '../album/AlbumGridView'
-import { CoverArtAvatar } from '../common'
+import { useDataProvider, useNotify } from 'react-admin'
+import httpClient from '../dataProvider/httpClient'
+import { REST_URL } from '../consts'
 
 const useStyles = makeStyles((theme) => ({
   root: { padding: 12 },
@@ -80,24 +80,10 @@ const useStyles = makeStyles((theme) => ({
     marginLeft: 16,
     flexShrink: 0,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 600,
-    padding: '12px 16px 8px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-  },
   empty: {
     textAlign: 'center',
     padding: 60,
     color: theme.palette.text.secondary,
-  },
-  count: {
-    fontSize: 12,
-    color: theme.palette.text.secondary,
-    fontWeight: 400,
-    marginLeft: 4,
   },
   audiobookGrid: {
     display: 'grid',
@@ -160,7 +146,8 @@ const formatDuration = (seconds) => {
 
 const FavoritesPage = () => {
   const classes = useStyles()
-  const translate = useTranslate()
+  const notify = useNotify()
+  const dataProvider = useDataProvider()
   const [tab, setTab] = useState(0)
   const [loading, setLoading] = useState(true)
   const [starredAlbums, setStarredAlbums] = useState([])
@@ -169,36 +156,49 @@ const FavoritesPage = () => {
 
   useEffect(() => {
     const fetchFavorites = async () => {
+      setLoading(true)
       try {
-        const token = localStorage.getItem('token')
-        const headers = { 'X-ND-Authorization': `Bearer ${token}` }
-
-        const [albumsRes, songsRes, audiobooksRes] = await Promise.all([
-          fetch('/api/album?sort=starred_at&order=DESC&filter={"starred":true}', { headers }),
-          fetch('/api/song?sort=starred_at&order=DESC&filter={"starred":true}', { headers }),
-          fetch('/api/audiobook/starred', { headers }),
+        // Use react-admin data provider for albums and songs
+        const [albumsResult, songsResult] = await Promise.all([
+          dataProvider.getList('album', {
+            pagination: { page: 1, perPage: 100 },
+            sort: { field: 'starred_at', order: 'DESC' },
+            filter: { starred: true },
+          }).catch(e => {
+            console.error('Failed to fetch starred albums:', e)
+            return { data: [] }
+          }),
+          dataProvider.getList('song', {
+            pagination: { page: 1, perPage: 100 },
+            sort: { field: 'starred_at', order: 'DESC' },
+            filter: { starred: true },
+          }).catch(e => {
+            console.error('Failed to fetch starred songs:', e)
+            return { data: [] }
+          }),
         ])
 
-        if (albumsRes.ok) {
-          const data = await albumsRes.json()
-          setStarredAlbums(data.data || [])
-        }
-        if (songsRes.ok) {
-          const data = await songsRes.json()
-          setStarredSongs(data.data || [])
-        }
-        if (audiobooksRes.ok) {
-          const data = await audiobooksRes.json()
-          setStarredAudiobooks(data.data || [])
+        setStarredAlbums(albumsResult.data || [])
+        setStarredSongs(songsResult.data || [])
+
+        // Fetch starred audiobooks via custom API
+        try {
+          const token = localStorage.getItem('token')
+          const res = await httpClient(`${REST_URL}/audiobook/starred`)
+          const data = res.json
+          setStarredAudiobooks(data?.data || [])
+        } catch (e) {
+          console.error('Failed to fetch starred audiobooks:', e)
         }
       } catch (err) {
         console.error('Failed to fetch favorites:', err)
+        notify('加载收藏失败', 'warning')
       } finally {
         setLoading(false)
       }
     }
     fetchFavorites()
-  }, [])
+  }, [dataProvider, notify])
 
   if (loading) {
     return (
@@ -248,6 +248,9 @@ const FavoritesPage = () => {
             <Box className={classes.empty}>
               <AlbumIcon style={{ fontSize: 48, opacity: 0.3 }} />
               <Typography style={{ marginTop: 8 }}>暂无收藏的专辑</Typography>
+              <Typography style={{ marginTop: 4, fontSize: 12, color: 'text.secondary' }}>
+                在专辑列表中点击 ❤️ 即可收藏
+              </Typography>
             </Box>
           ) : (
             <Box className={classes.audiobookGrid}>
@@ -292,11 +295,18 @@ const FavoritesPage = () => {
             <Box className={classes.empty}>
               <MusicNoteIcon style={{ fontSize: 48, opacity: 0.3 }} />
               <Typography style={{ marginTop: 8 }}>暂无收藏的歌曲</Typography>
+              <Typography style={{ marginTop: 4, fontSize: 12, color: 'text.secondary' }}>
+                在歌曲列表中点击 ❤️ 即可收藏
+              </Typography>
             </Box>
           ) : (
             <Box className={classes.songList}>
               {starredSongs.map((song, idx) => (
-                <Box key={song.id} className={classes.songRow}>
+                <Box
+                  key={song.id}
+                  className={classes.songRow}
+                  onClick={() => { window.location.hash = `#/album/${song.albumId}/show` }}
+                >
                   <Typography style={{ width: 32, textAlign: 'center', fontSize: 13, color: 'text.secondary' }}>
                     {idx + 1}
                   </Typography>
@@ -335,6 +345,9 @@ const FavoritesPage = () => {
             <Box className={classes.empty}>
               <MenuBookIcon style={{ fontSize: 48, opacity: 0.3 }} />
               <Typography style={{ marginTop: 8 }}>暂无收藏的有声书</Typography>
+              <Typography style={{ marginTop: 4, fontSize: 12, color: 'text.secondary' }}>
+                在有声书详情页中点击 ❤️ 即可收藏
+              </Typography>
             </Box>
           ) : (
             <Box className={classes.audiobookGrid}>

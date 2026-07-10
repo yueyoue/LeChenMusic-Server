@@ -14,6 +14,8 @@ import AccessTimeIcon from '@material-ui/icons/AccessTime'
 import PersonIcon from '@material-ui/icons/Person'
 import EditIcon from '@material-ui/icons/Edit'
 import RefreshIcon from '@material-ui/icons/Refresh'
+import FavoriteIcon from '@material-ui/icons/Favorite'
+import FavoriteBorderIcon from '@material-ui/icons/FavoriteBorder'
 import subsonic from '../subsonic'
 import { playTracks, addTracks } from '../actions'
 
@@ -113,6 +115,7 @@ const AudiobookDetail = ({ id, onBack }) => {
   const [editForm, setEditForm] = useState({})
   const [saving, setSaving] = useState(false)
   const [rescanning, setRescanning] = useState(false)
+  const [isStarred, setIsStarred] = useState(false)
 
   const currentPlaying = useSelector((state) => state.player.currentPlaying)
   const isPlayingCurrent = currentPlaying?.albumId === `audiobook-${id}`
@@ -155,6 +158,7 @@ const AudiobookDetail = ({ id, onBack }) => {
           if (data.data) {
             setBook(data.data.book)
             setChapters(data.data.chapters || [])
+            setIsStarred(!!data.data.book?.starred)
             extractColor(getCoverUrl(id))
           }
         }
@@ -226,6 +230,22 @@ const AudiobookDetail = ({ id, onBack }) => {
     }
   }
 
+  // Toggle favorite
+  const handleToggleFavorite = async () => {
+    try {
+      const endpoint = isStarred
+        ? `/api/audiobook/${id}/star`
+        : `/api/audiobook/${id}/star`
+      const method = isStarred ? 'DELETE' : 'POST'
+      const res = await fetch(endpoint, { method, headers: getAuthHeaders() })
+      if (res.ok) {
+        setIsStarred(!isStarred)
+      }
+    } catch (err) {
+      console.error('Failed to toggle favorite:', err)
+    }
+  }
+
   // Edit metadata
   const handleEditOpen = () => {
     setEditForm({
@@ -279,6 +299,15 @@ const AudiobookDetail = ({ id, onBack }) => {
           <Tooltip title="重新扫描章节">
             <IconButton onClick={handleRescan} disabled={rescanning}>
               <RefreshIcon style={rescanning ? { animation: 'spin 1s linear infinite' } : {}} />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title={isStarred ? '取消收藏' : '收藏'}>
+            <IconButton onClick={handleToggleFavorite}>
+              {isStarred ? (
+                <FavoriteIcon style={{ color: '#ff4757' }} />
+              ) : (
+                <FavoriteBorderIcon />
+              )}
             </IconButton>
           </Tooltip>
           <Tooltip title="编辑有声书信息">
