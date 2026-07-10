@@ -128,6 +128,14 @@ const Menu = ({ dense = false }) => {
         )}
       </SubMenu>
       {resources.filter(subItems(undefined)).map(renderResourceMenuItemLink)}
+      <MenuItemLink
+        to="/favorites"
+        activeClassName={classes.active}
+        primaryText="⭐ 我的收藏"
+        leftIcon={<span style={{ fontSize: 16 }}>❤️</span>}
+        sidebarIsOpen={open}
+        dense={dense}
+      />
       <SubMenu
         handleToggle={() => handleToggle('menuAudiobook')}
         isOpen={state.menuAudiobook}

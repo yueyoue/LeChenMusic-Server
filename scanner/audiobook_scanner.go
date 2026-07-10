@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/id"
+	taglib "go.senan.xyz/taglib"
 )
 
 // [LeChenMusic-START:audiobook]
@@ -131,6 +133,28 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 	author, title := parseAudiobookDirName(dirName)
 	genre := detectGenreFromPath(relPath)
 
+	// [LeChenMusic-START:audiobook-id3-tags]
+	// Try to read metadata from the first audio file's ID3 tags
+	tagAuthor, tagTitle, tagAlbum, tagGenre, tagYear := readFirstAudioFileTags(fullPath)
+	if tagTitle != "" && title == dirName {
+		// ID3 tag has a proper title, and the directory name was not parsed
+		title = tagTitle
+	}
+	if tagAuthor != "" && author == "" {
+		author = tagAuthor
+	}
+	if tagAlbum != "" && title == "" {
+		title = tagAlbum
+	}
+	if tagGenre != "" && genre == "有声读物" {
+		genre = tagGenre
+	}
+	var year int
+	if tagYear > 0 {
+		year = tagYear
+	}
+	// [LeChenMusic-END:audiobook-id3-tags]
+
 	coverPath := ""
 	for _, coverName := range audiobookCoverNames {
 		coverFile := filepath.Join(fullPath, coverName)
@@ -147,6 +171,7 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 		Title:     title,
 		Author:    author,
 		Genre:     genre,
+		Year:      year,
 		CoverPath: coverPath,
 		Path:      relPath,
 		Hash:      bookHash,
@@ -194,13 +219,31 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 		if info, err := os.Stat(chapterPath); err == nil {
 			fileSize = info.Size()
 		}
+		// [LeChenMusic-START:audiobook-id3-tags]
+		// Try to read chapter title and duration from ID3 tags
+		var chapterDuration int
+		if file, err := os.Open(chapterPath); err == nil {
+			if f, err := taglib.OpenStream(file, taglib.WithReadStyle(taglib.ReadStyleFast), taglib.WithFilename(chapterPath)); err == nil {
+				allTags := f.AllTags()
+				props := f.Properties()
+				f.Close()
+				if v, ok := allTags.Tags["TITLE"]; ok && len(v) > 0 && v[0] != "" {
+					chapterTitle = v[0]
+				}
+				if props.Length > 0 {
+					chapterDuration = int(props.Length.Seconds())
+				}
+			}
+			file.Close()
+		}
+		// [LeChenMusic-END:audiobook-id3-tags]
 
 		chapter := model.AudiobookChapter{
 			ID:            id.NewRandom(),
 			AudiobookID:   book.ID,
 			Title:         chapterTitle,
 			ChapterNumber: i + 1,
-			Duration:      0,
+			Duration:      chapterDuration,
 			Format:        format,
 			FileSize:      fileSize,
 			Path:          af.path,
@@ -214,13 +257,82 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 		}
 	}
 
+	// [LeChenMusic-START:audiobook-id3-tags]
+	// Recalculate total duration from chapters
+	var totalDuration int
+	chapters, _ := repo.GetChapters(book.ID)
+	for _, ch := range chapters {
+		totalDuration += ch.Duration
+	}
 	book.ChapterCount = successCount
-	book.TotalDuration = 0
+	book.TotalDuration = totalDuration
 	book.Size = totalSize
+	// [LeChenMusic-END:audiobook-id3-tags]
 	if book.Title == "" {
 		book.Title = filepath.Base(audiobookPath)
 	}
 }
+
+// [LeChenMusic-START:audiobook-id3-tags]
+// readFirstAudioFileTags reads ID3/metadata tags from the first audio file in a directory.
+// Returns (artist, title, album, genre, year). Empty strings/zeros if not found.
+func readFirstAudioFileTags(dirPath string) (artist, title, album, genre string, year int) {
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(e.Name()))
+		if !audiobookAudioExts[ext] {
+			continue
+		}
+		filePath := filepath.Join(dirPath, e.Name())
+		// Use taglib to read tags
+		file, err := os.Open(filePath)
+		if err != nil {
+			continue
+		}
+		f, err := taglib.OpenStream(file, taglib.WithReadStyle(taglib.ReadStyleFast), taglib.WithFilename(filePath))
+		if err != nil {
+			file.Close()
+			continue
+		}
+		allTags := f.AllTags()
+		f.Close()
+		file.Close()
+		// Extract common tag fields (taglib returns UPPERCASE keys)
+		tags := allTags.Tags
+		if v, ok := tags["ARTIST"]; ok && len(v) > 0 {
+			artist = v[0]
+		}
+		if v, ok := tags["TITLE"]; ok && len(v) > 0 {
+			title = v[0]
+		}
+		if v, ok := tags["ALBUM"]; ok && len(v) > 0 {
+			album = v[0]
+		}
+		if v, ok := tags["GENRE"]; ok && len(v) > 0 {
+			genre = v[0]
+		}
+		if v, ok := tags["DATE"]; ok && len(v) > 0 {
+			if y, parseErr := strconv.Atoi(v[0]); parseErr == nil {
+				year = y
+			}
+		}
+		// Also try ALBUMARTIST for author
+		if artist == "" {
+			if v, ok := tags["ALBUMARTIST"]; ok && len(v) > 0 {
+				artist = v[0]
+			}
+		}
+		return
+	}
+	return
+}
+// [LeChenMusic-END:audiobook-id3-tags]
 
 func audiobookHash(path string) string {
 	return fmt.Sprintf("%x", md5.Sum([]byte(path)))

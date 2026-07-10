@@ -196,6 +196,10 @@ func (r *libraryRepository) RefreshStats(id int) error {
 	var songsRes, albumsRes, artistsRes, foldersRes, filesRes, missingRes struct{ Count int64 }
 	var sizeRes struct{ Sum int64 }
 	var durationRes struct{ Sum float64 }
+	// [LeChenMusic-START:audiobook-stats]
+	var audiobookCountRes, chapterCountRes struct{ Count int64 }
+	var audiobookSizeRes struct{ Sum int64 }
+	// [LeChenMusic-END:audiobook-stats]
 
 	err := run.Parallel(
 		func() error {
@@ -229,19 +233,43 @@ func (r *libraryRepository) RefreshStats(id int) error {
 		func() error {
 			return r.queryOne(Select("ifnull(sum(duration),0) as sum").From("album").Where(Eq{"library_id": id, "missing": false}), &durationRes)
 		},
+		// [LeChenMusic-START:audiobook-stats]
+		func() error {
+			return r.queryOne(Select("count(*) as count").From("audiobook").Where(Eq{"library_id": id}), &audiobookCountRes)
+		},
+		func() error {
+			return r.queryOne(Select("count(*) as count").From("audiobook_chapter ac").
+				Join("audiobook ab ON ac.audiobook_id = ab.id").
+				Where(Eq{"ab.library_id": id}), &chapterCountRes)
+		},
+		func() error {
+			return r.queryOne(Select("ifnull(sum(ac.file_size),0) as sum").From("audiobook_chapter ac").
+				Join("audiobook ab ON ac.audiobook_id = ab.id").
+				Where(Eq{"ab.library_id": id}), &audiobookSizeRes)
+		},
+		// [LeChenMusic-END:audiobook-stats]
 	)()
 	if err != nil {
 		return err
 	}
 
+	// [LeChenMusic-START:audiobook-stats]
+	// Add audiobook counts to totals:
+	// - audiobook chapters count as songs
+	// - audiobooks count as albums
+	totalSongs := songsRes.Count + chapterCountRes.Count
+	totalAlbums := albumsRes.Count + audiobookCountRes.Count
+	totalSize := sizeRes.Sum + audiobookSizeRes.Sum
+	// [LeChenMusic-END:audiobook-stats]
+
 	sq := Update(r.tableName).
-		Set("total_songs", songsRes.Count).
-		Set("total_albums", albumsRes.Count).
+		Set("total_songs", totalSongs).
+		Set("total_albums", totalAlbums).
 		Set("total_artists", artistsRes.Count).
 		Set("total_folders", foldersRes.Count).
 		Set("total_files", filesRes.Count).
 		Set("total_missing_files", missingRes.Count).
-		Set("total_size", sizeRes.Sum).
+		Set("total_size", totalSize).
 		Set("total_duration", durationRes.Sum).
 		Set("updated_at", time.Now()).
 		Where(Eq{"id": id})
