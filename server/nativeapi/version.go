@@ -63,7 +63,7 @@ type updateInfo struct {
 // Generate a clean update command that works with any docker-compose setup
 func buildUpdateCommand(imageTag string) string {
 	image := "ghcr.io/yueyoue/lechenmusic-server:" + imageTag
-	return fmt.Sprintf("docker pull %s && docker compose down && docker compose up -d", image)
+	return fmt.Sprintf("docker pull %s && docker compose up -d --force-recreate", image)
 }
 
 func checkUpdate(w http.ResponseWriter, r *http.Request) {

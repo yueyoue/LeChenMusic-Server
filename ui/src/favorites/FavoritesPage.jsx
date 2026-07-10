@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
+import { useDispatch } from 'react-redux'
 import {
   Typography,
   Box,
@@ -16,6 +17,7 @@ import MenuBookIcon from '@material-ui/icons/MenuBook'
 import { useDataProvider, useNotify } from 'react-admin'
 import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
+import { setTrack } from '../actions'
 
 const useStyles = makeStyles((theme) => ({
   root: { padding: 12 },
@@ -147,6 +149,7 @@ const formatDuration = (seconds) => {
 const FavoritesPage = () => {
   const classes = useStyles()
   const notify = useNotify()
+  const dispatch = useDispatch()
   const dataProvider = useDataProvider()
   const [tab, setTab] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -305,7 +308,7 @@ const FavoritesPage = () => {
                 <Box
                   key={song.id}
                   className={classes.songRow}
-                  onClick={() => { window.location.hash = `#/album/${song.albumId}/show` }}
+                  onClick={() => { dispatch(setTrack(song)) }}
                 >
                   <Typography style={{ width: 32, textAlign: 'center', fontSize: 13, color: 'text.secondary' }}>
                     {idx + 1}

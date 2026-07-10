@@ -175,6 +175,12 @@ func (h *audiobookHandler) get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not found", 404)
 		return
 	}
+	// Populate starred status for current user
+	usr, ok := request.UserFrom(r.Context())
+	if ok {
+		starred, _ := repo.IsStarred(usr.ID, id)
+		book.Starred = starred
+	}
 	chapters, _ := repo.GetChapters(id)
 	writeJSON(w, map[string]any{"data": map[string]any{"book": book, "chapters": chapters}})
 }
