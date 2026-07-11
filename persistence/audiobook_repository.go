@@ -227,13 +227,14 @@ func (r *audiobookRepository) DeleteBookmark(id string) error {
 // ─── Favorites ───────────────────────────────────────────
 
 func (r *audiobookRepository) Star(userID, audiobookID string) error {
-	fav := &model.AudiobookFavorite{
-		ID:          id.NewRandom(),
-		UserID:      userID,
-		AudiobookID: audiobookID,
-		CreatedAt:   time.Now(),
-	}
-	_, err := r.put(fav.ID, fav)
+	favID := id.NewRandom()
+	insert := Insert("audiobook_favorite").SetMap(map[string]any{
+		"id":          favID,
+		"user_id":     userID,
+		"audiobook_id": audiobookID,
+		"created_at":  time.Now(),
+	})
+	_, err := r.executeSQL(insert)
 	return err
 }
 
