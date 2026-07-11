@@ -217,10 +217,10 @@ const Menu = ({ dense = false }) => {
           dense={dense}
         />
         <MenuItemLink
-          to="/audiobook/starred"
+          to="/narrator"
           activeClassName={classes.active}
-          primaryText="收藏"
-          leftIcon={<span style={{ fontSize: 16 }}>⭐</span>}
+          primaryText="演播者"
+          leftIcon={<span style={{ fontSize: 16 }}>🎤</span>}
           sidebarIsOpen={open}
           dense={dense}
         />
@@ -238,6 +238,14 @@ const Menu = ({ dense = false }) => {
           activeClassName={classes.active}
           primaryText="APP管理"
           leftIcon={<span style={{ fontSize: 18 }}>📱</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
+        <MenuItemLink
+          to="/settings/backup"
+          activeClassName={classes.active}
+          primaryText="备份与恢复"
+          leftIcon={<span style={{ fontSize: 18 }}>💾</span>}
           sidebarIsOpen={open}
           dense={dense}
         />

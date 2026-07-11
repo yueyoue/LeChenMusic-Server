@@ -233,13 +233,17 @@ const AudiobookDetail = ({ id, onBack }) => {
   // Toggle favorite
   const handleToggleFavorite = async () => {
     try {
-      const endpoint = isStarred
-        ? `/api/audiobook/${id}/star`
-        : `/api/audiobook/${id}/star`
       const method = isStarred ? 'DELETE' : 'POST'
-      const res = await fetch(endpoint, { method, headers: getAuthHeaders() })
+      const res = await fetch(`/api/audiobook/${id}/star`, { method, headers: getAuthHeaders() })
       if (res.ok) {
-        setIsStarred(!isStarred)
+        // Refetch to get correct starred status from server
+        const bookRes = await fetch(`/api/audiobook/${id}`, { headers: getAuthHeaders() })
+        if (bookRes.ok) {
+          const data = await bookRes.json()
+          setIsStarred(!!data.data?.book?.starred)
+        } else {
+          setIsStarred(!isStarred)
+        }
       }
     } catch (err) {
       console.error('Failed to toggle favorite:', err)
