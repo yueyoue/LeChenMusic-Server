@@ -177,6 +177,15 @@ func (r *audiobookRepository) GetAllProgress() ([]model.AudiobookProgress, error
 	return res, err
 }
 
+func (r *audiobookRepository) GetUserProgress(userID string) ([]model.AudiobookProgress, error) {
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("*").From("audiobook_progress").
+		Where(Eq{"user_id": userID}).
+		OrderBy("last_played_at DESC")
+	var res []model.AudiobookProgress
+	err := r.queryAll(sel, &res)
+	return res, err
+}
+
 // ─── Bookmarks ───────────────────────────────────────────
 
 func (r *audiobookRepository) GetBookmarks(userID, audiobookID string) ([]model.AudiobookBookmark, error) {
@@ -259,11 +268,11 @@ func (r *audiobookRepository) IsStarred(userID, audiobookID string) (bool, error
 }
 
 func (r *audiobookRepository) GetStarredAt(userID, audiobookID string) (string, error) {
-	sel := StatementBuilder.PlaceholderFormat(Question).Select("created_at").From("audiobook_favorite").
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("CAST(created_at AS TEXT) as created_at").From("audiobook_favorite").
 		Where(And{
 			Eq{"user_id": userID},
 			Eq{"audiobook_id": audiobookID},
-		}).Columns("created_at")
+		})
 	var createdAt string
 	err := r.queryOne(sel, &createdAt)
 	return createdAt, err

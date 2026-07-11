@@ -30,6 +30,7 @@ func (api *Router) addAudiobookRoute(r chi.Router) {
 		r.Get("/narrators", h.narrators)
 		r.Get("/narrator/{name}", h.narratorDetail)
 		r.Get("/starred", h.starred)
+		r.Get("/with-progress", h.listWithProgress)
 		r.Get("/{id}", h.get)
 		r.Get("/{id}/chapters", h.chapters)
 		r.Get("/{id}/chapters/{chapterId}/stream", h.stream)
@@ -59,6 +60,39 @@ func (h *audiobookHandler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	if books == nil { books = model.Audiobooks{} }
 	writeJSON(w, map[string]any{"data": books})
+}
+
+func (h *audiobookHandler) listWithProgress(w http.ResponseWriter, r *http.Request) {
+	usr, ok := request.UserFrom(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", 401)
+		return
+	}
+	repo := h.ds.Audiobook(r.Context())
+	books, err := repo.GetAll()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if books == nil { books = model.Audiobooks{} }
+	progressList, _ := repo.GetUserProgress(usr.ID)
+	progressMap := make(map[string]*model.AudiobookProgress)
+	for i := range progressList {
+		p := &progressList[i]
+		progressMap[p.AudiobookID] = p
+	}
+	type bookWithProgress struct {
+		model.Audiobook
+		Progress *model.AudiobookProgress `json:"progress"`
+	}
+	result := make([]bookWithProgress, 0, len(books))
+	for _, b := range books {
+		result = append(result, bookWithProgress{
+			Audiobook: b,
+			Progress:  progressMap[b.ID],
+		})
+	}
+	writeJSON(w, map[string]any{"data": result})
 }
 
 func (h *audiobookHandler) search(w http.ResponseWriter, r *http.Request) {

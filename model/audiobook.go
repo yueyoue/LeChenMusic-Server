@@ -88,6 +88,7 @@ type AudiobookRepository interface {
 	GetProgress(userID, audiobookID string) (*AudiobookProgress, error)
 	SaveProgress(progress *AudiobookProgress) error
 	GetAllProgress() ([]AudiobookProgress, error)
+	GetUserProgress(userID string) ([]AudiobookProgress, error)
 
 	GetBookmarks(userID, audiobookID string) ([]AudiobookBookmark, error)
 	SaveBookmark(bookmark *AudiobookBookmark) error
