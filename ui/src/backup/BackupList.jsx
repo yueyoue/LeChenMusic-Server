@@ -18,13 +18,13 @@ import {
   Paper,
   IconButton,
   Chip,
-  Alert,
   CircularProgress,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
 } from '@material-ui/core'
+import { Alert } from '@material-ui/lab'
 import SettingsIcon from '@material-ui/icons/Settings'
 import SaveIcon from '@material-ui/icons/Save'
 import UndoIcon from '@material-ui/icons/Undo'
