@@ -22,7 +22,7 @@ type Audiobook struct {
 	Path          string    `structs:"path"          json:"path"          db:"path"`
 	Hash          string    `structs:"hash"          json:"hash"          db:"hash"`
 	Size          int64     `structs:"size"          json:"size"          db:"size"`
-	Starred       bool      `structs:"-"             json:"starred,omitempty"  db:"-"` // populated at query time, not stored in audiobook table
+	Starred       string    `structs:"-"             json:"starred,omitempty"  db:"-"` // populated at query time, not stored in audiobook table
 	CreatedAt     time.Time `structs:"created_at"    json:"createdAt"     db:"created_at"`
 	UpdatedAt     time.Time `structs:"updated_at"    json:"updatedAt"     db:"updated_at"`
 }
@@ -97,6 +97,7 @@ type AudiobookRepository interface {
 	Star(userID, audiobookID string) error
 	Unstar(userID, audiobookID string) error
 	IsStarred(userID, audiobookID string) (bool, error)
+	GetStarredAt(userID, audiobookID string) (string, error)
 	GetStarred(userID string) (Audiobooks, error)
 }
 

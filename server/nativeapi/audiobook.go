@@ -166,6 +166,13 @@ func (h *audiobookHandler) starred(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if books == nil { books = model.Audiobooks{} }
+	// Populate starred timestamp for each book
+	for i := range books {
+		starredAt, _ := repo.GetStarredAt(usr.ID, books[i].ID)
+		if starredAt != "" {
+			books[i].Starred = starredAt
+		}
+	}
 	writeJSON(w, map[string]any{"data": books})
 }
 
@@ -180,8 +187,10 @@ func (h *audiobookHandler) get(w http.ResponseWriter, r *http.Request) {
 	// Populate starred status for current user
 	usr, ok := request.UserFrom(r.Context())
 	if ok {
-		starred, _ := repo.IsStarred(usr.ID, id)
-		book.Starred = starred
+		starredAt, _ := repo.GetStarredAt(usr.ID, id)
+		if starredAt != "" {
+			book.Starred = starredAt
+		}
 	}
 	chapters, _ := repo.GetChapters(id)
 	writeJSON(w, map[string]any{"data": map[string]any{"book": book, "chapters": chapters}})

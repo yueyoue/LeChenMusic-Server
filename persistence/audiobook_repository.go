@@ -257,6 +257,17 @@ func (r *audiobookRepository) IsStarred(userID, audiobookID string) (bool, error
 	return count > 0, err
 }
 
+func (r *audiobookRepository) GetStarredAt(userID, audiobookID string) (string, error) {
+	sel := r.newSelect().From("audiobook_favorite").
+		Where(And{
+			Eq{"user_id": userID},
+			Eq{"audiobook_id": audiobookID},
+		}).Columns("created_at")
+	var createdAt string
+	err := r.queryOne(sel, &createdAt)
+	return createdAt, err
+}
+
 func (r *audiobookRepository) GetStarred(userID string) (model.Audiobooks, error) {
 	sel := r.newSelect().From("audiobook").
 		Join("audiobook_favorite ON audiobook.id = audiobook_favorite.audiobook_id").
