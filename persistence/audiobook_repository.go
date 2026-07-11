@@ -135,7 +135,7 @@ func (r *audiobookRepository) updateAudiobookStats(audiobookID string) {
 // ─── Progress ────────────────────────────────────────────
 
 func (r *audiobookRepository) GetProgress(userID, audiobookID string) (*model.AudiobookProgress, error) {
-	sel := Select().From("audiobook_progress").
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("*").From("audiobook_progress").
 		Where(And{
 			Eq{"user_id": userID},
 			Eq{"audiobook_id": audiobookID},
@@ -171,7 +171,7 @@ func (r *audiobookRepository) SaveProgress(progress *model.AudiobookProgress) er
 }
 
 func (r *audiobookRepository) GetAllProgress() ([]model.AudiobookProgress, error) {
-	sel := Select().From("audiobook_progress").Columns("*")
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("*").From("audiobook_progress")
 	var res []model.AudiobookProgress
 	err := r.queryAll(sel, &res)
 	return res, err
@@ -180,7 +180,7 @@ func (r *audiobookRepository) GetAllProgress() ([]model.AudiobookProgress, error
 // ─── Bookmarks ───────────────────────────────────────────
 
 func (r *audiobookRepository) GetBookmarks(userID, audiobookID string) ([]model.AudiobookBookmark, error) {
-	sel := Select().From("audiobook_bookmark").
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("*").From("audiobook_bookmark").
 		Where(And{
 			Eq{"user_id": userID},
 			Eq{"audiobook_id": audiobookID},
@@ -214,7 +214,7 @@ func (r *audiobookRepository) SaveBookmark(bookmark *model.AudiobookBookmark) er
 }
 
 func (r *audiobookRepository) GetAllBookmarks() ([]model.AudiobookBookmark, error) {
-	sel := Select().From("audiobook_bookmark").Columns("*")
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("*").From("audiobook_bookmark")
 	var res []model.AudiobookBookmark
 	err := r.queryAll(sel, &res)
 	return res, err
@@ -248,7 +248,7 @@ func (r *audiobookRepository) Unstar(userID, audiobookID string) error {
 }
 
 func (r *audiobookRepository) IsStarred(userID, audiobookID string) (bool, error) {
-	sel := Select().From("audiobook_favorite").
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("*").From("audiobook_favorite").
 		Where(And{
 			Eq{"user_id": userID},
 			Eq{"audiobook_id": audiobookID},
@@ -259,7 +259,7 @@ func (r *audiobookRepository) IsStarred(userID, audiobookID string) (bool, error
 }
 
 func (r *audiobookRepository) GetStarredAt(userID, audiobookID string) (string, error) {
-	sel := Select().From("audiobook_favorite").
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("created_at").From("audiobook_favorite").
 		Where(And{
 			Eq{"user_id": userID},
 			Eq{"audiobook_id": audiobookID},
@@ -270,7 +270,7 @@ func (r *audiobookRepository) GetStarredAt(userID, audiobookID string) (string, 
 }
 
 func (r *audiobookRepository) GetStarred(userID string) (model.Audiobooks, error) {
-	sel := Select().From("audiobook").
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("audiobook.*").From("audiobook").
 		Join("audiobook_favorite ON audiobook.id = audiobook_favorite.audiobook_id").
 		Where(Eq{"audiobook_favorite.user_id": userID}).
 		OrderBy("audiobook_favorite.created_at DESC").
