@@ -236,6 +236,11 @@ func (r *audiobookRepository) DeleteBookmark(id string) error {
 // ─── Favorites ───────────────────────────────────────────
 
 func (r *audiobookRepository) Star(userID, audiobookID string) error {
+	// Check if already starred to avoid UNIQUE constraint error
+	exists, _ := r.IsStarred(userID, audiobookID)
+	if exists {
+		return nil
+	}
 	favID := id.NewRandom()
 	insert := Insert("audiobook_favorite").SetMap(map[string]any{
 		"id":          favID,

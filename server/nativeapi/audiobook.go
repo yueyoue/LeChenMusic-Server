@@ -218,16 +218,21 @@ func (h *audiobookHandler) get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Not found", 404)
 		return
 	}
-	// Populate starred status for current user
+	// Populate starred status and progress for current user
 	usr, ok := request.UserFrom(r.Context())
+	var progress *model.AudiobookProgress
 	if ok {
 		starredAt, _ := repo.GetStarredAt(usr.ID, id)
 		if starredAt != "" {
 			book.Starred = starredAt
 		}
+		p, err := repo.GetProgress(usr.ID, id)
+		if err == nil && p != nil {
+			progress = p
+		}
 	}
 	chapters, _ := repo.GetChapters(id)
-	writeJSON(w, map[string]any{"data": map[string]any{"book": book, "chapters": chapters}})
+	writeJSON(w, map[string]any{"data": map[string]any{"book": book, "chapters": chapters, "progress": progress}})
 }
 
 func (h *audiobookHandler) chapters(w http.ResponseWriter, r *http.Request) {
