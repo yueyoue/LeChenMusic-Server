@@ -338,9 +338,14 @@ func readFirstAudioFileTags(dirPath string) (artist, title, album, genre string,
 				artist = v[0]
 			}
 		}
-		// Read narrator from COMPOSER tag (common for audiobook narrator)
-		if v, ok := tags["COMPOSER"]; ok && len(v) > 0 {
-			narrator = v[0]
+		// Read narrator from multiple tag sources (common for audiobooks)
+		// Priority: COMPOSER > CONDUCTOR > DIRECTOR > TXXX:NARRATOR > TXXX:ARTISTSORT
+		narratorSources := []string{"COMPOSER", "CONDUCTOR", "DIRECTOR", "TXXX:NARRATOR"}
+		for _, tag := range narratorSources {
+			if v, ok := tags[tag]; ok && len(v) > 0 && v[0] != "" {
+				narrator = v[0]
+				break
+			}
 		}
 		return
 	}
