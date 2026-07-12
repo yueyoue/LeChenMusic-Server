@@ -97,6 +97,14 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 			book := existing[0]
 			if book.Hash != bookHash || book.ChapterCount == 0 {
 				book.Hash = bookHash
+				// Re-read narrator from tags if empty
+				if book.Narrator == "" {
+					path := filepath.Join(library.Path, book.Path)
+					_, _, _, _, _, tagNarr := readFirstAudioFileTags(path)
+					if tagNarr != "" {
+						book.Narrator = tagNarr
+					}
+				}
 				s.scanChapters(ctx, &book, library, repo)
 				if err := repo.Put(&book); err != nil {
 					log.Error(ctx, "Audiobook scanner: Error updating", "book", book.Title, err)
@@ -135,7 +143,7 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 
 	// [LeChenMusic-START:audiobook-id3-tags]
 	// Try to read metadata from the first audio file's ID3 tags
-	tagAuthor, tagTitle, tagAlbum, tagGenre, tagYear := readFirstAudioFileTags(fullPath)
+	tagAuthor, tagTitle, tagAlbum, tagGenre, tagYear, tagNarrator := readFirstAudioFileTags(fullPath)
 	if tagTitle != "" && title == dirName {
 		// ID3 tag has a proper title, and the directory name was not parsed
 		title = tagTitle
@@ -153,6 +161,7 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 	if tagYear > 0 {
 		year = tagYear
 	}
+	narrator := tagNarrator
 	// [LeChenMusic-END:audiobook-id3-tags]
 
 	coverPath := ""
@@ -170,6 +179,7 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 		LibraryID: library.ID,
 		Title:     title,
 		Author:    author,
+		Narrator:  narrator,
 		Genre:     genre,
 		Year:      year,
 		CoverPath: coverPath,
@@ -275,8 +285,8 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 
 // [LeChenMusic-START:audiobook-id3-tags]
 // readFirstAudioFileTags reads ID3/metadata tags from the first audio file in a directory.
-// Returns (artist, title, album, genre, year). Empty strings/zeros if not found.
-func readFirstAudioFileTags(dirPath string) (artist, title, album, genre string, year int) {
+// Returns (artist, title, album, genre, year, narrator). Empty strings/zeros if not found.
+func readFirstAudioFileTags(dirPath string) (artist, title, album, genre string, year int, narrator string) {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
 		return
@@ -327,6 +337,10 @@ func readFirstAudioFileTags(dirPath string) (artist, title, album, genre string,
 			if v, ok := tags["ALBUMARTIST"]; ok && len(v) > 0 {
 				artist = v[0]
 			}
+		}
+		// Read narrator from COMPOSER tag (common for audiobook narrator)
+		if v, ok := tags["COMPOSER"]; ok && len(v) > 0 {
+			narrator = v[0]
 		}
 		return
 	}
