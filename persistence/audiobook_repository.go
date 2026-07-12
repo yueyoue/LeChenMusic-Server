@@ -149,24 +149,38 @@ func (r *audiobookRepository) GetProgress(userID, audiobookID string) (*model.Au
 }
 
 func (r *audiobookRepository) SaveProgress(progress *model.AudiobookProgress) error {
+	progress.LastPlayedAt = time.Now()
+
+	// Try to find existing progress by (user_id, audiobook_id)
+	existing := &model.AudiobookProgress{}
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("*").From("audiobook_progress").
+		Where(And{
+			Eq{"user_id": progress.UserID},
+			Eq{"audiobook_id": progress.AudiobookID},
+		})
+	err := r.queryOne(sel, existing)
+	if err == nil && existing.ID != "" {
+		// Update existing record
+		progress.ID = existing.ID
+		values, err := toSQLArgs(progress)
+		if err != nil {
+			return err
+		}
+		update := Update("audiobook_progress").Where(Eq{"id": existing.ID}).SetMap(filterUpdateValues(values, existing.ID))
+		_, err = r.executeSQL(update)
+		return err
+	}
+
+	// Insert new record
 	if progress.ID == "" {
 		progress.ID = id.NewRandom()
 	}
-	progress.LastPlayedAt = time.Now()
-	// Use explicit table name to avoid writing to 'audiobook' table
 	values, err := toSQLArgs(progress)
 	if err != nil {
 		return err
 	}
-	update := Update("audiobook_progress").Where(Eq{"id": progress.ID}).SetMap(filterUpdateValues(values, progress.ID))
-	count, err := r.executeSQL(update)
-	if err != nil {
-		return err
-	}
-	if count == 0 {
-		insert := Insert("audiobook_progress").SetMap(values)
-		_, err = r.executeSQL(insert)
-	}
+	insert := Insert("audiobook_progress").SetMap(values)
+	_, err = r.executeSQL(insert)
 	return err
 }
 
@@ -273,7 +287,7 @@ func (r *audiobookRepository) IsStarred(userID, audiobookID string) (bool, error
 }
 
 func (r *audiobookRepository) GetStarredAt(userID, audiobookID string) (string, error) {
-	sel := StatementBuilder.PlaceholderFormat(Question).Select("CAST(created_at AS TEXT) as created_at").From("audiobook_favorite").
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("created_at").From("audiobook_favorite").
 		Where(And{
 			Eq{"user_id": userID},
 			Eq{"audiobook_id": audiobookID},
