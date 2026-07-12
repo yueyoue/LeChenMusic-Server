@@ -232,6 +232,9 @@ func (h *audiobookHandler) get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	chapters, _ := repo.GetChapters(id)
+	if chapters == nil {
+		chapters = model.AudiobookChapters{}
+	}
 	writeJSON(w, map[string]any{"data": map[string]any{"book": book, "chapters": chapters, "progress": progress}})
 }
 
@@ -242,6 +245,9 @@ func (h *audiobookHandler) chapters(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
+	}
+	if chapters == nil {
+		chapters = model.AudiobookChapters{}
 	}
 	writeJSON(w, map[string]any{"data": chapters})
 }
@@ -336,6 +342,9 @@ func (h *audiobookHandler) getBookmarks(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
+	}
+	if bookmarks == nil {
+		bookmarks = []model.AudiobookBookmark{}
 	}
 	writeJSON(w, map[string]any{"data": bookmarks})
 }
