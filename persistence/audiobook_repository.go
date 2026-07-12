@@ -292,9 +292,14 @@ func (r *audiobookRepository) GetStarredAt(userID, audiobookID string) (string, 
 			Eq{"user_id": userID},
 			Eq{"audiobook_id": audiobookID},
 		})
-	var createdAt string
-	err := r.queryOne(sel, &createdAt)
-	return createdAt, err
+	var result struct {
+		CreatedAt string `db:"created_at"`
+	}
+	err := r.queryOne(sel, &result)
+	if err != nil {
+		return "", err
+	}
+	return result.CreatedAt, nil
 }
 
 func (r *audiobookRepository) GetStarred(userID string) (model.Audiobooks, error) {

@@ -222,7 +222,8 @@ func (h *audiobookHandler) get(w http.ResponseWriter, r *http.Request) {
 	usr, ok := request.UserFrom(r.Context())
 	var progress *model.AudiobookProgress
 	if ok {
-		starredAt, _ := repo.GetStarredAt(usr.ID, id)
+		starredAt, starredErr := repo.GetStarredAt(usr.ID, id)
+		log.Info(r.Context(), "GetStarredAt result", "userID", usr.ID, "bookID", id, "starredAt", starredAt, "error", starredErr)
 		if starredAt != "" {
 			book.Starred = starredAt
 		}
