@@ -69,12 +69,13 @@ export const shuffleTracks = (data, ids) => {
   }
 }
 
-export const playTracks = (data, ids, selectedId) => {
+export const playTracks = (data, ids, selectedId, seekPosition) => {
   const songs = filterSongs(data, ids)
   return {
     type: PLAYER_PLAY_TRACKS,
     id: selectedId || Object.keys(songs)[0],
     data: songs,
+    seekPosition: seekPosition || 0,
   }
 }
 

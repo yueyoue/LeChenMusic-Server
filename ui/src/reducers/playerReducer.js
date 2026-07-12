@@ -21,6 +21,7 @@ const initialState = {
   clear: false,
   volume: config.defaultUIVolume / 100,
   savedPlayIndex: 0,
+  initialSeekPosition: 0,
 }
 
 const pad = (value) => {
@@ -101,7 +102,7 @@ const mapToAudioLists = (item) => {
 
 const reduceClearQueue = () => ({ ...initialState, clear: true })
 
-const reducePlayTracks = (state, { data, id }) => {
+const reducePlayTracks = (state, { data, id, seekPosition }) => {
   let playIndex = 0
   const queue = Object.keys(data).map((key, idx) => {
     if (key === id) {
@@ -114,6 +115,7 @@ const reducePlayTracks = (state, { data, id }) => {
     queue,
     playIndex,
     clear: true,
+    initialSeekPosition: seekPosition || 0,
   }
 }
 
@@ -179,6 +181,8 @@ const reduceSyncQueue = (state, { data: { audioInfo, audioLists } }) => {
     queue: audioLists,
     clear: hasPendingSwitch ? state.clear : false,
     playIndex: hasPendingSwitch ? state.playIndex : undefined,
+    // Reset initialSeekPosition once the queue is synced (consumed by player)
+    initialSeekPosition: hasPendingSwitch ? state.initialSeekPosition : 0,
   }
 }
 

@@ -194,12 +194,14 @@ const AudiobookDetail = ({ id, onBack }) => {
     if (progress && progress.chapterId) {
       const chapter = chapters.find(c => c.id === progress.chapterId)
       if (chapter) {
-        handlePlayChapter(chapter)
+        // Pass saved position (in seconds) so the player can seek to it
+        const { songs, ids } = chaptersToSongs(book, chapters)
+        dispatch(playTracks(songs, ids, chapter.id, progress.position || 0))
         return
       }
     }
     handlePlayAll()
-  }, [progress, chapters, handlePlayChapter, handlePlayAll])
+  }, [progress, chapters, book, dispatch, handlePlayAll])
 
   // Add to queue
   const handleAddToQueue = useCallback(() => {

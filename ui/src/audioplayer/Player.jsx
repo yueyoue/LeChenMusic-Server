@@ -48,6 +48,7 @@ const Player = () => {
   const currentTrackIdRef = useRef(null)
   const stoppedRef = useRef(false)
   const [audioInstance, setAudioInstance] = useState(null)
+  const pendingSeekRef = useRef(0)
   const isDesktop = useMediaQuery('(min-width:810px)')
   const isMobilePlayer =
     /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
@@ -278,6 +279,13 @@ const Player = () => {
     [dispatch],
   )
 
+  // Capture initialSeekPosition from player state for pending seek
+  useEffect(() => {
+    if (playerState.initialSeekPosition > 0) {
+      pendingSeekRef.current = playerState.initialSeekPosition
+    }
+  }, [playerState.initialSeekPosition])
+
   const onAudioPlay = useCallback(
     (info) => {
       if (context && context.state !== 'running') {
@@ -289,9 +297,21 @@ const Player = () => {
         const song = info.song
         document.title = `${song.title} - ${song.artist} - Navidrome`
         if (!info.isRadio) {
+          const isNewTrack = info.trackId !== currentTrackId
+          // Apply pending seek position for audiobook resume
+          if (isNewTrack && pendingSeekRef.current > 0 && audioInstance) {
+            const seekSec = pendingSeekRef.current
+            pendingSeekRef.current = 0
+            // Use requestAnimationFrame to ensure audio element is ready
+            requestAnimationFrame(() => {
+              if (audioInstance) {
+                audioInstance.currentTime = seekSec
+                console.log('[Player] Applied resume seek to', seekSec, 's')
+              }
+            })
+          }
           const posMs = Math.floor(info.currentTime * 1000)
           lastPositionMsRef.current = posMs
-          const isNewTrack = info.trackId !== currentTrackId
           if (isNewTrack) {
             subsonic
               .reportPlayback(info.trackId, posMs, 'starting')
@@ -320,7 +340,7 @@ const Player = () => {
         }
       }
     },
-    [context, dispatch, showNotifications, currentTrackId],
+    [context, dispatch, showNotifications, currentTrackId, audioInstance],
   )
 
   const onAudioPlayTrackChange = useCallback(() => {
