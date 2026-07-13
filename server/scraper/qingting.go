@@ -122,5 +122,45 @@ func (s *qingtingScraper) GetAudiobookDetail(sourceID string) (*ScrapeDetail, er
 }
 
 func (s *qingtingScraper) SearchArtists(query string) ([]ArtistResult, error) {
-	return nil, nil
+	// Search Qingting for narrators/演播者
+	searchURL := fmt.Sprintf(
+		"https://api.open.qtfm.cn/media/v7/search?kw=%s&page=1&rows=5&category=anchor",
+		url.QueryEscape(query),
+	)
+
+	body, err := httpGet(searchURL, map[string]string{
+		"Referer": "https://www.qingting.fm/",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("qingting artist search: %w", err)
+	}
+
+	var resp struct {
+		Data struct {
+			Items []struct {
+				ID       int64  `json:"id"`
+				Nickname string `json:"nickname"`
+				Avatar   string `json:"avatar"`
+			} `json:"items"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("qingting artist parse: %w", err)
+	}
+
+	var results []ArtistResult
+	for _, item := range resp.Data.Items {
+		if item.Avatar == "" || item.Nickname == "" {
+			continue
+		}
+		results = append(results, ArtistResult{
+			Source:   "qingting",
+			ID:       fmt.Sprintf("%d", item.ID),
+			Name:     item.Nickname,
+			ImageURL: item.Avatar,
+			Platform: "蜻蜓FM",
+		})
+	}
+
+	return results, nil
 }

@@ -135,8 +135,60 @@ func (s *ximalayaScraper) GetAudiobookDetail(sourceID string) (*ScrapeDetail, er
 }
 
 func (s *ximalayaScraper) SearchArtists(query string) ([]ArtistResult, error) {
-	// Ximalaya doesn't have artist search in the traditional sense
-	return nil, nil
+	// Search Ximalaya for narrators/演播者
+	searchURL := fmt.Sprintf(
+		"https://www.ximalaya.com/revision/search?core=user&kw=%s&page=1&spellchecker=true&rows=5&device=web",
+		url.QueryEscape(query),
+	)
+
+	body, err := httpGet(searchURL, map[string]string{
+		"Referer": "https://www.ximalaya.com/",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ximalaya artist search: %w", err)
+	}
+
+	var resp struct {
+		Data struct {
+			Result struct {
+				Response struct {
+					Docs []struct {
+						ID         int64  `json:"uid"`
+						Nickname   string `json:"nickname"`
+						SmallPic   string `json:"smallPic"`
+						LogoPic    string `json:"logoPic"`
+						VerifyType int    `json:"verifyType"`
+					} `json:"docs"`
+				} `json:"response"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("ximalaya artist parse: %w", err)
+	}
+
+	var results []ArtistResult
+	for _, doc := range resp.Data.Result.Response.Docs {
+		avatarURL := doc.SmallPic
+		if avatarURL == "" {
+			avatarURL = doc.LogoPic
+		}
+		if avatarURL == "" {
+			continue
+		}
+		if !strings.HasPrefix(avatarURL, "http") {
+			avatarURL = "https:" + avatarURL
+		}
+		results = append(results, ArtistResult{
+			Source:   "ximalaya",
+			ID:       fmt.Sprintf("%d", doc.ID),
+			Name:     doc.Nickname,
+			ImageURL: avatarURL,
+			Platform: "喜马拉雅",
+		})
+	}
+
+	return results, nil
 }
 
 // cleanHTML removes HTML tags from text
