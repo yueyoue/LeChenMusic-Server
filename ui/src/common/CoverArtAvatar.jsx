@@ -36,9 +36,9 @@ export const CoverArtAvatar = ({
     const checkSavedAvatar = async () => {
       try {
         const token = localStorage.getItem('token')
-        const res = await fetch(`/api/scrape/image/artist/${record.id}?token=***
+        const res = await fetch(`/api/scrape/image/artist/${record.id}?token=${token}`)
         if (res.ok) {
-          setCustomUrl(`/api/scrape/image/artist/${record.id}?token=***
+          setCustomUrl(`/api/scrape/image/artist/${record.id}?token=${token}`)
         }
       } catch (e) {}
     }

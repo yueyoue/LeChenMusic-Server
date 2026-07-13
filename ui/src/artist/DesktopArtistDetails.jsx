@@ -107,9 +107,9 @@ const DesktopArtistDetails = ({ artistInfo, record, biography }) => {
     const checkSavedAvatar = async () => {
       try {
         const token = localStorage.getItem('token')
-        const res = await fetch(`/api/scrape/image/artist/${record.id}?token=***
+        const res = await fetch(`/api/scrape/image/artist/${record.id}?token=${token}`)
         if (res.ok) {
-          setCustomAvatarUrl(`/api/scrape/image/artist/${record.id}?token=***
+          setCustomAvatarUrl(`/api/scrape/image/artist/${record.id}?token=${token}`)
         }
       } catch (e) {}
     }
