@@ -168,27 +168,35 @@ func (h *scrapeHandler) searchArtists(w http.ResponseWriter, r *http.Request) {
 
 func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	log.Info(r.Context(), "applyArtistAvatar called", "id", id)
 
 	var req struct {
 		ImageURL string `json:"imageUrl"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Error(r.Context(), "Failed to decode request", err)
 		http.Error(w, "invalid request", 400)
 		return
 	}
+	log.Info(r.Context(), "applyArtistAvatar request", "imageUrl", req.ImageURL)
+
 	if req.ImageURL == "" {
 		http.Error(w, "imageUrl required", 400)
 		return
 	}
 
 	// Download image
+	log.Info(r.Context(), "Downloading image", "url", req.ImageURL)
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(req.ImageURL)
 	if err != nil {
+		log.Error(r.Context(), "Failed to download image", err)
 		http.Error(w, "Failed to download image: "+err.Error(), 400)
 		return
 	}
 	defer resp.Body.Close()
+	log.Info(r.Context(), "Image downloaded", "status", resp.StatusCode, "contentType", resp.Header.Get("Content-Type"))
+
 	if resp.StatusCode != 200 {
 		http.Error(w, "Failed to download image: HTTP "+resp.Status, 400)
 		return
@@ -196,9 +204,11 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 
 	imageData, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Error(r.Context(), "Failed to read image", err)
 		http.Error(w, "Failed to read image", 500)
 		return
 	}
+	log.Info(r.Context(), "Image data read", "size", len(imageData))
 
 	// Determine extension
 	ext := ".jpg"
@@ -210,14 +220,14 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 	}
 
 	// Determine save location based on ID prefix
-	// narrator-xxx -> save to data/narrator-avatars/
-	// other -> save to data/artist-images/ and update artist DB
 	var imageURL string
 	if strings.HasPrefix(id, "narrator-") {
 		// Narrator avatar
 		narratorName := strings.TrimPrefix(id, "narrator-")
 		avatarDir := filepath.Join("data", "narrator-avatars")
-		os.MkdirAll(avatarDir, 0755)
+		if mkErr := os.MkdirAll(avatarDir, 0755); mkErr != nil {
+			log.Error(r.Context(), "Failed to create dir", mkErr)
+		}
 
 		// Sanitize filename
 		safeName := strings.ReplaceAll(narratorName, "/", "_")
@@ -230,10 +240,14 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 		}
 
 		// Save new file
-		if err := os.WriteFile(filepath.Join(avatarDir, safeName+ext), imageData, 0644); err != nil {
+		savePath := filepath.Join(avatarDir, safeName+ext)
+		log.Info(r.Context(), "Saving narrator avatar", "path", savePath)
+		if err := os.WriteFile(savePath, imageData, 0644); err != nil {
+			log.Error(r.Context(), "Failed to save image", err, "path", savePath)
 			http.Error(w, "Failed to save image: "+err.Error(), 500)
 			return
 		}
+		log.Info(r.Context(), "Narrator avatar saved successfully", "path", savePath)
 		imageURL = "/api/scrape/image/narrator/" + safeName
 	} else {
 		// Real artist - save to artist-images and update DB
@@ -245,7 +259,10 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 			os.Remove(filepath.Join(imageDir, id+oldExt))
 		}
 
-		if err := os.WriteFile(filepath.Join(imageDir, id+ext), imageData, 0644); err != nil {
+		savePath := filepath.Join(imageDir, id+ext)
+		log.Info(r.Context(), "Saving artist image", "path", savePath)
+		if err := os.WriteFile(savePath, imageData, 0644); err != nil {
+			log.Error(r.Context(), "Failed to save image", err)
 			http.Error(w, "Failed to save image: "+err.Error(), 500)
 			return
 		}
@@ -254,8 +271,7 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 		repo := h.ds.Artist(r.Context())
 		artist, err := repo.Get(id)
 		if err != nil {
-			// Artist not found in DB, just save the image
-			imageURL = "/api/scrape/image/artist/" + id
+			log.Error(r.Context(), "Artist not found in DB", err, "id", id)
 		} else {
 			imageURL = "/api/scrape/image/artist/" + id
 			artist.LargeImageUrl = imageURL
@@ -267,6 +283,7 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	log.Info(r.Context(), "applyArtistAvatar success", "imageURL", imageURL)
 	writeJSON(w, map[string]any{"data": map[string]any{"imageUrl": imageURL}})
 }
 
