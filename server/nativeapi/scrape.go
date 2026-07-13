@@ -15,18 +15,16 @@ import (
 	"github.com/navidrome/navidrome/server/scraper"
 )
 
-// [LeChenMusic-START:scraper]
-
 func (api *Router) addScrapeRoute(r chi.Router) {
 	h := &scrapeHandler{ds: api.ds}
 	r.Route("/scrape", func(r chi.Router) {
-		r.Get("/audiobook", h.searchAudiobooks)          // ?q=keyword&sources=ximalaya,qingting
-		r.Get("/audiobook/detail", h.getAudiobookDetail)  // ?source=ximalaya&id=123
-		r.Get("/sources", h.getSources)                   // List available sources
-		r.Post("/audiobook/{id}/apply", h.applyScrape)    // Apply selected fields to an audiobook
-		r.Get("/artist", h.searchArtists)                 // ?q=keyword
-		r.Post("/artist/{id}/avatar", h.applyArtistAvatar) // Apply artist avatar
-		r.Post("/batch", h.batchScrape)                   // Batch scrape all audiobooks
+		r.Get("/audiobook", h.searchAudiobooks)
+		r.Get("/audiobook/detail", h.getAudiobookDetail)
+		r.Get("/sources", h.getSources)
+		r.Post("/audiobook/{id}/apply", h.applyScrape)
+		r.Get("/artist", h.searchArtists)
+		r.Post("/artist/{id}/avatar", h.applyArtistAvatar)
+		r.Post("/batch", h.batchScrape)
 	})
 }
 
@@ -34,7 +32,6 @@ type scrapeHandler struct {
 	ds model.DataStore
 }
 
-// getSources returns available scraper sources
 func (h *scrapeHandler) getSources(w http.ResponseWriter, r *http.Request) {
 	sources := scraper.GetAll()
 	type sourceInfo struct {
@@ -43,36 +40,29 @@ func (h *scrapeHandler) getSources(w http.ResponseWriter, r *http.Request) {
 	}
 	var result []sourceInfo
 	for _, s := range sources {
-		result = append(result, sourceInfo{
-			Name:        s.Name(),
-			DisplayName: s.DisplayName(),
-		})
+		result = append(result, sourceInfo{Name: s.Name(), DisplayName: s.DisplayName()})
 	}
 	writeJSON(w, map[string]any{"data": result})
 }
 
-// searchAudiobooks searches all sources for audiobooks
 func (h *scrapeHandler) searchAudiobooks(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	if query == "" {
 		http.Error(w, "q parameter required", 400)
 		return
 	}
-
 	sourcesParam := r.URL.Query().Get("sources")
 	var sources []string
 	if sourcesParam != "" {
 		sources = strings.Split(sourcesParam, ",")
 	}
-
-	// Get results from each source in deterministic order
 	allSources := scraper.GetAll()
-	type sourceResults struct {
-		Source string               `json:"source"
-		Name   string               `json:"name"
-		Items  []scraper.ScrapeResult `json:"items"
+	type srcResult struct {
+		Source string                  `json:"source"`
+		Name   string                  `json:"name"`
+		Items  []scraper.ScrapeResult  `json:"items"`
 	}
-	var results []sourceResults
+	var results []srcResult
 	for _, s := range allSources {
 		if len(sources) > 0 {
 			found := false
@@ -90,16 +80,11 @@ func (h *scrapeHandler) searchAudiobooks(w http.ResponseWriter, r *http.Request)
 		if err != nil || len(res) == 0 {
 			continue
 		}
-		results = append(results, sourceResults{
-			Source: s.Name(),
-			Name:   s.DisplayName(),
-			Items:  res,
-		})
+		results = append(results, srcResult{Source: s.Name(), Name: s.DisplayName(), Items: res})
 	}
 	writeJSON(w, map[string]any{"data": results})
 }
 
-// getAudiobookDetail gets detailed info from a specific source
 func (h *scrapeHandler) getAudiobookDetail(w http.ResponseWriter, r *http.Request) {
 	source := r.URL.Query().Get("source")
 	id := r.URL.Query().Get("id")
@@ -107,23 +92,19 @@ func (h *scrapeHandler) getAudiobookDetail(w http.ResponseWriter, r *http.Reques
 		http.Error(w, "source and id required", 400)
 		return
 	}
-
 	s, ok := scraper.Get(source)
 	if !ok {
 		http.Error(w, "Unknown source: "+source, 400)
 		return
 	}
-
 	detail, err := s.GetAudiobookDetail(id)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-
 	writeJSON(w, map[string]any{"data": detail})
 }
 
-// applyScrape applies selected scrape fields to an audiobook
 func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 	bookID := chi.URLParam(r, "id")
 	repo := h.ds.Audiobook(r.Context())
@@ -132,7 +113,6 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Audiobook not found", 404)
 		return
 	}
-
 	var req struct {
 		Title       *string `json:"title"`
 		Author      *string `json:"author"`
@@ -145,7 +125,6 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request", 400)
 		return
 	}
-
 	if req.Title != nil {
 		book.Title = *req.Title
 	}
@@ -161,8 +140,6 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 	if req.Genre != nil {
 		book.Genre = *req.Genre
 	}
-
-	// Download and save cover if URL provided
 	if req.CoverURL != nil && *req.CoverURL != "" {
 		lib, libErr := h.ds.Library(r.Context()).Get(book.LibraryID)
 		if libErr == nil {
@@ -170,28 +147,23 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 			downloadCover(*req.CoverURL, bookPath, book, *lib)
 		}
 	}
-
 	if err := repo.Put(book); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-
 	writeJSON(w, map[string]any{"data": book})
 }
 
-// searchArtists searches for artist images
 func (h *scrapeHandler) searchArtists(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	if query == "" {
 		http.Error(w, "q parameter required", 400)
 		return
 	}
-
 	results := scraper.SearchArtistsAll(query)
 	writeJSON(w, map[string]any{"data": results})
 }
 
-// applyArtistAvatar applies an artist avatar from URL
 func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request) {
 	artistID := chi.URLParam(r, "id")
 	repo := h.ds.Artist(r.Context())
@@ -200,7 +172,6 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Artist not found", 404)
 		return
 	}
-
 	var req struct {
 		ImageURL string `json:"imageUrl"`
 	}
@@ -208,13 +179,10 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 		http.Error(w, "invalid request", 400)
 		return
 	}
-
 	if req.ImageURL == "" {
 		http.Error(w, "imageUrl required", 400)
 		return
 	}
-
-	// Download image
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(req.ImageURL)
 	if err != nil {
@@ -222,12 +190,8 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer resp.Body.Close()
-
-	// Save to artist image directory
 	imageDir := filepath.Join("data", "artist-images")
 	os.MkdirAll(imageDir, 0755)
-
-	// Determine extension from content type
 	ext := ".jpg"
 	ct := resp.Header.Get("Content-Type")
 	if strings.Contains(ct, "png") {
@@ -235,14 +199,9 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 	} else if strings.Contains(ct, "webp") {
 		ext = ".webp"
 	}
-
 	imagePath := filepath.Join(imageDir, artistID+ext)
-
-	// Save image
 	imageData, _ := io.ReadAll(resp.Body)
 	os.WriteFile(imagePath, imageData, 0644)
-
-	// Update artist's image URL
 	imageURL := "/api/scrape/artist/" + artistID + "/image"
 	artist.LargeImageUrl = imageURL
 	artist.MediumImageUrl = imageURL
@@ -250,11 +209,9 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 	if err := repo.Put(artist, "large_image_url", "medium_image_url", "small_image_url"); err != nil {
 		log.Error(r.Context(), "Failed to update artist", "error", err)
 	}
-
 	writeJSON(w, map[string]any{"data": map[string]any{"imageUrl": imageURL}})
 }
 
-// batchScrape scrapes all audiobooks in batch
 func (h *scrapeHandler) batchScrape(w http.ResponseWriter, r *http.Request) {
 	repo := h.ds.Audiobook(r.Context())
 	books, err := repo.GetAll()
@@ -262,34 +219,26 @@ func (h *scrapeHandler) batchScrape(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-
 	var req struct {
-		Sources []string `json:"sources"` // e.g. ["ximalaya", "qingting"]
-		Fields  []string `json:"fields"`  // e.g. ["author", "narrator", "cover"]
+		Sources []string `json:"sources"`
+		Fields  []string `json:"fields"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", 400)
 		return
 	}
-
-	type batchResult struct {
-		BookID  string                `json:"bookId"`
-		Title   string                `json:"title"`
+	type batchItem struct {
+		BookID  string                         `json:"bookId"`
+		Title   string                         `json:"title"`
 		Results map[string][]scraper.ScrapeResult `json:"results"`
 	}
-
-	var results []batchResult
+	var results []batchItem
 	for _, book := range books {
 		searchResults := scraper.SearchAll(book.Title, req.Sources)
 		if len(searchResults) > 0 {
-			results = append(results, batchResult{
-				BookID:  book.ID,
-				Title:   book.Title,
-				Results: searchResults,
-			})
+			results = append(results, batchItem{BookID: book.ID, Title: book.Title, Results: searchResults})
 		}
 	}
-
 	writeJSON(w, map[string]any{"data": results})
 }
 
@@ -300,30 +249,20 @@ func downloadCover(coverURL, bookPath string, book *model.Audiobook, lib model.L
 		return
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != 200 {
 		return
 	}
-
-	// Determine extension
 	ext := ".jpg"
 	ct := resp.Header.Get("Content-Type")
 	if strings.Contains(ct, "png") {
 		ext = ".png"
 	}
-
-	// Remove old covers
 	for _, name := range []string{"cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.jpeg", "folder.png"} {
 		os.Remove(filepath.Join(bookPath, name))
 	}
-
-	// Save new cover
 	coverPath := filepath.Join(bookPath, "cover"+ext)
 	imageData, _ := io.ReadAll(resp.Body)
 	os.WriteFile(coverPath, imageData, 0644)
-
 	relCover, _ := filepath.Rel(lib.Path, coverPath)
 	book.CoverPath = relCover
 }
-
-// [LeChenMusic-END:scraper]
