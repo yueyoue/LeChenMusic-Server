@@ -13,11 +13,13 @@ import {
   IconButton,
   TextField,
   InputAdornment,
+  Button,
 } from '@material-ui/core'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
 import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import SearchIcon from '@material-ui/icons/Search'
 import PersonIcon from '@material-ui/icons/Person'
+import ScrapeDialog from '../scraper/ScrapeDialog'
 import { useLocation } from 'react-router-dom'
 
 const useStyles = makeStyles((theme) => ({
@@ -121,6 +123,7 @@ const AudiobookList = () => {
   const [error, setError] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
+  const [scrapeOpen, setScrapeOpen] = useState(false)
 
   const params = new URLSearchParams(location.search)
   const genreFilter = params.get('genre')
@@ -192,9 +195,13 @@ const AudiobookList = () => {
   }
 
   return (
+    <>
     <Box className={classes.root}>
       <Typography className={classes.header}>
         {getTitle()} ({displayBooks.length})
+        <Button size="small" variant="outlined" style={{ marginLeft: 12 }} onClick={() => setScrapeOpen(true)}>
+          🔍 批量刮削
+        </Button>
       </Typography>
 
       <Box px={1} mb={1}>
@@ -261,6 +268,8 @@ const AudiobookList = () => {
         </Box>
       )}
     </Box>
+    <ScrapeDialog open={scrapeOpen} onClose={() => setScrapeOpen(false)} />
+    </>
   )
 }
 

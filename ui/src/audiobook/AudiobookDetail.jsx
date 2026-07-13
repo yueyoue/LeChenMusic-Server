@@ -13,6 +13,7 @@ import MenuBookIcon from '@material-ui/icons/MenuBook'
 import AccessTimeIcon from '@material-ui/icons/AccessTime'
 import PersonIcon from '@material-ui/icons/Person'
 import EditIcon from '@material-ui/icons/Edit'
+import ScrapeDialog from '../scraper/ScrapeDialog'
 import RefreshIcon from '@material-ui/icons/Refresh'
 import FavoriteIcon from '@material-ui/icons/Favorite'
 import FavoriteBorderIcon from '@material-ui/icons/FavoriteBorder'
@@ -119,6 +120,7 @@ const AudiobookDetail = ({ id, onBack }) => {
   const [coverEditOpen, setCoverEditOpen] = useState(false)
   const [coverUrl, setCoverUrl] = useState('')
   const [coverUploading, setCoverUploading] = useState(false)
+  const [scrapeOpen, setScrapeOpen] = useState(false)
 
   const currentPlaying = useSelector((state) => state.player.currentPlaying)
   const isPlayingCurrent = currentPlaying?.albumId === `audiobook-${id}`
@@ -364,6 +366,11 @@ const AudiobookDetail = ({ id, onBack }) => {
               <span style={{ fontSize: 18 }}>🖼️</span>
             </IconButton>
           </Tooltip>
+          <Tooltip title="刮削信息">
+            <IconButton onClick={() => setScrapeOpen(true)}>
+              <span style={{ fontSize: 18 }}>🔍</span>
+            </IconButton>
+          </Tooltip>
         </Box>
       </Box>
 
@@ -524,6 +531,15 @@ const AudiobookDetail = ({ id, onBack }) => {
           <Button onClick={() => { setCoverEditOpen(false); setCoverUrl('') }}>取消</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Scrape Dialog */}
+      <ScrapeDialog open={scrapeOpen} onClose={() => setScrapeOpen(false)} book={book} onApply={() => {
+        // Refresh book data after scrape
+        fetch(`/api/audiobook/${id}`, { headers: getAuthHeaders() })
+          .then(res => res.json())
+          .then(data => { if (data.data) { setBook(data.data.book); setChapters(data.data.chapters || []) } })
+          .catch(() => {})
+      }} />
     </Box>
   )
 }
