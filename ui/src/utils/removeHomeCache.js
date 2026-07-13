@@ -1,5 +1,6 @@
 export const removeHomeCache = async () => {
   try {
+    if (typeof caches === 'undefined') return
     const workboxKey = (await caches.keys()).find((key) =>
       key.startsWith('workbox-precache'),
     )
