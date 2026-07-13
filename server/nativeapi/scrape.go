@@ -137,7 +137,7 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 		lib, libErr := h.ds.Library(r.Context()).Get(book.LibraryID)
 		if libErr == nil {
 			bookPath := filepath.Join(lib.Path, book.Path)
-			downloadCover(*req.CoverURL, bookPath, book, lib)
+			downloadCover(*req.CoverURL, bookPath, book, *lib)
 		}
 	}
 
@@ -213,12 +213,15 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 	os.WriteFile(imagePath, imageData, 0644)
 
 	// Update artist's image URL
-	artist.ImageURL = "/api/scrape/artist/" + artistID + "/image"
-	if err := repo.Put(artist); err != nil {
+	imageURL := "/api/scrape/artist/" + artistID + "/image"
+	artist.LargeImageUrl = imageURL
+	artist.MediumImageUrl = imageURL
+	artist.SmallImageUrl = imageURL
+	if err := repo.Put(artist, "large_image_url", "medium_image_url", "small_image_url"); err != nil {
 		log.Error(r.Context(), "Failed to update artist", "error", err)
 	}
 
-	writeJSON(w, map[string]any{"data": map[string]any{"imageUrl": artist.ImageURL}})
+	writeJSON(w, map[string]any{"data": map[string]any{"imageUrl": imageURL}})
 }
 
 // batchScrape scrapes all audiobooks in batch
