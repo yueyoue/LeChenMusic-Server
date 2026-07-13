@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import config from '../config'
 import subsonic from '../subsonic'
 import { useImageUrl } from './useImageUrl'
+import React, { useState, useEffect } from 'react'
 
 const useStyles = makeStyles({
   avatar: {
@@ -27,9 +28,26 @@ export const CoverArtAvatar = ({
   const recordContext = useRecordContext()
   const record = recordProp || recordContext
   const square = variant !== 'circular'
-  const url = record
+  const [customUrl, setCustomUrl] = useState(null)
+
+  // Check for saved avatar from scrape endpoint
+  useEffect(() => {
+    if (!record?.id) return
+    const checkSavedAvatar = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        const res = await fetch(`/api/scrape/image/artist/${record.id}?token=***
+        if (res.ok) {
+          setCustomUrl(`/api/scrape/image/artist/${record.id}?token=***
+        }
+      } catch (e) {}
+    }
+    checkSavedAvatar()
+  }, [record?.id])
+
+  const url = customUrl || (record
     ? subsonic.getCoverArtUrl(record, config.uiCoverArtSize, square)
-    : null
+    : null)
   const { imgUrl } = useImageUrl(url)
   if (!record) return null
   return (

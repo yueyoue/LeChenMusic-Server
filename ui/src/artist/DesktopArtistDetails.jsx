@@ -91,6 +91,7 @@ const DesktopArtistDetails = ({ artistInfo, record, biography }) => {
   const [expanded, setExpanded] = useState(false)
   const classes = useStyles()
   const title = record.name
+  const [customAvatarUrl, setCustomAvatarUrl] = useState(null)
   const {
     imageLoading,
     imageError,
@@ -101,6 +102,23 @@ const DesktopArtistDetails = ({ artistInfo, record, biography }) => {
     handleCloseLightbox,
   } = useImageLoadingState(record.id)
 
+  // Check for saved avatar from scrape endpoint
+  React.useEffect(() => {
+    const checkSavedAvatar = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        const res = await fetch(`/api/scrape/image/artist/${record.id}?token=***
+        if (res.ok) {
+          setCustomAvatarUrl(`/api/scrape/image/artist/${record.id}?token=***
+        }
+      } catch (e) {}
+    }
+    checkSavedAvatar()
+  }, [record.id])
+
+  const imageUrl = customAvatarUrl || subsonic.getCoverArtUrl(record, config.uiCoverArtSize)
+  const fullImageUrl = customAvatarUrl || subsonic.getCoverArtUrl(record)
+
   return (
     <div className={classes.root}>
       <Card className={classes.artistDetail}>
@@ -109,7 +127,7 @@ const DesktopArtistDetails = ({ artistInfo, record, biography }) => {
             <CardMedia
               key={record.id}
               component="img"
-              src={subsonic.getCoverArtUrl(record, config.uiCoverArtSize)}
+              src={imageUrl}
               className={`${classes.cover} ${imageLoading ? classes.coverLoading : ''}`}
               onClick={handleOpenLightbox}
               onLoad={handleImageLoad}
@@ -180,7 +198,7 @@ const DesktopArtistDetails = ({ artistInfo, record, biography }) => {
             imagePadding={50}
             animationDuration={200}
             imageTitle={record.name}
-            mainSrc={subsonic.getCoverArtUrl(record)}
+            mainSrc={fullImageUrl}
             onCloseRequest={handleCloseLightbox}
           />
         )}

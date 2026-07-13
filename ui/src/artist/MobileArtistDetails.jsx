@@ -89,8 +89,24 @@ const useStyles = makeStyles(
 )
 
 const MobileArtistDetails = ({ artistInfo, biography, record }) => {
-  const img = subsonic.getCoverArtUrl(record, 800)
+  const [customAvatarUrl, setCustomAvatarUrl] = useState(null)
   const [expanded, setExpanded] = useState(false)
+
+  // Check for saved avatar from scrape endpoint
+  React.useEffect(() => {
+    const checkSavedAvatar = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        const res = await fetch(`/api/scrape/image/artist/${record.id}?token=***
+        if (res.ok) {
+          setCustomAvatarUrl(`/api/scrape/image/artist/${record.id}?token=***
+        }
+      } catch (e) {}
+    }
+    checkSavedAvatar()
+  }, [record.id])
+
+  const img = customAvatarUrl || subsonic.getCoverArtUrl(record, 800)
   const classes = useStyles({ img, expanded })
   const title = record.name
   const {
@@ -112,7 +128,7 @@ const MobileArtistDetails = ({ artistInfo, biography, record }) => {
               <CardMedia
                 key={record.id}
                 component="img"
-                src={subsonic.getCoverArtUrl(record, config.uiCoverArtSize)}
+                src={customAvatarUrl || subsonic.getCoverArtUrl(record, config.uiCoverArtSize)}
                 className={`${classes.cover} ${imageLoading ? classes.coverLoading : ''}`}
                 onClick={handleOpenLightbox}
                 onLoad={handleImageLoad}
