@@ -116,6 +116,9 @@ const AudiobookDetail = ({ id, onBack }) => {
   const [saving, setSaving] = useState(false)
   const [rescanning, setRescanning] = useState(false)
   const [isStarred, setIsStarred] = useState(false)
+  const [coverEditOpen, setCoverEditOpen] = useState(false)
+  const [coverUrl, setCoverUrl] = useState('')
+  const [coverUploading, setCoverUploading] = useState(false)
 
   const currentPlaying = useSelector((state) => state.player.currentPlaying)
   const isPlayingCurrent = currentPlaying?.albumId === `audiobook-${id}`
@@ -285,6 +288,41 @@ const AudiobookDetail = ({ id, onBack }) => {
     }
   }
 
+  // Cover upload handler
+  const handleCoverUpload = async (fileOrUrl) => {
+    setCoverUploading(true)
+    try {
+      const formData = new FormData()
+      if (typeof fileOrUrl === 'string') {
+        formData.append('url', fileOrUrl)
+      } else {
+        formData.append('file', fileOrUrl)
+      }
+      const res = await fetch(`/api/audiobook/${id}/cover`, {
+        method: 'POST',
+        headers: { 'X-ND-Authorization': `Bearer ${getToken()}` },
+        body: formData,
+      })
+      if (res.ok) {
+        // Refresh book data
+        const bookRes = await fetch(`/api/audiobook/${id}`, { headers: getAuthHeaders() })
+        if (bookRes.ok) {
+          const data = await bookRes.json()
+          if (data.data) setBook(data.data.book)
+        }
+        setCoverEditOpen(false)
+        setCoverUrl('')
+      } else {
+        const err = await res.text()
+        alert('上传失败: ' + err)
+      }
+    } catch (err) {
+      alert('上传失败: ' + err.message)
+    } finally {
+      setCoverUploading(false)
+    }
+  }
+
   if (loading) {
     return <Box p={4} textAlign="center"><Typography>Loading...</Typography></Box>
   }
@@ -319,6 +357,11 @@ const AudiobookDetail = ({ id, onBack }) => {
           <Tooltip title="编辑有声书信息">
             <IconButton onClick={handleEditOpen}>
               <EditIcon />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="更换封面">
+            <IconButton onClick={() => setCoverEditOpen(true)}>
+              <span style={{ fontSize: 18 }}>🖼️</span>
             </IconButton>
           </Tooltip>
         </Box>
@@ -440,6 +483,45 @@ const AudiobookDetail = ({ id, onBack }) => {
           <Button onClick={handleEditSave} color="primary" disabled={saving}>
             {saving ? '保存中...' : '保存'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Cover Edit Dialog */}
+      <Dialog open={coverEditOpen} onClose={() => setCoverEditOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>更换封面图片</DialogTitle>
+        <DialogContent>
+          <Box style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingTop: 8 }}>
+            <Typography variant="subtitle2">方式一: 输入图片URL</Typography>
+            <TextField
+              label="图片URL"
+              value={coverUrl}
+              onChange={(e) => setCoverUrl(e.target.value)}
+              fullWidth
+              placeholder="https://example.com/cover.jpg"
+              variant="outlined"
+              size="small"
+            />
+            <Button
+              variant="contained"
+              color="primary"
+              disabled={!coverUrl.trim() || coverUploading}
+              onClick={() => handleCoverUpload(coverUrl.trim())}
+            >
+              {coverUploading ? '上传中...' : '从URL上传'}
+            </Button>
+            <Typography variant="subtitle2" style={{ marginTop: 8 }}>方式二: 选择本地文件</Typography>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                if (e.target.files[0]) handleCoverUpload(e.target.files[0])
+              }}
+              style={{ fontSize: 14 }}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setCoverEditOpen(false); setCoverUrl('') }}>取消</Button>
         </DialogActions>
       </Dialog>
     </Box>
