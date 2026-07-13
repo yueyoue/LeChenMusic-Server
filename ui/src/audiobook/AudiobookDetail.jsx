@@ -14,6 +14,7 @@ import AccessTimeIcon from '@material-ui/icons/AccessTime'
 import PersonIcon from '@material-ui/icons/Person'
 import EditIcon from '@material-ui/icons/Edit'
 import ScrapeDialog from '../scraper/ScrapeDialog'
+import ArtistAvatarDialog from '../scraper/ArtistAvatarDialog'
 import RefreshIcon from '@material-ui/icons/Refresh'
 import FavoriteIcon from '@material-ui/icons/Favorite'
 import FavoriteBorderIcon from '@material-ui/icons/FavoriteBorder'
@@ -121,6 +122,7 @@ const AudiobookDetail = ({ id, onBack }) => {
   const [coverUrl, setCoverUrl] = useState('')
   const [coverUploading, setCoverUploading] = useState(false)
   const [scrapeOpen, setScrapeOpen] = useState(false)
+  const [narratorAvatarOpen, setNarratorAvatarOpen] = useState(false)
 
   const currentPlaying = useSelector((state) => state.player.currentPlaying)
   const isPlayingCurrent = currentPlaying?.albumId === `audiobook-${id}`
@@ -389,7 +391,10 @@ const AudiobookDetail = ({ id, onBack }) => {
             </Typography>
           )}
           {book.narrator && (
-            <Typography className={classes.narrator}>🎙️ {book.narrator}</Typography>
+            <Typography className={classes.narrator} style={{ cursor: 'pointer' }}
+              onClick={() => setNarratorAvatarOpen(true)} title="点击匹配演播者头像">
+              🎙️ {book.narrator} 🔍
+            </Typography>
           )}
           {book.genre && <Chip label={book.genre} size="small" className={classes.genre} />}
           <Box className={classes.stats}>
@@ -534,12 +539,21 @@ const AudiobookDetail = ({ id, onBack }) => {
 
       {/* Scrape Dialog */}
       <ScrapeDialog open={scrapeOpen} onClose={() => setScrapeOpen(false)} book={book} onApply={() => {
-        // Refresh book data after scrape
         fetch(`/api/audiobook/${id}`, { headers: getAuthHeaders() })
           .then(res => res.json())
           .then(data => { if (data.data) { setBook(data.data.book); setChapters(data.data.chapters || []) } })
           .catch(() => {})
       }} />
+
+      {/* Narrator Avatar Dialog */}
+      {book.narrator && (
+        <ArtistAvatarDialog
+          open={narratorAvatarOpen}
+          onClose={() => setNarratorAvatarOpen(false)}
+          artist={{ id: `narrator-${book.narrator}`, name: book.narrator }}
+          onApply={() => {}}
+        />
+      )}
     </Box>
   )
 }

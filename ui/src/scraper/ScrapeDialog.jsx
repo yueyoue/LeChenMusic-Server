@@ -14,7 +14,7 @@ const ScrapeDialog = ({ open, onClose, book, onApply }) => {
   const [query, setQuery] = useState('')
   const [sources, setSources] = useState([])
   const [loading, setLoading] = useState(false)
-  const [searchResults, setSearchResults] = useState({})
+  const [searchResults, setSearchResults] = useState([])
   const [selectedResult, setSelectedResult] = useState(null)
   const [detail, setDetail] = useState(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -45,7 +45,7 @@ const ScrapeDialog = ({ open, onClose, book, onApply }) => {
     setDetail(null)
     try {
       const res = await httpClient(`${REST_URL}/scrape/audiobook?q=${encodeURIComponent(query)}`)
-      setSearchResults(res.json?.data || {})
+      setSearchResults(res.json?.data || [])
     } catch (e) {
       console.error('Scrape search failed:', e)
     } finally {
@@ -112,10 +112,11 @@ const ScrapeDialog = ({ open, onClose, book, onApply }) => {
     }
   }
 
+  // Flatten results from all sources
   const allResults = []
-  for (const [source, items] of Object.entries(searchResults)) {
-    if (items) {
-      items.forEach(item => allResults.push({ ...item, _source: source }))
+  for (const group of searchResults) {
+    if (group.items) {
+      group.items.forEach(item => allResults.push({ ...item, _source: group.source, _sourceName: group.name }))
     }
   }
 
@@ -173,7 +174,7 @@ const ScrapeDialog = ({ open, onClose, book, onApply }) => {
                             {item.chapterCount > 0 && ` | ${item.chapterCount}章`}
                           </Typography>
                         </Box>
-                        <Chip label={item._source} size="small" variant="outlined" />
+                        <Chip label={item._sourceName || item._source} size="small" variant="outlined" />
                       </CardContent>
                     </Card>
                   ))}

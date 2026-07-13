@@ -65,7 +65,37 @@ func (h *scrapeHandler) searchAudiobooks(w http.ResponseWriter, r *http.Request)
 		sources = strings.Split(sourcesParam, ",")
 	}
 
-	results := scraper.SearchAll(query, sources)
+	// Get results from each source in deterministic order
+	allSources := scraper.GetAll()
+	type sourceResults struct {
+		Source string               `json:"source"
+		Name   string               `json:"name"
+		Items  []scraper.ScrapeResult `json:"items"
+	}
+	var results []sourceResults
+	for _, s := range allSources {
+		if len(sources) > 0 {
+			found := false
+			for _, src := range sources {
+				if src == s.Name() {
+					found = true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		res, err := s.SearchAudiobooks(query, 1)
+		if err != nil || len(res) == 0 {
+			continue
+		}
+		results = append(results, sourceResults{
+			Source: s.Name(),
+			Name:   s.DisplayName(),
+			Items:  res,
+		})
+	}
 	writeJSON(w, map[string]any{"data": results})
 }
 

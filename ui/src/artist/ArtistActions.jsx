@@ -16,6 +16,7 @@ import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import { IoIosRadio } from 'react-icons/io'
 import { playShuffle, playTopSongs } from './actions.js'
 import { playSimilar } from '../common/playbackActions.js'
+import ArtistAvatarDialog from '../scraper/ArtistAvatarDialog'
 
 const useStyles = makeStyles((theme) => ({
   toolbar: {
@@ -61,6 +62,7 @@ const ArtistActions = ({ className, record, ...rest }) => {
   const isMobile = useMediaQuery((theme) => theme.breakpoints.down('xs'))
   const [loadingAction, setLoadingAction] = React.useState(null)
   const isLoading = !!loadingAction
+  const [avatarDialogOpen, setAvatarDialogOpen] = React.useState(false)
 
   const handlePlay = React.useCallback(async () => {
     setLoadingAction('play')
@@ -132,6 +134,20 @@ const ArtistActions = ({ className, record, ...rest }) => {
         disabled={isLoading}
         loading={loadingAction === 'radio'}
         icon={<IoIosRadio className={classes.radioIcon} />}
+      />
+      <Button
+        onClick={() => setAvatarDialogOpen(true)}
+        label="匹配头像"
+        className={classes.button}
+        size={isMobile ? 'small' : 'medium'}
+      >
+        🔍
+      </Button>
+      <ArtistAvatarDialog
+        open={avatarDialogOpen}
+        onClose={() => setAvatarDialogOpen(false)}
+        artist={record}
+        onApply={() => window.location.reload()}
       />
     </TopToolbar>
   )
