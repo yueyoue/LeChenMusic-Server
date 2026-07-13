@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import {
   Typography, Box, Card, CardContent, makeStyles, Avatar,
-  IconButton, Chip, Button
+  IconButton, Chip, Button, Tooltip
 } from '@material-ui/core'
 import ArrowBackIcon from '@material-ui/icons/ArrowBack'
 import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import PersonIcon from '@material-ui/icons/Person'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
+import ArtistAvatarDialog from '../scraper/ArtistAvatarDialog'
 
 const useStyles = makeStyles((theme) => ({
   root: { padding: 16 },
@@ -42,6 +43,7 @@ const NarratorDetail = ({ name, onBack, onPlayBook }) => {
   const classes = useStyles()
   const [works, setWorks] = useState([])
   const [loading, setLoading] = useState(true)
+  const [avatarDialogOpen, setAvatarDialogOpen] = useState(false)
 
   useEffect(() => {
     const fetchWorks = async () => {
@@ -68,6 +70,7 @@ const NarratorDetail = ({ name, onBack, onPlayBook }) => {
   }
 
   return (
+    <>
     <Box className={classes.root}>
       <IconButton className={classes.backBtn} onClick={onBack}>
         <ArrowBackIcon />
@@ -78,6 +81,12 @@ const NarratorDetail = ({ name, onBack, onPlayBook }) => {
         <Box>
           <Typography className={classes.name}>{name}</Typography>
           <Typography className={classes.stats}>🎙️ 演播者 · {works.length} 部作品</Typography>
+          <Tooltip title="搜索匹配演播者头像">
+            <Button size="small" variant="outlined" style={{ marginTop: 8 }}
+              onClick={() => setAvatarDialogOpen(true)}>
+              🔍 匹配头像
+            </Button>
+          </Tooltip>
         </Box>
       </Box>
 
@@ -115,6 +124,13 @@ const NarratorDetail = ({ name, onBack, onPlayBook }) => {
         ))
       )}
     </Box>
+    <ArtistAvatarDialog
+      open={avatarDialogOpen}
+      onClose={() => setAvatarDialogOpen(false)}
+      artist={{ id: `narrator-${name}`, name: name }}
+      onApply={() => {}}
+    />
+    </>
   )
 }
 
