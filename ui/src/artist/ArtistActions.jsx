@@ -17,7 +17,7 @@ import { IoIosRadio } from 'react-icons/io'
 import { playShuffle, playTopSongs } from './actions.js'
 import { playSimilar } from '../common/playbackActions.js'
 import ArtistAvatarDialog from '../scraper/ArtistAvatarDialog'
-import ReactDOM from 'react-dom'
+import { createPortal } from 'react-dom'
 
 const useStyles = makeStyles((theme) => ({
   toolbar: {
@@ -146,7 +146,7 @@ const ArtistActions = ({ className, record, ...rest }) => {
         🔍
       </Button>
     </TopToolbar>
-    {avatarDialogOpen && ReactDOM.createPortal(
+    {avatarDialogOpen && createPortal(
       <ArtistAvatarDialog
         open={avatarDialogOpen}
         onClose={() => setAvatarDialogOpen(false)}
