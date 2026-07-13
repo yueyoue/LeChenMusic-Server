@@ -23,6 +23,11 @@ var audiobookAudioExts = map[string]bool{
 	".ogg": true, ".wav": true, ".opus": true, ".wma": true, ".aac": true,
 }
 
+var audiobookCoverNames = []string{
+	"cover.jpg", "cover.jpeg", "cover.png",
+	"folder.jpg", "folder.jpeg", "folder.png",
+}
+
 func (api *Router) addAudiobookRoute(r chi.Router) {
 	h := &audiobookHandler{ds: api.ds}
 	r.Route("/audiobook", func(r chi.Router) {
