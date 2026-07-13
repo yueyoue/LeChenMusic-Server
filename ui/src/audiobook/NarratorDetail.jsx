@@ -50,10 +50,13 @@ const NarratorDetail = ({ name, onBack, onPlayBook }) => {
     // Check if narrator avatar exists
     const checkAvatar = async () => {
       try {
+        const token = localStorage.getItem('token')
         const safeName = name.replace(/\//g, '_').replace(/\\\\/g, '_')
-        const res = await fetch(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}`)
+        const res = await fetch(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}`, {
+          headers: { 'X-ND-Authorization': `Bearer ${token}` },
+        })
         if (res.ok) {
-          setAvatarUrl(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}`)
+          setAvatarUrl(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}?token=${token}`)
         }
       } catch (e) {}
     }

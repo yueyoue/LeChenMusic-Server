@@ -291,7 +291,6 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 func (h *scrapeHandler) serveImage(w http.ResponseWriter, r *http.Request) {
 	imgType := chi.URLParam(r, "type") // "narrator" or "artist"
 	id := chi.URLParam(r, "id")
-	log.Info(r.Context(), "serveImage called", "type", imgType, "id", id)
 
 	var dir string
 	switch imgType {
@@ -308,14 +307,12 @@ func (h *scrapeHandler) serveImage(w http.ResponseWriter, r *http.Request) {
 	for _, ext := range []string{".jpg", ".jpeg", ".png", ".webp"} {
 		path := filepath.Join(dir, id+ext)
 		if _, err := os.Stat(path); err == nil {
-			log.Info(r.Context(), "Serving image", "path", path)
 			w.Header().Set("Cache-Control", "public, max-age=86400")
 			http.ServeFile(w, r, path)
 			return
 		}
 	}
 
-	log.Info(r.Context(), "Image not found", "type", imgType, "id", id, "dir", dir)
 	http.Error(w, "Image not found", 404)
 }
 

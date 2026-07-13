@@ -71,6 +71,16 @@ func (api *Router) routes() http.Handler {
 		h.cover(w, req)
 	})
 
+	// Public scrape image (accepts token as query param for <img> tags)
+	r.Get("/scrape/image/{type}/{id}", func(w http.ResponseWriter, req *http.Request) {
+		token := req.URL.Query().Get("token")
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		h := &scrapeHandler{ds: api.ds}
+		h.serveImage(w, req)
+	})
+
 	// Protected
 	r.Group(func(r chi.Router) {
 		r.Use(server.Authenticator(api.ds))
