@@ -23,12 +23,12 @@ const useStyles = makeStyles((theme) => ({
   root: { padding: 16 },
   header: { display: 'flex', gap: 20, marginBottom: 24 },
   cover: {
-    width: 160, height: 210, borderRadius: 8, objectFit: 'cover',
+    width: 160, height: 160, borderRadius: 8, objectFit: 'cover',
     backgroundColor: theme.palette.grey[300], flexShrink: 0,
     boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
   },
   coverPlaceholder: {
-    width: 160, height: 210, borderRadius: 8, flexShrink: 0,
+    width: 160, height: 160, borderRadius: 8, flexShrink: 0,
     backgroundColor: theme.palette.grey[200],
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   },

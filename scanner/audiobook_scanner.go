@@ -143,13 +143,10 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 
 	// [LeChenMusic-START:audiobook-id3-tags]
 	// Try to read metadata from the first audio file's ID3 tags
-	tagAuthor, tagTitle, tagAlbum, tagGenre, tagYear, tagNarrator := readFirstAudioFileTags(fullPath)
+	tagArtist, tagTitle, tagAlbum, tagGenre, tagYear, tagNarrator := readFirstAudioFileTags(fullPath)
 	if tagTitle != "" && title == dirName {
 		// ID3 tag has a proper title, and the directory name was not parsed
 		title = tagTitle
-	}
-	if tagAuthor != "" && author == "" {
-		author = tagAuthor
 	}
 	if tagAlbum != "" && title == "" {
 		title = tagAlbum
@@ -161,7 +158,13 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 	if tagYear > 0 {
 		year = tagYear
 	}
+	// In audiobook files, ARTIST tag typically contains the narrator (演播者), not the author (作者).
+	// Priority for narrator: explicit narrator tag > ARTIST/ALBUMARTIST
+	// Priority for author: directory name parsing only (ARTIST is NOT used as author)
 	narrator := tagNarrator
+	if narrator == "" && tagArtist != "" {
+		narrator = tagArtist
+	}
 	// [LeChenMusic-END:audiobook-id3-tags]
 
 	coverPath := ""
@@ -286,6 +289,7 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 // [LeChenMusic-START:audiobook-id3-tags]
 // readFirstAudioFileTags reads ID3/metadata tags from the first audio file in a directory.
 // Returns (artist, title, album, genre, year, narrator). Empty strings/zeros if not found.
+// Note: In audiobook files, ARTIST/ALBUMARTIST typically contains the narrator, not the book author.
 func readFirstAudioFileTags(dirPath string) (artist, title, album, genre string, year int, narrator string) {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {

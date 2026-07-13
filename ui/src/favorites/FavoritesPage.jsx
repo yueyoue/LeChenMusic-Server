@@ -106,7 +106,7 @@ const useStyles = makeStyles((theme) => ({
   coverWrap: {
     position: 'relative',
     width: '100%',
-    paddingTop: '133%',
+    paddingTop: '100%', /* Square like music albums */
     backgroundColor: theme.palette.grey[200],
     borderRadius: '12px 12px 0 0',
     overflow: 'hidden',
@@ -267,7 +267,7 @@ const FavoritesPage = () => {
                   <Box className={classes.coverWrap}>
                     {album.coverArt ? (
                       <img
-                        src={`/rest/getCoverArt.u=admin&p=enc:admin&f=json&v=1.8.0&c=LeChenMusic&id=${album.coverArt}`}
+                        src={`/rest/getCoverArt?u=${encodeURIComponent(localStorage.getItem('username') || '')}&p=enc:${encodeURIComponent(localStorage.getItem('subsonic-token') || '')}&v=1.8.0&c=LeChenMusic&id=${album.coverArt}`}
                         alt={album.name}
                         className={classes.cover}
                         onError={(e) => { e.target.style.display = 'none' }}
@@ -316,7 +316,7 @@ const FavoritesPage = () => {
                   <Box style={{ width: 40, height: 40, borderRadius: 6, overflow: 'hidden', flexShrink: 0 }}>
                     {song.coverArt ? (
                       <img
-                        src={`/rest/getCoverArt.u=admin&p=enc:admin&f=json&v=1.8.0&c=LeChenMusic&id=${song.coverArt}`}
+                        src={`/rest/getCoverArt?u=${encodeURIComponent(localStorage.getItem('username') || '')}&p=enc:${encodeURIComponent(localStorage.getItem('subsonic-token') || '')}&v=1.8.0&c=LeChenMusic&id=${song.coverArt}`}
                         alt=""
                         style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         onError={(e) => { e.target.style.display = 'none' }}

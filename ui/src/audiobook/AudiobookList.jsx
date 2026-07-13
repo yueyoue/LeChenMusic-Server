@@ -41,7 +41,7 @@ const useStyles = makeStyles((theme) => ({
   coverWrap: {
     position: 'relative',
     width: '100%',
-    paddingTop: '133%', /* 3:4 aspect ratio */
+    paddingTop: '100%', /* Square like music albums */
     backgroundColor: theme.palette.grey[200],
     borderRadius: '12px 12px 0 0',
     overflow: 'hidden',

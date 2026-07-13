@@ -2,11 +2,13 @@ package nativeapi
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/log"
@@ -44,7 +46,10 @@ func (api *Router) addAudiobookRoute(r chi.Router) {
 		r.Delete("/{id}/star", h.unstar)
 		r.Put("/{id}/metadata", h.updateMetadata)
 		r.Get("/{id}/cover", h.cover)
+		r.Post("/{id}/cover", h.uploadCover) // Upload cover image (file or URL)
 		r.Post("/{id}/rescan", h.rescan)
+		r.Post("/narrator/{name}/avatar", h.uploadNarratorAvatar) // Upload narrator avatar
+		r.Get("/narrator/{name}/avatar", h.getNarratorAvatar) // Serve narrator avatar
 	})
 }
 
@@ -611,6 +616,192 @@ func (h *audiobookHandler) rescan(w http.ResponseWriter, r *http.Request) {
 	_ = repo.Put(book)
 
 	writeJSON(w, map[string]any{"data": map[string]any{"book": book, "chapters": chapters}})
+}
+
+// uploadCover handles audiobook cover image upload (file upload or URL download)
+func (h *audiobookHandler) uploadCover(w http.ResponseWriter, r *http.Request) {
+	bookID := chi.URLParam(r, "id")
+	repo := h.ds.Audiobook(r.Context())
+	book, err := repo.Get(bookID)
+	if err != nil {
+		http.Error(w, "Audiobook not found", 404)
+		return
+	}
+	lib, err := h.ds.Library(r.Context()).Get(book.LibraryID)
+	if err != nil {
+		http.Error(w, "Library not found", 404)
+		return
+	}
+	bookPath := filepath.Join(lib.Path, book.Path)
+
+	// Check if URL-based upload
+	imageURL := r.FormValue("url")
+	var imageData []byte
+	var ext string
+
+	if imageURL != "" {
+		// Download image from URL
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(imageURL)
+		if err != nil {
+			http.Error(w, "Failed to download image: "+err.Error(), 400)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			http.Error(w, "Failed to download image: HTTP "+resp.Status, 400)
+			return
+		}
+		imageData, err = io.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(w, "Failed to read image data", 500)
+			return
+		}
+		contentType := resp.Header.Get("Content-Type")
+		ext = extFromContentType(contentType)
+	} else {
+		// File upload
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "No file or url provided", 400)
+			return
+		}
+		defer file.Close()
+		imageData, err = io.ReadAll(file)
+		if err != nil {
+			http.Error(w, "Failed to read file", 500)
+			return
+		}
+		ext = strings.ToLower(filepath.Ext(header.Filename))
+	}
+
+	// Validate image type
+	validExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".webp": true}
+	if !validExts[ext] {
+		http.Error(w, "Unsupported image type: "+ext, 400)
+		return
+	}
+
+	// Remove old cover files
+	for _, name := range audiobookCoverNames {
+		oldPath := filepath.Join(bookPath, name)
+		os.Remove(oldPath)
+	}
+
+	// Save new cover
+	coverName := "cover" + ext
+	coverPath := filepath.Join(bookPath, coverName)
+	if err := os.WriteFile(coverPath, imageData, 0644); err != nil {
+		http.Error(w, "Failed to save cover: "+err.Error(), 500)
+		return
+	}
+
+	// Update book's coverPath
+	relCover, _ := filepath.Rel(lib.Path, coverPath)
+	book.CoverPath = relCover
+	_ = repo.Put(book)
+
+	writeJSON(w, map[string]any{"data": map[string]any{"coverPath": relCover}})
+}
+
+// uploadNarratorAvatar handles narrator avatar upload
+// Narrator avatars are stored in data/narrator-avatars/<sanitized-name>.<ext>
+func (h *audiobookHandler) uploadNarratorAvatar(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	if name == "" {
+		http.Error(w, "Narrator name required", 400)
+		return
+	}
+
+	avatarDir := filepath.Join("data", "narrator-avatars")
+	os.MkdirAll(avatarDir, 0755)
+
+	// Sanitize filename
+	safeName := strings.ReplaceAll(name, "/", "_")
+	safeName = strings.ReplaceAll(safeName, "\\", "_")
+	safeName = strings.ReplaceAll(safeName, "..", "_")
+
+	var imageData []byte
+	var ext string
+
+	// Check if URL-based upload
+	imageURL := r.FormValue("url")
+	if imageURL != "" {
+		client := &http.Client{Timeout: 30 * time.Second}
+		resp, err := client.Get(imageURL)
+		if err != nil {
+			http.Error(w, "Failed to download image: "+err.Error(), 400)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			http.Error(w, "Failed to download image: HTTP "+resp.Status, 400)
+			return
+		}
+		imageData, err = io.ReadAll(resp.Body)
+		if err != nil {
+			http.Error(w, "Failed to read image data", 500)
+			return
+		}
+		contentType := resp.Header.Get("Content-Type")
+		ext = extFromContentType(contentType)
+	} else {
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			http.Error(w, "No file or url provided", 400)
+			return
+		}
+		defer file.Close()
+		imageData, err = io.ReadAll(file)
+		if err != nil {
+			http.Error(w, "Failed to read file", 500)
+			return
+		}
+		ext = strings.ToLower(filepath.Ext(header.Filename))
+	}
+
+	// Remove old avatar files
+	for _, oldExt := range []string{".jpg", ".jpeg", ".png", ".webp"} {
+		os.Remove(filepath.Join(avatarDir, safeName+oldExt))
+	}
+
+	// Save new avatar
+	avatarPath := filepath.Join(avatarDir, safeName+ext)
+	if err := os.WriteFile(avatarPath, imageData, 0644); err != nil {
+		http.Error(w, "Failed to save avatar: "+err.Error(), 500)
+		return
+	}
+
+	writeJSON(w, map[string]any{"data": map[string]any{"path": "/api/audiobook/narrator/" + name + "/avatar"}})
+}
+
+// getNarratorAvatar serves narrator avatar images
+func (h *audiobookHandler) getNarratorAvatar(w http.ResponseWriter, r *http.Request) {
+	name := chi.URLParam(r, "name")
+	safeName := strings.ReplaceAll(name, "/", "_")
+	safeName = strings.ReplaceAll(safeName, "\\", "_")
+
+	avatarDir := filepath.Join("data", "narrator-avatars")
+	for _, ext := range []string{".jpg", ".jpeg", ".png", ".webp"} {
+		path := filepath.Join(avatarDir, safeName+ext)
+		if _, err := os.Stat(path); err == nil {
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+			http.ServeFile(w, r, path)
+			return
+		}
+	}
+	http.Error(w, "No avatar found", 404)
+}
+
+func extFromContentType(contentType string) string {
+	switch {
+	case strings.Contains(contentType, "png"):
+		return ".png"
+	case strings.Contains(contentType, "webp"):
+		return ".webp"
+	default:
+		return ".jpg"
+	}
 }
 
 func writeJSON(w http.ResponseWriter, data any) {
