@@ -23,10 +23,38 @@ const useStyles = makeStyles((theme) => ({
     backgroundColor: theme.palette.primary.main,
     fontSize: 28,
   },
+  avatarImg: {
+    width: 64, height: 64, margin: '0 auto 12px', borderRadius: '50%',
+    objectFit: 'cover',
+  },
   name: { fontSize: 14, fontWeight: 600, marginBottom: 4 },
   count: { fontSize: 12, color: theme.palette.text.secondary },
   empty: { textAlign: 'center', padding: 40, color: theme.palette.text.secondary },
 }))
+
+const NarratorAvatar = ({ name }) => {
+  const classes = useStyles()
+  const [avatarUrl, setAvatarUrl] = useState(null)
+
+  useEffect(() => {
+    const checkAvatar = async () => {
+      try {
+        const token = localStorage.getItem('token')
+        const safeName = name.replace(/\//g, '_').replace(/\\/g, '_')
+        const res = await fetch(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}?token=${token}`)
+        if (res.ok) {
+          setAvatarUrl(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}?token=${token}`)
+        }
+      } catch (e) {}
+    }
+    checkAvatar()
+  }, [name])
+
+  if (avatarUrl) {
+    return <img src={avatarUrl} alt={name} className={classes.avatarImg} />
+  }
+  return <Avatar className={classes.avatar}>{name.charAt(0)}</Avatar>
+}
 
 const NarratorList = () => {
   const classes = useStyles()
@@ -95,9 +123,7 @@ const NarratorList = () => {
           {filtered.map(narrator => (
             <Card key={narrator.name} className={classes.card} elevation={0}
               onClick={() => window.location.hash = `#/narrator/${encodeURIComponent(narrator.name)}`}>
-              <Avatar className={classes.avatar}>
-                {narrator.name.charAt(0)}
-              </Avatar>
+              <NarratorAvatar name={narrator.name} />
               <Typography className={classes.name}>{narrator.name}</Typography>
               <Typography className={classes.count}>{narrator.count} 部作品</Typography>
             </Card>

@@ -40,7 +40,7 @@ const ScrapeDialog = ({ open, onClose, book, onApply }) => {
   const handleSearch = async () => {
     if (!query.trim()) return
     setLoading(true)
-    setSearchResults({})
+    setSearchResults([])
     setSelectedResult(null)
     setDetail(null)
     try {
