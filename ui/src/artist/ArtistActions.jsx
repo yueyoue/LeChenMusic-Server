@@ -171,6 +171,7 @@ const ArtistAvatarDialog = ({ open, onClose, artist, onApply }) => {
       console.log('Saving avatar:', { artistId: artist.id, imageUrl })
       const res = await httpClient(`${REST_URL}/scrape/artist/${encodeURIComponent(artist.id)}/avatar`, {
         method: 'POST',
+        headers: new Headers({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ imageUrl }),
       })
       console.log('Avatar save response:', JSON.stringify(res.json))
