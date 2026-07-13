@@ -25,6 +25,8 @@ func (api *Router) addScrapeRoute(r chi.Router) {
 		r.Get("/artist", h.searchArtists)
 		r.Post("/artist/{id}/avatar", h.applyArtistAvatar)
 		r.Post("/batch", h.batchScrape)
+		// Serve saved images (narrator avatars, etc.)
+		r.Get("/image/{type}/{id}", h.serveImage)
 	})
 }
 
@@ -58,9 +60,9 @@ func (h *scrapeHandler) searchAudiobooks(w http.ResponseWriter, r *http.Request)
 	}
 	allSources := scraper.GetAll()
 	type srcResult struct {
-		Source string                  `json:"source"`
-		Name   string                  `json:"name"`
-		Items  []scraper.ScrapeResult  `json:"items"`
+		Source string                 `json:"source"`
+		Name   string                 `json:"name"`
+		Items  []scraper.ScrapeResult `json:"items"`
 	}
 	var results []srcResult
 	for _, s := range allSources {
@@ -165,13 +167,8 @@ func (h *scrapeHandler) searchArtists(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request) {
-	artistID := chi.URLParam(r, "id")
-	repo := h.ds.Artist(r.Context())
-	artist, err := repo.Get(artistID)
-	if err != nil {
-		http.Error(w, "Artist not found", 404)
-		return
-	}
+	id := chi.URLParam(r, "id")
+
 	var req struct {
 		ImageURL string `json:"imageUrl"`
 	}
@@ -183,6 +180,8 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 		http.Error(w, "imageUrl required", 400)
 		return
 	}
+
+	// Download image
 	client := &http.Client{Timeout: 30 * time.Second}
 	resp, err := client.Get(req.ImageURL)
 	if err != nil {
@@ -190,8 +189,18 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer resp.Body.Close()
-	imageDir := filepath.Join("data", "artist-images")
-	os.MkdirAll(imageDir, 0755)
+	if resp.StatusCode != 200 {
+		http.Error(w, "Failed to download image: HTTP "+resp.Status, 400)
+		return
+	}
+
+	imageData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		http.Error(w, "Failed to read image", 500)
+		return
+	}
+
+	// Determine extension
 	ext := ".jpg"
 	ct := resp.Header.Get("Content-Type")
 	if strings.Contains(ct, "png") {
@@ -199,17 +208,95 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 	} else if strings.Contains(ct, "webp") {
 		ext = ".webp"
 	}
-	imagePath := filepath.Join(imageDir, artistID+ext)
-	imageData, _ := io.ReadAll(resp.Body)
-	os.WriteFile(imagePath, imageData, 0644)
-	imageURL := "/api/scrape/artist/" + artistID + "/image"
-	artist.LargeImageUrl = imageURL
-	artist.MediumImageUrl = imageURL
-	artist.SmallImageUrl = imageURL
-	if err := repo.Put(artist, "large_image_url", "medium_image_url", "small_image_url"); err != nil {
-		log.Error(r.Context(), "Failed to update artist", "error", err)
+
+	// Determine save location based on ID prefix
+	// narrator-xxx -> save to data/narrator-avatars/
+	// other -> save to data/artist-images/ and update artist DB
+	var imageURL string
+	if strings.HasPrefix(id, "narrator-") {
+		// Narrator avatar
+		narratorName := strings.TrimPrefix(id, "narrator-")
+		avatarDir := filepath.Join("data", "narrator-avatars")
+		os.MkdirAll(avatarDir, 0755)
+
+		// Sanitize filename
+		safeName := strings.ReplaceAll(narratorName, "/", "_")
+		safeName = strings.ReplaceAll(safeName, "\\", "_")
+		safeName = strings.ReplaceAll(safeName, "..", "_")
+
+		// Remove old files
+		for _, oldExt := range []string{".jpg", ".jpeg", ".png", ".webp"} {
+			os.Remove(filepath.Join(avatarDir, safeName+oldExt))
+		}
+
+		// Save new file
+		if err := os.WriteFile(filepath.Join(avatarDir, safeName+ext), imageData, 0644); err != nil {
+			http.Error(w, "Failed to save image: "+err.Error(), 500)
+			return
+		}
+		imageURL = "/api/scrape/image/narrator/" + safeName
+	} else {
+		// Real artist - save to artist-images and update DB
+		imageDir := filepath.Join("data", "artist-images")
+		os.MkdirAll(imageDir, 0755)
+
+		// Remove old files
+		for _, oldExt := range []string{".jpg", ".jpeg", ".png", ".webp"} {
+			os.Remove(filepath.Join(imageDir, id+oldExt))
+		}
+
+		if err := os.WriteFile(filepath.Join(imageDir, id+ext), imageData, 0644); err != nil {
+			http.Error(w, "Failed to save image: "+err.Error(), 500)
+			return
+		}
+
+		// Update artist in DB
+		repo := h.ds.Artist(r.Context())
+		artist, err := repo.Get(id)
+		if err != nil {
+			// Artist not found in DB, just save the image
+			imageURL = "/api/scrape/image/artist/" + id
+		} else {
+			imageURL = "/api/scrape/image/artist/" + id
+			artist.LargeImageUrl = imageURL
+			artist.MediumImageUrl = imageURL
+			artist.SmallImageUrl = imageURL
+			if err := repo.Put(artist, "large_image_url", "medium_image_url", "small_image_url"); err != nil {
+				log.Error(r.Context(), "Failed to update artist", "error", err)
+			}
+		}
 	}
+
 	writeJSON(w, map[string]any{"data": map[string]any{"imageUrl": imageURL}})
+}
+
+// serveImage serves saved images (narrator avatars, artist images)
+func (h *scrapeHandler) serveImage(w http.ResponseWriter, r *http.Request) {
+	imgType := chi.URLParam(r, "type") // "narrator" or "artist"
+	id := chi.URLParam(r, "id")
+
+	var dir string
+	switch imgType {
+	case "narrator":
+		dir = filepath.Join("data", "narrator-avatars")
+	case "artist":
+		dir = filepath.Join("data", "artist-images")
+	default:
+		http.Error(w, "Invalid image type", 400)
+		return
+	}
+
+	// Try each extension
+	for _, ext := range []string{".jpg", ".jpeg", ".png", ".webp"} {
+		path := filepath.Join(dir, id+ext)
+		if _, err := os.Stat(path); err == nil {
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+			http.ServeFile(w, r, path)
+			return
+		}
+	}
+
+	http.Error(w, "Image not found", 404)
 }
 
 func (h *scrapeHandler) batchScrape(w http.ResponseWriter, r *http.Request) {
@@ -228,8 +315,8 @@ func (h *scrapeHandler) batchScrape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type batchItem struct {
-		BookID  string                         `json:"bookId"`
-		Title   string                         `json:"title"`
+		BookID  string                           `json:"bookId"`
+		Title   string                           `json:"title"`
 		Results map[string][]scraper.ScrapeResult `json:"results"`
 	}
 	var results []batchItem

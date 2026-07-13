@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import PropTypes from 'prop-types'
 import { useDispatch } from 'react-redux'
 import { useMediaQuery, CircularProgress } from '@material-ui/core'
@@ -17,7 +17,6 @@ import { IoIosRadio } from 'react-icons/io'
 import { playShuffle, playTopSongs } from './actions.js'
 import { playSimilar } from '../common/playbackActions.js'
 import ArtistAvatarDialog from '../scraper/ArtistAvatarDialog'
-import { createPortal } from 'react-dom'
 
 const useStyles = makeStyles((theme) => ({
   toolbar: {
@@ -61,16 +60,15 @@ const ArtistActions = ({ className, record, ...rest }) => {
   const notify = useNotify()
   const classes = useStyles()
   const isMobile = useMediaQuery((theme) => theme.breakpoints.down('xs'))
-  const [loadingAction, setLoadingAction] = React.useState(null)
+  const [loadingAction, setLoadingAction] = useState(null)
   const isLoading = !!loadingAction
-  const [avatarDialogOpen, setAvatarDialogOpen] = React.useState(false)
+  const [dialogOpen, setDialogOpen] = useState(false)
 
   const handlePlay = React.useCallback(async () => {
     setLoadingAction('play')
     try {
       await playTopSongs(dispatch, notify, record.name)
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error('Error fetching top songs for artist:', e)
       notify('ra.page.error', 'warning')
     } finally {
@@ -83,7 +81,6 @@ const ArtistActions = ({ className, record, ...rest }) => {
     try {
       await playShuffle(dataProvider, dispatch, record.id)
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error('Error fetching songs for shuffle:', e)
       notify('ra.page.error', 'warning')
     } finally {
@@ -96,7 +93,6 @@ const ArtistActions = ({ className, record, ...rest }) => {
     try {
       await playSimilar(dispatch, notify, record.id)
     } catch (e) {
-      // eslint-disable-next-line no-console
       console.error('Error starting radio for artist:', e)
       notify('ra.page.error', 'warning')
     } finally {
@@ -105,7 +101,6 @@ const ArtistActions = ({ className, record, ...rest }) => {
   }, [dispatch, notify, record])
 
   return (
-    <>
     <TopToolbar
       className={`${className} ${classes.toolbar}`}
       {...sanitizeListRestProps(rest)}
@@ -138,24 +133,21 @@ const ArtistActions = ({ className, record, ...rest }) => {
         icon={<IoIosRadio className={classes.radioIcon} />}
       />
       <Button
-        onClick={() => setAvatarDialogOpen(true)}
-        label="匹配头像"
         className={classes.button}
         size={isMobile ? 'small' : 'medium'}
+        onClick={() => setDialogOpen(true)}
       >
-        🔍
+        🔍 匹配头像
       </Button>
+      {dialogOpen && (
+        <ArtistAvatarDialog
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          artist={record}
+          onApply={() => window.location.reload()}
+        />
+      )}
     </TopToolbar>
-    {avatarDialogOpen && createPortal(
-      <ArtistAvatarDialog
-        open={avatarDialogOpen}
-        onClose={() => setAvatarDialogOpen(false)}
-        artist={record}
-        onApply={() => window.location.reload()}
-      />,
-      document.body
-    )}
-    </>
   )
 }
 

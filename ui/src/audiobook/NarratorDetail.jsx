@@ -44,6 +44,21 @@ const NarratorDetail = ({ name, onBack, onPlayBook }) => {
   const [works, setWorks] = useState([])
   const [loading, setLoading] = useState(true)
   const [avatarDialogOpen, setAvatarDialogOpen] = useState(false)
+  const [avatarUrl, setAvatarUrl] = useState(null)
+
+  useEffect(() => {
+    // Check if narrator avatar exists
+    const checkAvatar = async () => {
+      try {
+        const safeName = name.replace(/\//g, '_').replace(/\\\\/g, '_')
+        const res = await fetch(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}`)
+        if (res.ok) {
+          setAvatarUrl(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}`)
+        }
+      } catch (e) {}
+    }
+    checkAvatar()
+  }, [name])
 
   useEffect(() => {
     const fetchWorks = async () => {
@@ -77,7 +92,12 @@ const NarratorDetail = ({ name, onBack, onPlayBook }) => {
       </IconButton>
 
       <Box className={classes.header}>
-        <Avatar className={classes.avatar}>{name?.charAt(0) || '?'}</Avatar>
+        {avatarUrl ? (
+          <img src={avatarUrl} alt={name} className={classes.avatar}
+            style={{ borderRadius: '50%', objectFit: 'cover' }} />
+        ) : (
+          <Avatar className={classes.avatar}>{name?.charAt(0) || '?'}</Avatar>
+        )}
         <Box>
           <Typography className={classes.name}>{name}</Typography>
           <Typography className={classes.stats}>🎙️ 演播者 · {works.length} 部作品</Typography>
@@ -128,7 +148,7 @@ const NarratorDetail = ({ name, onBack, onPlayBook }) => {
       open={avatarDialogOpen}
       onClose={() => setAvatarDialogOpen(false)}
       artist={{ id: `narrator-${name}`, name: name }}
-      onApply={() => {}}
+      onApply={() => window.location.reload()}
     />
     </>
   )
