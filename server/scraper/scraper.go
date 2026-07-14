@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
+	"strings"
 	"time"
 )
 
@@ -103,9 +105,32 @@ func SearchAll(query string, sources []string) map[string][]ScrapeResult {
 			results[s.Name()] = []ScrapeResult{}
 			continue
 		}
+		// Sort by title match relevance
+		queryLower := strings.ToLower(query)
+		sort.Slice(res, func(i, j int) bool {
+			return titleMatchScore(res[i].Title, queryLower) > titleMatchScore(res[j].Title, queryLower)
+		})
 		results[s.Name()] = res
 	}
 	return results
+}
+
+// titleMatchScore calculates a relevance score for title matching
+func titleMatchScore(title, queryLower string) int {
+	titleLower := strings.ToLower(title)
+	if titleLower == queryLower {
+		return 100
+	}
+	if strings.HasPrefix(titleLower, queryLower) {
+		return 80
+	}
+	if strings.Contains(titleLower, queryLower) {
+		return 60
+	}
+	if strings.Contains(queryLower, titleLower) {
+		return 40
+	}
+	return 0
 }
 
 // SearchArtistsAll searches all platforms for artist images
@@ -118,7 +143,43 @@ func SearchArtistsAll(query string) []ArtistResult {
 		}
 		results = append(results, res...)
 	}
+
+	// Sort by name match relevance
+	queryLower := strings.ToLower(query)
+	sort.Slice(results, func(i, j int) bool {
+		return nameMatchScore(results[i].Name, queryLower) > nameMatchScore(results[j].Name, queryLower)
+	})
+
 	return results
+}
+
+// nameMatchScore calculates a relevance score for name matching
+func nameMatchScore(name, queryLower string) int {
+	nameLower := strings.ToLower(name)
+	if nameLower == queryLower {
+		return 100 // Exact match
+	}
+	if strings.HasPrefix(nameLower, queryLower) {
+		return 80 // Starts with query
+	}
+	if strings.HasSuffix(nameLower, queryLower) {
+		return 60 // Ends with query
+	}
+	if strings.Contains(nameLower, queryLower) {
+		return 40 // Contains query
+	}
+	// Check if query contains name (for short names)
+	if strings.Contains(queryLower, nameLower) {
+		return 30
+	}
+	// Check character overlap
+	overlap := 0
+	for _, c := range queryLower {
+		if strings.ContainsRune(nameLower, c) {
+			overlap++
+		}
+	}
+	return overlap * 10 / len(queryLower)
 }
 
 // httpClient is a shared HTTP client with reasonable timeouts
