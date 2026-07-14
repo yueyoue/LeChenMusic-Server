@@ -50,10 +50,10 @@ const BatchAvatarDialog = ({ open, onClose }) => {
     setLoading(true)
     setResults(null)
     try {
-      // Get all artists
-      const res = await httpClient(`${REST_URL}/artist?perPage=500&sort=name&order=ASC`)
-      const artists = res.json?.data || []
-      setResults(artists)
+      // Get all artists using react-admin data provider format
+      const res = await httpClient(`${REST_URL}/artist?sort=["name"]&order=ASC&range=[0,499]`)
+      const artists = res.json || []
+      setResults(Array.isArray(artists) ? artists : [])
     } catch (e) {
       console.error('Failed to load artists:', e)
       notify('加载艺人失败', 'warning')
