@@ -103,6 +103,10 @@ func toArtist(r *http.Request, a model.Artist) responses.Artist {
 		CoverArt:       a.CoverArtID().String(),
 		ArtistImageUrl: publicurl.ImageURL(r, a.CoverArtID(), 600),
 	}
+	// Use scraped image URL if available
+	if a.LargeImageUrl != "" {
+		artist.ArtistImageUrl = publicurl.PublicURL(r, a.LargeImageUrl, nil)
+	}
 	if conf.Server.Subsonic.EnableAverageRating {
 		artist.AverageRating = a.AverageRating
 	}
@@ -120,6 +124,10 @@ func toArtistID3(r *http.Request, a model.Artist) responses.ArtistID3 {
 		CoverArt:       a.CoverArtID().String(),
 		ArtistImageUrl: publicurl.ImageURL(r, a.CoverArtID(), 600),
 		UserRating:     int32(a.Rating),
+	}
+	// Use scraped image URL if available
+	if a.LargeImageUrl != "" {
+		artist.ArtistImageUrl = publicurl.PublicURL(r, a.LargeImageUrl, nil)
 	}
 	if conf.Server.Subsonic.EnableAverageRating {
 		artist.AverageRating = a.AverageRating
