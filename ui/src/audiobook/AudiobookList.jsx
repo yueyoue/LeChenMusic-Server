@@ -1,65 +1,50 @@
 import React, { useState, useEffect } from 'react'
+import { useTranslate, useRefresh, useDataProvider, useListContext } from 'react-admin'
 import {
-  useTranslate,
-  useRefresh,
-} from 'react-admin'
-import {
-  Card,
-  CardContent,
-  Typography,
-  Box,
-  Chip,
-  makeStyles,
-  IconButton,
-  TextField,
-  InputAdornment,
-  Button,
+  GridList, GridListTile, GridListTileBar,
+  Typography, Box, Chip, makeStyles, TextField, InputAdornment, Button, useMediaQuery,
 } from '@material-ui/core'
+import withWidth from '@material-ui/core/withWidth'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
-import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import SearchIcon from '@material-ui/icons/Search'
-import PersonIcon from '@material-ui/icons/Person'
 import ScrapeDialog from '../scraper/ScrapeDialog'
 import { useLocation } from 'react-router-dom'
+import { OverflowTooltip } from '../common'
 
 const useStyles = makeStyles((theme) => ({
   root: { padding: 12 },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
-    gap: 12,
-    padding: '0 4px',
-  },
-  card: {
-    cursor: 'pointer',
-    borderRadius: 12,
-    overflow: 'hidden',
-    transition: 'transform 0.2s, box-shadow 0.2s',
-    '&:hover': {
-      transform: 'translateY(-2px)',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+  gridListTile: {
+    '&:hover $tileBar': {
+      opacity: 1,
     },
   },
-  coverWrap: {
-    position: 'relative',
+  tileBar: {
+    transition: 'all 150ms ease-out',
+    opacity: 0,
+    pointerEvents: 'none',
+    textAlign: 'left',
+    background:
+      'linear-gradient(to top, rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.4) 70%,rgba(0,0,0,0) 100%)',
+  },
+  tileBarMobile: {
+    textAlign: 'left',
+    background:
+      'linear-gradient(to top, rgba(0,0,0,0.7) 0%,rgba(0,0,0,0.4) 70%,rgba(0,0,0,0) 100%)',
+  },
+  coverContainer: {
     width: '100%',
-    paddingTop: '100%', /* Square like music albums */
-    backgroundColor: theme.palette.grey[200],
-    borderRadius: '12px 12px 0 0',
+    aspectRatio: '1',
     overflow: 'hidden',
+    backgroundColor: theme.palette.grey[200],
+    borderRadius: 4,
   },
   cover: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
+    display: 'inline-block',
     width: '100%',
     height: '100%',
     objectFit: 'cover',
   },
   coverPlaceholder: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
     width: '100%',
     height: '100%',
     display: 'flex',
@@ -67,26 +52,41 @@ const useStyles = makeStyles((theme) => ({
     justifyContent: 'center',
     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
   },
-  cardContent: {
-    padding: '8px 10px !important',
-    '&:last-child': { paddingBottom: '8px !important' },
+  albumContainer: {
+    cursor: 'pointer',
   },
-  title: {
-    fontWeight: 600,
-    fontSize: 13,
-    lineHeight: 1.3,
-    display: '-webkit-box',
-    WebkitLineClamp: 2,
-    WebkitBoxOrient: 'vertical',
+  albumLink: {
+    textDecoration: 'none',
+    color: 'inherit',
+    display: 'block',
+  },
+  albumName: {
+    fontSize: '14px',
+    color: theme.palette.type === 'dark' ? '#eee' : 'black',
     overflow: 'hidden',
-    marginBottom: 4,
+    whiteSpace: 'nowrap',
+    textOverflow: 'ellipsis',
   },
-  sub: {
-    fontSize: 11,
+  albumSubtitle: {
+    fontSize: '12px',
+    color: theme.palette.type === 'dark' ? '#c5c5c5' : '#696969',
+    overflow: 'hidden',
+    whiteSpace: 'nowrap',
+    textOverflow: 'ellipsis',
+  },
+  empty: {
+    textAlign: 'center',
+    padding: 60,
     color: theme.palette.text.secondary,
+  },
+  search: { marginBottom: 12 },
+  header: {
+    padding: '8px 16px',
+    fontWeight: 600,
+    fontSize: 16,
     display: 'flex',
     alignItems: 'center',
-    gap: 4,
+    gap: 12,
   },
   narratorBadge: {
     fontSize: 10,
@@ -101,20 +101,67 @@ const useStyles = makeStyles((theme) => ({
     marginRight: 4,
     height: 20,
   },
-  empty: {
-    textAlign: 'center',
-    padding: 60,
-    color: theme.palette.text.secondary,
-  },
-  search: { marginBottom: 12 },
-  header: {
-    padding: '8px 16px',
-    fontWeight: 600,
-    fontSize: 16,
-  },
 }))
 
-const AudiobookList = () => {
+const getColsForWidth = (width) => {
+  if (width === 'xs') return 2
+  if (width === 'sm') return 3
+  if (width === 'md') return 4
+  if (width === 'lg') return 6
+  return 9
+}
+
+const AudiobookCover = ({ book }) => {
+  const classes = useStyles()
+  const token = localStorage.getItem('token')
+  const url = `/api/audiobook/${book.id}/cover?token=${token || ''}`
+  const [imgError, setImgError] = useState(false)
+
+  if (imgError || !book.coverPath) {
+    return (
+      <div className={classes.coverPlaceholder}>
+        <MenuBookIcon style={{ fontSize: 32, opacity: 0.5, color: '#fff' }} />
+      </div>
+    )
+  }
+
+  return (
+    <img
+      src={url}
+      alt={book.title}
+      className={classes.cover}
+      onError={() => setImgError(true)}
+    />
+  )
+}
+
+const AudiobookGridTile = ({ book }) => {
+  const classes = useStyles()
+  const isDesktop = useMediaQuery((theme) => theme.breakpoints.up('md'), { noSsr: true })
+
+  return (
+    <div className={classes.albumContainer}>
+      <div onClick={() => { window.location.hash = `#/audiobook/${book.id}` }}>
+        <div className={classes.coverContainer}>
+          <AudiobookCover book={book} />
+        </div>
+        <GridListTileBar
+          className={isDesktop ? classes.tileBar : classes.tileBarMobile}
+        />
+      </div>
+      <div onClick={() => { window.location.hash = `#/audiobook/${book.id}` }}>
+        <OverflowTooltip title={book.title}>
+          <Typography className={classes.albumName}>{book.title}</Typography>
+        </OverflowTooltip>
+        <Typography className={classes.albumSubtitle}>
+          {book.narrator || book.author || ''}
+        </Typography>
+      </div>
+    </div>
+  )
+}
+
+const AudiobookList = ({ width }) => {
   const classes = useStyles()
   const translate = useTranslate()
   const location = useLocation()
@@ -196,82 +243,58 @@ const AudiobookList = () => {
 
   return (
     <>
-    <Box className={classes.root}>
-      <Typography className={classes.header}>
-        {getTitle()} ({displayBooks.length})
-        <Button size="small" variant="outlined" style={{ marginLeft: 12 }} onClick={() => setScrapeOpen(true)}>
-          🔍 批量刮削
-        </Button>
-      </Typography>
+      <Box className={classes.root}>
+        <Typography className={classes.header}>
+          {getTitle()} ({displayBooks.length})
+          <Button size="small" variant="outlined" onClick={() => setScrapeOpen(true)}>
+            🔍 批量刮削
+          </Button>
+        </Typography>
 
-      <Box px={1} mb={1}>
-        <TextField
-          className={classes.search}
-          fullWidth
-          size="small"
-          placeholder="搜索有声书（书名、作者、演播者）..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon style={{ fontSize: 20, color: 'text.secondary' }} />
-              </InputAdornment>
-            ),
-          }}
-          variant="outlined"
-        />
+        <Box px={1} mb={1}>
+          <TextField
+            className={classes.search}
+            fullWidth
+            size="small"
+            placeholder="搜索有声书（书名、作者、演播者）..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon style={{ fontSize: 20, color: 'text.secondary' }} />
+                </InputAdornment>
+              ),
+            }}
+            variant="outlined"
+          />
+        </Box>
+
+        {displayBooks.length === 0 ? (
+          <Box className={classes.empty}>
+            <MenuBookIcon style={{ fontSize: 48, opacity: 0.3 }} />
+            <Typography style={{ marginTop: 8 }}>
+              {searchQuery ? '未找到匹配的有声书' : genreFilter ? `暂无${genreFilter}` : '暂无有声书'}
+            </Typography>
+          </Box>
+        ) : (
+          <GridList
+            component="div"
+            cellHeight="auto"
+            cols={getColsForWidth(width)}
+            spacing={16}
+          >
+            {displayBooks.map((book) => (
+              <GridListTile className={classes.gridListTile} key={book.id}>
+                <AudiobookGridTile book={book} />
+              </GridListTile>
+            ))}
+          </GridList>
+        )}
       </Box>
-
-      {displayBooks.length === 0 ? (
-        <Box className={classes.empty}>
-          <MenuBookIcon style={{ fontSize: 48, opacity: 0.3 }} />
-          <Typography style={{ marginTop: 8 }}>
-            {searchQuery ? '未找到匹配的有声书' : genreFilter ? `暂无${genreFilter}` : '暂无有声书'}
-          </Typography>
-        </Box>
-      ) : (
-        <Box className={classes.grid}>
-          {displayBooks.map((book) => (
-            <Card
-              key={book.id}
-              className={classes.card}
-              elevation={2}
-              onClick={() => { window.location.hash = `#/audiobook/${book.id}` }}
-            >
-              <Box className={classes.coverWrap}>
-                <img
-                  src={`/api/audiobook/${book.id}/cover?token=${localStorage.getItem('token') || ''}`}
-                  alt={book.title}
-                  className={classes.cover}
-                  onError={(e) => {
-                    e.target.style.display = 'none'
-                    e.target.parentElement.innerHTML = '<span style="font-size:32px">📖</span>'
-                  }}
-                />
-              </Box>
-              <CardContent className={classes.cardContent}>
-                <Typography className={classes.title}>{book.title}</Typography>
-                <Box className={classes.sub}>
-                  {book.author && <span>{book.author}</span>}
-                  {book.narrator && (
-                    <span className={classes.narratorBadge}>🎙️ {book.narrator}</span>
-                  )}
-                </Box>
-                <Box mt={0.5} display="flex" alignItems="center" gap={0.5}>
-                  {book.genre && <Chip label={book.genre} size="small" className={classes.genre} />}
-                  <Typography className={classes.sub}>{book.chapterCount}章</Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          ))}
-        </Box>
-      )}
-    </Box>
-    <ScrapeDialog open={scrapeOpen} onClose={() => setScrapeOpen(false)} />
+      <ScrapeDialog open={scrapeOpen} onClose={() => setScrapeOpen(false)} />
     </>
   )
 }
 
-export default AudiobookList
-
+export default withWidth()(AudiobookList)
