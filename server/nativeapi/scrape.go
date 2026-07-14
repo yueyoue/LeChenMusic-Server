@@ -292,6 +292,13 @@ func (h *scrapeHandler) serveImage(w http.ResponseWriter, r *http.Request) {
 	imgType := chi.URLParam(r, "type") // "narrator" or "artist"
 	id := chi.URLParam(r, "id")
 
+	// Sanitize narrator name to match upload logic
+	if imgType == "narrator" {
+		id = strings.ReplaceAll(id, "/", "_")
+		id = strings.ReplaceAll(id, "\\", "_")
+		id = strings.ReplaceAll(id, "..", "_")
+	}
+
 	var dir string
 	switch imgType {
 	case "narrator":
