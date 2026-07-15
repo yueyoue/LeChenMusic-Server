@@ -53,14 +53,25 @@ const ScrapeDialog = ({ open, onClose, book, onApply }) => {
     }
   }
 
-  // Get detail for a specific result
-  const handleSelectResult = async (source, id) => {
+  // Get detail for a specific result - merge search result with detail
+  const handleSelectResult = async (source, id, searchItem) => {
     setSelectedResult({ source, id })
     setDetailLoading(true)
     setDetail(null)
     try {
       const res = await httpClient(`${REST_URL}/scrape/audiobook/detail?source=${source}&id=${id}`)
-      setDetail(res.json?.data || null)
+      const detailData = res.json?.data || {}
+      // Merge: detail has intro, search result has title/author/narrator/cover
+      setDetail({
+        title: detailData.title || searchItem?.title || '',
+        author: detailData.author || searchItem?.author || '',
+        narrator: detailData.narrator || searchItem?.narrator || '',
+        coverUrl: detailData.coverUrl || searchItem?.coverUrl || '',
+        intro: detailData.intro || searchItem?.intro || '',
+        genre: detailData.genre || searchItem?.genre || '',
+        year: detailData.year || searchItem?.year || 0,
+        chapterCount: detailData.chapterCount || searchItem?.chapterCount || 0,
+      })
     } catch (e) {
       console.error('Scrape detail failed:', e)
     } finally {
@@ -112,6 +123,44 @@ const ScrapeDialog = ({ open, onClose, book, onApply }) => {
     }
   }
 
+  // Apply batch result for a single book
+  const handleApplyBatchItem = async (item) => {
+    const firstResult = Object.values(item.results || {})[0]?.[0]
+    if (!firstResult) return
+    try {
+      const body = {}
+      if (firstResult.title) body.title = firstResult.title
+      if (firstResult.author) body.author = firstResult.author
+      if (firstResult.narrator) body.narrator = firstResult.narrator
+      if (firstResult.intro) body.description = firstResult.intro
+      if (firstResult.genre) body.genre = firstResult.genre
+      if (firstResult.coverUrl) body.coverUrl = firstResult.coverUrl
+      await httpClient(`${REST_URL}/scrape/audiobook/${item.bookId}/apply`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+      alert(`《${item.title}》已保存`)
+    } catch (e) {
+      alert(`《${item.title}》保存失败: ${e.message}`)
+    }
+  }
+
+  // Apply all batch results
+  const handleApplyAllBatch = async () => {
+    if (!batchResults) return
+    let success = 0, fail = 0
+    for (const item of batchResults) {
+      try {
+        await handleApplyBatchItem(item)
+        success++
+      } catch (e) {
+        fail++
+      }
+    }
+    alert(`批量保存完成: ${success} 成功, ${fail} 失败`)
+    if (onApply) onApply()
+  }
+
   // Flatten results from all sources
   const allResults = []
   for (const group of searchResults) {
@@ -161,7 +210,7 @@ const ScrapeDialog = ({ open, onClose, book, onApply }) => {
                   {allResults.map((item, idx) => (
                     <Card key={idx} style={{ marginBottom: 4, cursor: 'pointer',
                       border: selectedResult?.source === item._source && selectedResult?.id === item.id ? '2px solid #1976d2' : '1px solid #e0e0e0'
-                    }} onClick={() => handleSelectResult(item._source, item.id)}>
+                    }} onClick={() => handleSelectResult(item._source, item.id, item)}>
                       <CardContent style={{ padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center' }}>
                         {item.coverUrl && (
                           <img src={item.coverUrl} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 4 }} />
@@ -234,22 +283,32 @@ const ScrapeDialog = ({ open, onClose, book, onApply }) => {
             </Button>
             {batchResults && (
               <Box mt={2}>
-                <Typography variant="subtitle2">找到 {batchResults.length} 本有声书的匹配结果</Typography>
+                <Box display="flex" alignItems="center" justifyContent="space-between" mb={1}>
+                  <Typography variant="subtitle2">找到 {batchResults.length} 本有声书的匹配结果</Typography>
+                  <Button size="small" color="primary" variant="contained" onClick={handleApplyAllBatch}>
+                    全部应用
+                  </Button>
+                </Box>
                 <Box style={{ maxHeight: 400, overflow: 'auto' }}>
                   {batchResults.map((item, idx) => (
                     <Card key={idx} style={{ marginBottom: 8 }}>
-                      <CardContent style={{ padding: 8 }}>
-                        <Typography style={{ fontWeight: 600 }}>{item.title}</Typography>
-                        {Object.entries(item.results || {}).map(([source, results]) => (
-                          <Box key={source} ml={1}>
-                            <Typography style={{ fontSize: 11, color: '#999' }}>{source}:</Typography>
-                            {(results || []).slice(0, 2).map((r, i) => (
-                              <Typography key={i} style={{ fontSize: 12, marginLeft: 8 }}>
-                                • {r.title} {r.author && `(${r.author})`} {r.narrator && `[${r.narrator}]`}
-                              </Typography>
-                            ))}
-                          </Box>
-                        ))}
+                      <CardContent style={{ padding: 8, display: 'flex', alignItems: 'center' }}>
+                        <Box flex={1}>
+                          <Typography style={{ fontWeight: 600 }}>{item.title}</Typography>
+                          {Object.entries(item.results || {}).map(([source, results]) => (
+                            <Box key={source} ml={1}>
+                              <Typography style={{ fontSize: 11, color: '#999' }}>{source}:</Typography>
+                              {(results || []).slice(0, 2).map((r, i) => (
+                                <Typography key={i} style={{ fontSize: 12, marginLeft: 8 }}>
+                                  • {r.title} {r.author && `(${r.author})`} {r.narrator && `[${r.narrator}]`}
+                                </Typography>
+                              ))}
+                            </Box>
+                          ))}
+                        </Box>
+                        <Button size="small" variant="outlined" onClick={() => handleApplyBatchItem(item)}>
+                          应用
+                        </Button>
                       </CardContent>
                     </Card>
                   ))}
