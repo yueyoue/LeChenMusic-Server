@@ -47,8 +47,10 @@ const AppManagePage = () => {
   const [updateLog, setUpdateLog] = useState('')
   const [forceUpdate, setForceUpdate] = useState(false)
   const [splashDuration, setSplashDuration] = useState(3)
-  const [slideTitle, setSlideTitle] = useState('')
-  const [slideLink, setSlideLink] = useState('')
+  const [musicSlideTitle, setMusicSlideTitle] = useState('')
+  const [musicSlideLink, setMusicSlideLink] = useState('')
+  const [audiobookSlideTitle, setAudiobookSlideTitle] = useState('')
+  const [audiobookSlideLink, setAudiobookSlideLink] = useState('')
 
   useEffect(() => { fetchConfig() }, [])
 
@@ -147,8 +149,8 @@ const AppManagePage = () => {
     }
   }
 
-  // Add slide
-  const handleAddSlide = async (e) => {
+  // Add music slide
+  const handleAddMusicSlide = async (e) => {
     const file = e.target.files[0]
     if (!file) return
 
@@ -157,18 +159,18 @@ const AppManagePage = () => {
       const token = localStorage.getItem('token')
       const formData = new FormData()
       formData.append('image', file)
-      formData.append('title', slideTitle)
-      formData.append('link', slideLink)
+      formData.append('title', musicSlideTitle)
+      formData.append('link', musicSlideLink)
 
-      const res = await fetch('/api/app/slide', {
+      const res = await fetch('/api/app/slide/music', {
         method: 'POST',
         headers: { 'X-ND-Authorization': `Bearer ${token}` },
         body: formData
       })
       if (res.ok) {
-        showToast('幻灯片添加成功！')
-        setSlideTitle('')
-        setSlideLink('')
+        showToast('音乐幻灯片添加成功！')
+        setMusicSlideTitle('')
+        setMusicSlideLink('')
         fetchConfig()
       }
     } catch (err) {
@@ -178,11 +180,57 @@ const AppManagePage = () => {
     }
   }
 
-  // Delete slide
-  const handleDeleteSlide = async (slideId) => {
+  // Add audiobook slide
+  const handleAddAudiobookSlide = async (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+
+    setUploading(true)
     try {
       const token = localStorage.getItem('token')
-      await fetch(`/api/app/slide/${slideId}`, {
+      const formData = new FormData()
+      formData.append('image', file)
+      formData.append('title', audiobookSlideTitle)
+      formData.append('link', audiobookSlideLink)
+
+      const res = await fetch('/api/app/slide/audiobook', {
+        method: 'POST',
+        headers: { 'X-ND-Authorization': `Bearer ${token}` },
+        body: formData
+      })
+      if (res.ok) {
+        showToast('有声书幻灯片添加成功！')
+        setAudiobookSlideTitle('')
+        setAudiobookSlideLink('')
+        fetchConfig()
+      }
+    } catch (err) {
+      showToast('添加失败')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  // Delete music slide
+  const handleDeleteMusicSlide = async (slideId) => {
+    try {
+      const token = localStorage.getItem('token')
+      await fetch(`/api/app/slide/music/${slideId}`, {
+        method: 'DELETE',
+        headers: { 'X-ND-Authorization': `Bearer ${token}` }
+      })
+      showToast('幻灯片已删除')
+      fetchConfig()
+    } catch (err) {
+      showToast('删除失败')
+    }
+  }
+
+  // Delete audiobook slide
+  const handleDeleteAudiobookSlide = async (slideId) => {
+    try {
+      const token = localStorage.getItem('token')
+      await fetch(`/api/app/slide/audiobook/${slideId}`, {
         method: 'DELETE',
         headers: { 'X-ND-Authorization': `Bearer ${token}` }
       })
@@ -315,39 +363,99 @@ const AppManagePage = () => {
 
       <Divider style={{ marginBottom: 32 }} />
 
-      {/* Carousel Slides */}
+      {/* Music Carousel Slides */}
       <Box className={classes.section}>
-        <Typography className={classes.sectionTitle}>🎠 幻灯片 (首页轮播)</Typography>
+        <Typography className={classes.sectionTitle}>🎵 音乐首页幻灯片</Typography>
         <Card className={classes.card}>
           <CardContent>
-            {config?.slides?.map((slide) => (
+            {config?.musicSlides?.map((slide) => (
               <Box key={slide.id} className={classes.slideCard}>
                 <img src={slide.imageUrl} alt={slide.title} className={classes.slideImage} />
                 <Box flex={1}>
                   <Typography style={{ fontWeight: 600, fontSize: 14 }}>{slide.title || '无标题'}</Typography>
                   {slide.link && <Typography variant="caption" color="textSecondary">{slide.link}</Typography>}
                 </Box>
-                <IconButton size="small" onClick={() => handleDeleteSlide(slide.id)}>
+                <IconButton size="small" onClick={() => handleDeleteMusicSlide(slide.id)}>
                   <DeleteIcon fontSize="small" />
                 </IconButton>
               </Box>
             ))}
-            {(!config?.slides || config.slides.length === 0) && (
+            {(!config?.musicSlides || config.musicSlides.length === 0) && (
               <Typography color="textSecondary" style={{ textAlign: 'center', padding: 16 }}>
-                暂无幻灯片
+                暂无音乐幻灯片
               </Typography>
             )}
 
             <Divider style={{ margin: '16px 0' }} />
-            <Typography style={{ fontWeight: 600, marginBottom: 8 }}>添加幻灯片</Typography>
+            <Typography style={{ fontWeight: 600, marginBottom: 8 }}>添加音乐幻灯片</Typography>
+            <Box style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+              <Typography variant="caption" color="textSecondary">
+                📌 链接格式说明：<br />
+                • 歌单：<code>playlist:歌单ID</code>（如 <code>playlist:abc123</code>）<br />
+                • 专辑：<code>album:专辑ID</code>（如 <code>album:def456</code>）<br />
+                • 不填链接则仅展示图片
+              </Typography>
+            </Box>
             <Box display="flex" gap={2} mb={2}>
-              <TextField label="标题" value={slideTitle} onChange={e => setSlideTitle(e.target.value)}
+              <TextField label="标题" value={musicSlideTitle} onChange={e => setMusicSlideTitle(e.target.value)}
                 size="small" variant="outlined" style={{ flex: 1 }} />
-              <TextField label="链接(可选)" value={slideLink} onChange={e => setSlideLink(e.target.value)}
-                size="small" variant="outlined" style={{ flex: 1 }} />
+              <TextField label="链接(可选)" value={musicSlideLink} onChange={e => setMusicSlideLink(e.target.value)}
+                size="small" variant="outlined" style={{ flex: 1 }}
+                placeholder="playlist:ID 或 album:ID" />
             </Box>
             <label>
-              <input type="file" accept="image/*" hidden onChange={handleAddSlide} />
+              <input type="file" accept="image/*" hidden onChange={handleAddMusicSlide} />
+              <Button variant="outlined" component="span" startIcon={<AddIcon />} size="small">
+                选择图片并添加
+              </Button>
+            </label>
+          </CardContent>
+        </Card>
+      </Box>
+
+      <Divider style={{ marginBottom: 32 }} />
+
+      {/* Audiobook Carousel Slides */}
+      <Box className={classes.section}>
+        <Typography className={classes.sectionTitle}>📖 有声书首页幻灯片</Typography>
+        <Card className={classes.card}>
+          <CardContent>
+            {config?.audiobookSlides?.map((slide) => (
+              <Box key={slide.id} className={classes.slideCard}>
+                <img src={slide.imageUrl} alt={slide.title} className={classes.slideImage} />
+                <Box flex={1}>
+                  <Typography style={{ fontWeight: 600, fontSize: 14 }}>{slide.title || '无标题'}</Typography>
+                  {slide.link && <Typography variant="caption" color="textSecondary">{slide.link}</Typography>}
+                </Box>
+                <IconButton size="small" onClick={() => handleDeleteAudiobookSlide(slide.id)}>
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            ))}
+            {(!config?.audiobookSlides || config.audiobookSlides.length === 0) && (
+              <Typography color="textSecondary" style={{ textAlign: 'center', padding: 16 }}>
+                暂无有声书幻灯片
+              </Typography>
+            )}
+
+            <Divider style={{ margin: '16px 0' }} />
+            <Typography style={{ fontWeight: 600, marginBottom: 8 }}>添加有声书幻灯片</Typography>
+            <Box style={{ background: '#f5f5f5', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+              <Typography variant="caption" color="textSecondary">
+                📌 链接格式说明：<br />
+                • 有声书：<code>audiobook:有声书ID</code>（如 <code>audiobook:ghi789</code>）<br />
+                • 不填链接则仅展示图片
+              </Typography>
+            </Box>
+            <Box display="flex" gap={2} mb={2}>
+              <TextField label="标题" value={audiobookSlideTitle} onChange={e => setAudiobookSlideTitle(e.target.value)}
+                size="small" variant="outlined" style={{ flex: 1 }} />
+              <TextField label="链接(可选)" value={audiobookSlideLink} onChange={e => setAudiobookSlideLink(e.target.value)}
+                size="small" variant="outlined" style={{ flex: 1 }}
+                placeholder="audiobook:ID" />
+            </Box>
+            <label>
+              <input type="file" accept="image/*" hidden onChange={handleAddAudiobookSlide} />
               <Button variant="outlined" component="span" startIcon={<AddIcon />} size="small">
                 选择图片并添加
               </Button>

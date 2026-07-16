@@ -24,8 +24,12 @@ func (api *Router) addAppManageRoute(r chi.Router) {
 		r.Get("/apk/download", h.downloadApk)
 		r.Get("/apk/info", h.getApkInfo)
 		r.Post("/splash", h.uploadSplash)
-		r.Post("/slide", h.addSlide)
-		r.Delete("/slide/{id}", h.deleteSlide)
+		r.Post("/slide", h.addSlide)                        // Legacy: adds to music slides
+		r.Post("/slide/music", h.addMusicSlide)              // Music homepage slide
+		r.Post("/slide/audiobook", h.addAudiobookSlide)       // Audiobook homepage slide
+		r.Delete("/slide/{id}", h.deleteSlide)                // Legacy: delete from all
+		r.Delete("/slide/music/{id}", h.deleteMusicSlide)     // Delete music slide
+		r.Delete("/slide/audiobook/{id}", h.deleteAudiobookSlide) // Delete audiobook slide
 	})
 }
 
@@ -44,8 +48,10 @@ type AppConfig struct {
 	ForceUpdate    bool          `json:"forceUpdate"`
 	SplashImageURL string        `json:"splashImageUrl"`
 	SplashDuration int           `json:"splashDuration"` // seconds
-	Slides         []SlideConfig `json:"slides"`
-	ServerURL      string        `json:"serverUrl"` // Default server URL for app
+	Slides         []SlideConfig `json:"slides"`         // Deprecated: use MusicSlides/AudiobookSlides
+	MusicSlides    []SlideConfig `json:"musicSlides"`     // Music homepage carousel slides
+	AudiobookSlides []SlideConfig `json:"audiobookSlides"` // Audiobook homepage carousel slides
+	ServerURL      string        `json:"serverUrl"`       // Default server URL for app
 }
 
 type SlideConfig struct {
@@ -250,21 +256,97 @@ func (h *appManageHandler) addSlide(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"status": "ok", "data": slide})
 }
 
-// deleteSlide removes a carousel slide
+// deleteSlide removes a carousel slide (legacy: searches all slide groups)
 func (h *appManageHandler) deleteSlide(w http.ResponseWriter, r *http.Request) {
 	slideID := chi.URLParam(r, "id")
 	config := loadAppConfig()
 
-	var newSlides []SlideConfig
-	for _, s := range config.Slides {
-		if s.ID != slideID {
-			newSlides = append(newSlides, s)
-		}
-	}
-	config.Slides = newSlides
+	// Search in all groups for backward compatibility
+	config.MusicSlides = removeSlideFromList(config.MusicSlides, slideID)
+	config.AudiobookSlides = removeSlideFromList(config.AudiobookSlides, slideID)
+	config.Slides = removeSlideFromList(config.Slides, slideID)
 	saveAppConfig(&config)
 
 	writeJSON(w, map[string]any{"status": "ok"})
+}
+
+// addMusicSlide adds a slide to the music homepage carousel
+func (h *appManageHandler) addMusicSlide(w http.ResponseWriter, r *http.Request) {
+	slide := h.parseSlideFromRequest(r)
+	config := loadAppConfig()
+	config.MusicSlides = append(config.MusicSlides, slide)
+	saveAppConfig(&config)
+	writeJSON(w, map[string]any{"status": "ok", "data": slide})
+}
+
+// addAudiobookSlide adds a slide to the audiobook homepage carousel
+func (h *appManageHandler) addAudiobookSlide(w http.ResponseWriter, r *http.Request) {
+	slide := h.parseSlideFromRequest(r)
+	config := loadAppConfig()
+	config.AudiobookSlides = append(config.AudiobookSlides, slide)
+	saveAppConfig(&config)
+	writeJSON(w, map[string]any{"status": "ok", "data": slide})
+}
+
+// deleteMusicSlide removes a slide from the music homepage carousel
+func (h *appManageHandler) deleteMusicSlide(w http.ResponseWriter, r *http.Request) {
+	slideID := chi.URLParam(r, "id")
+	config := loadAppConfig()
+	config.MusicSlides = removeSlideFromList(config.MusicSlides, slideID)
+	saveAppConfig(&config)
+	writeJSON(w, map[string]any{"status": "ok"})
+}
+
+// deleteAudiobookSlide removes a slide from the audiobook homepage carousel
+func (h *appManageHandler) deleteAudiobookSlide(w http.ResponseWriter, r *http.Request) {
+	slideID := chi.URLParam(r, "id")
+	config := loadAppConfig()
+	config.AudiobookSlides = removeSlideFromList(config.AudiobookSlides, slideID)
+	saveAppConfig(&config)
+	writeJSON(w, map[string]any{"status": "ok"})
+}
+
+// parseSlideFromRequest parses a slide upload request (shared by music/audiobook)
+func (h *appManageHandler) parseSlideFromRequest(r *http.Request) SlideConfig {
+	r.ParseMultipartForm(10 << 20)
+
+	var slide SlideConfig
+	imageFile, _, imageErr := r.FormFile("image")
+
+	slide.Title = r.FormValue("title")
+	slide.Link = r.FormValue("link")
+	fmt.Sscanf(r.FormValue("sort"), "%d", &slide.Sort)
+
+	slide.ID = fmt.Sprintf("slide_%d", time.Now().UnixNano())
+
+	if imageErr == nil {
+		defer imageFile.Close()
+		uploadDir := getAppUploadDir()
+		os.MkdirAll(uploadDir, 0755)
+		fileName := slide.ID + ".jpg"
+		filePath := filepath.Join(uploadDir, fileName)
+		dst, _ := os.Create(filePath)
+		if dst != nil {
+			io.Copy(dst, imageFile)
+			dst.Close()
+		}
+		slide.ImageURL = "/api/app/slide/" + fileName
+	} else {
+		slide.ImageURL = r.FormValue("imageUrl")
+	}
+
+	return slide
+}
+
+// removeSlideFromList removes a slide by ID from a list
+func removeSlideFromList(slides []SlideConfig, slideID string) []SlideConfig {
+	var result []SlideConfig
+	for _, s := range slides {
+		if s.ID != slideID {
+			result = append(result, s)
+		}
+	}
+	return result
 }
 
 // --- Config persistence ---
@@ -280,10 +362,12 @@ func getAppConfigPath() string {
 
 func loadAppConfig() AppConfig {
 	config := AppConfig{
-		VersionName:    "1.0.0",
-		SplashDuration: 3,
-		Slides:         []SlideConfig{},
-		ServerURL:      "http://j.tthsdd.top:3334",
+		VersionName:     "1.0.0",
+		SplashDuration:  3,
+		Slides:          []SlideConfig{},
+		MusicSlides:     []SlideConfig{},
+		AudiobookSlides: []SlideConfig{},
+		ServerURL:       "http://j.tthsdd.top:3334",
 	}
 
 	data, err := os.ReadFile(getAppConfigPath())
@@ -291,6 +375,22 @@ func loadAppConfig() AppConfig {
 		return config
 	}
 	json.Unmarshal(data, &config)
+
+	// Backward compatibility: migrate legacy Slides to MusicSlides if MusicSlides is empty
+	if len(config.MusicSlides) == 0 && len(config.Slides) > 0 {
+		config.MusicSlides = config.Slides
+	}
+	// Ensure slices are never nil (for JSON serialization)
+	if config.Slides == nil {
+		config.Slides = []SlideConfig{}
+	}
+	if config.MusicSlides == nil {
+		config.MusicSlides = []SlideConfig{}
+	}
+	if config.AudiobookSlides == nil {
+		config.AudiobookSlides = []SlideConfig{}
+	}
+
 	return config
 }
 

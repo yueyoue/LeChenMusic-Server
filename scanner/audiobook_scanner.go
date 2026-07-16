@@ -146,7 +146,8 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 	tagArtist, tagTitle, tagAlbum, tagGenre, tagYear, tagNarrator := readFirstAudioFileTags(fullPath)
 	if tagTitle != "" && title == dirName {
 		// ID3 tag has a proper title, and the directory name was not parsed
-		title = tagTitle
+		// Strip chapter number suffixes (e.g. "背后有人-01" → "背后有人")
+		title = stripChapterSuffix(tagTitle)
 	}
 	if tagAlbum != "" && title == "" {
 		title = tagAlbum
@@ -359,6 +360,71 @@ func readFirstAudioFileTags(dirPath string) (artist, title, album, genre string,
 
 func audiobookHash(path string) string {
 	return fmt.Sprintf("%x", md5.Sum([]byte(path)))
+}
+
+// stripChapterSuffix removes common chapter/episode number suffixes from a title.
+// This fixes cases where ID3 TITLE tags contain "BookName-01" instead of just "BookName".
+// Patterns handled: "-01", "-1", " 01", "_01", "(01)", "第01章", etc.
+func stripChapterSuffix(title string) string {
+	trimmed := strings.TrimSpace(title)
+	if trimmed == "" {
+		return trimmed
+	}
+
+	// Pattern: "Title-01" or "Title-1" (dash followed by digits at end)
+	if idx := strings.LastIndex(trimmed, "-"); idx > 0 {
+		suffix := strings.TrimSpace(trimmed[idx+1:])
+		if _, err := strconv.Atoi(suffix); err == nil && len(suffix) <= 4 {
+			result := strings.TrimSpace(trimmed[:idx])
+			if result != "" {
+				return result
+			}
+		}
+	}
+
+	// Pattern: "Title_01" (underscore followed by digits at end)
+	if idx := strings.LastIndex(trimmed, "_"); idx > 0 {
+		suffix := strings.TrimSpace(trimmed[idx+1:])
+		if _, err := strconv.Atoi(suffix); err == nil && len(suffix) <= 4 {
+			result := strings.TrimSpace(trimmed[:idx])
+			if result != "" {
+				return result
+			}
+		}
+	}
+
+	// Pattern: "Title 01" (space followed by digits at end)
+	lastSpace := strings.LastIndex(trimmed, " ")
+	if lastSpace > 0 {
+		suffix := trimmed[lastSpace+1:]
+		if _, err := strconv.Atoi(suffix); err == nil && len(suffix) <= 4 {
+			result := strings.TrimSpace(trimmed[:lastSpace])
+			if result != "" {
+				return result
+			}
+		}
+	}
+
+	// Pattern: "Title(01)" or "Title（01）"
+	for _, pair := range []struct{ open, close string }{
+		{"(", ")"}, {"（", "）"},
+	} {
+		closeIdx := strings.LastIndex(trimmed, pair.close)
+		if closeIdx == len(trimmed)-len(pair.close) {
+			openIdx := strings.LastIndex(trimmed[:closeIdx], pair.open)
+			if openIdx > 0 {
+				numStr := strings.TrimSpace(trimmed[openIdx+len(pair.open) : closeIdx])
+				if _, err := strconv.Atoi(numStr); err == nil {
+					result := strings.TrimSpace(trimmed[:openIdx])
+					if result != "" {
+						return result
+					}
+				}
+			}
+		}
+	}
+
+	return trimmed
 }
 
 func parseAudiobookDirName(name string) (author, title string) {
