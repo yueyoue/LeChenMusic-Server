@@ -118,11 +118,14 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 
 		// Create new audiobook
 		book := s.createAudiobookFromDir(ctx, library, path, relPath, bookHash)
-		s.scanChapters(ctx, &book, library, repo)
+		// IMPORTANT: Save the book FIRST before scanning chapters,
+		// because audiobook_chapter has a foreign key referencing audiobook(id).
+		// If the book doesn't exist in DB yet, chapter inserts will fail.
 		if err := repo.Put(&book); err != nil {
 			log.Error(ctx, "Audiobook scanner: Error creating", "book", book.Title, err)
 			return nil
 		}
+		s.scanChapters(ctx, &book, library, repo)
 		created++
 		scanned++
 		return filepath.SkipDir
