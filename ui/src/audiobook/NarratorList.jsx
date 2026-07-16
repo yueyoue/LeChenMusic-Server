@@ -41,9 +41,10 @@ const NarratorAvatar = ({ name }) => {
       try {
         const token = localStorage.getItem('token')
         const safeName = name.replace(/\//g, '_').replace(/\\/g, '_')
-        const res = await fetch(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}?token=${token}`)
+        const tokenParam = token ? `?token=${token}` : ''
+        const res = await fetch(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}${tokenParam}`)
         if (res.ok) {
-          setAvatarUrl(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}?token=${token}`)
+          setAvatarUrl(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}${tokenParam}`)
         }
       } catch (e) {}
     }

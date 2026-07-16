@@ -171,6 +171,7 @@ const AudiobookList = ({ width }) => {
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState(null)
   const [scrapeOpen, setScrapeOpen] = useState(false)
+  const [rescanning, setRescanning] = useState(false)
 
   const params = new URLSearchParams(location.search)
   const genreFilter = params.get('genre')
@@ -248,6 +249,32 @@ const AudiobookList = ({ width }) => {
           {getTitle()} ({displayBooks.length})
           <Button size="small" variant="outlined" onClick={() => setScrapeOpen(true)}>
             🔍 批量刮削
+          </Button>
+          <Button size="small" variant="outlined" disabled={rescanning}
+            onClick={async () => {
+              if (!confirm('将为所有没有章节的有声书重新扫描章节，确定继续？')) return
+              setRescanning(true)
+              try {
+                const token = localStorage.getItem('token')
+                const res = await fetch('/api/audiobook/rescan-all', {
+                  method: 'POST',
+                  headers: { 'X-ND-Authorization': `Bearer ${token}` },
+                })
+                if (res.ok) {
+                  const data = await res.json()
+                  const d = data.data
+                  alert(`扫描完成：${d.rescanned} 本已扫描，${d.skipped} 本跳过，${d.failed} 本失败`)
+                  window.location.reload()
+                } else {
+                  alert('扫描失败: ' + res.statusText)
+                }
+              } catch (e) {
+                alert('扫描失败: ' + e.message)
+              } finally {
+                setRescanning(false)
+              }
+            }}>
+            {rescanning ? '⏳ 扫描中...' : '🔄 扫描缺失章节'}
           </Button>
         </Typography>
 

@@ -153,6 +153,30 @@ func SearchArtistsAll(query string) []ArtistResult {
 	return results
 }
 
+// SearchNarratorsAll searches audiobook platforms only for narrator/anchor avatars
+func SearchNarratorsAll(query string) []ArtistResult {
+	var results []ArtistResult
+	audiobookSources := map[string]bool{"ximalaya": true, "qingting": true}
+	for _, s := range scrapers {
+		if !audiobookSources[s.Name()] {
+			continue
+		}
+		res, err := s.SearchArtists(query)
+		if err != nil {
+			continue
+		}
+		results = append(results, res...)
+	}
+
+	// Sort by name match relevance
+	queryLower := strings.ToLower(query)
+	sort.Slice(results, func(i, j int) bool {
+		return nameMatchScore(results[i].Name, queryLower) > nameMatchScore(results[j].Name, queryLower)
+	})
+
+	return results
+}
+
 // nameMatchScore calculates a relevance score for name matching
 func nameMatchScore(name, queryLower string) int {
 	nameLower := strings.ToLower(name)

@@ -8,7 +8,7 @@ import SearchIcon from '@material-ui/icons/Search'
 import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
 
-const ArtistAvatarDialog = ({ open, onClose, artist, onApply }) => {
+const ArtistAvatarDialog = ({ open, onClose, artist, onApply, searchType }) => {
   const [query, setQuery] = useState(artist?.name || '')
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState([])
@@ -23,7 +23,8 @@ const ArtistAvatarDialog = ({ open, onClose, artist, onApply }) => {
     setResults([])
     setSelected(null)
     try {
-      const res = await httpClient(`${REST_URL}/scrape/artist?q=${encodeURIComponent(query)}`)
+      const typeParam = searchType ? `&type=${searchType}` : ''
+      const res = await httpClient(`${REST_URL}/scrape/artist?q=${encodeURIComponent(query)}${typeParam}`)
       setResults(res.json?.data || [])
     } catch (e) {
       console.error('Artist search failed:', e)

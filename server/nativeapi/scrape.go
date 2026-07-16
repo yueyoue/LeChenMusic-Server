@@ -2,6 +2,7 @@ package nativeapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -146,7 +147,11 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 		lib, libErr := h.ds.Library(r.Context()).Get(book.LibraryID)
 		if libErr == nil {
 			bookPath := filepath.Join(lib.Path, book.Path)
-			downloadCover(*req.CoverURL, bookPath, book, *lib)
+			if dlErr := downloadCover(*req.CoverURL, bookPath, book, *lib); dlErr != nil {
+				log.Error(r.Context(), "Failed to download cover", "error", dlErr, "url", *req.CoverURL)
+			}
+		} else {
+			log.Error(r.Context(), "Failed to get library for cover download", "error", libErr)
 		}
 	}
 	if err := repo.Put(book); err != nil {
@@ -162,7 +167,14 @@ func (h *scrapeHandler) searchArtists(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "q parameter required", 400)
 		return
 	}
-	results := scraper.SearchArtistsAll(query)
+	// type=narrator searches only audiobook platforms (ximalaya, qingting)
+	searchType := r.URL.Query().Get("type")
+	var results []scraper.ArtistResult
+	if searchType == "narrator" {
+		results = scraper.SearchNarratorsAll(query)
+	} else {
+		results = scraper.SearchArtistsAll(query)
+	}
 	writeJSON(w, map[string]any{"data": results})
 }
 
@@ -353,27 +365,47 @@ func (h *scrapeHandler) batchScrape(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"data": results})
 }
 
-func downloadCover(coverURL, bookPath string, book *model.Audiobook, lib model.Library) {
+func downloadCover(coverURL, bookPath string, book *model.Audiobook, lib model.Library) error {
+	if coverURL == "" {
+		return fmt.Errorf("empty cover URL")
+	}
 	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(coverURL)
+	req, err := http.NewRequest("GET", coverURL, nil)
 	if err != nil {
-		return
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	req.Header.Set("Referer", coverURL)
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("download cover: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return
+		return fmt.Errorf("download cover: HTTP %d", resp.StatusCode)
 	}
 	ext := ".jpg"
 	ct := resp.Header.Get("Content-Type")
 	if strings.Contains(ct, "png") {
 		ext = ".png"
+	} else if strings.Contains(ct, "webp") {
+		ext = ".webp"
 	}
 	for _, name := range []string{"cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.jpeg", "folder.png"} {
 		os.Remove(filepath.Join(bookPath, name))
 	}
 	coverPath := filepath.Join(bookPath, "cover"+ext)
-	imageData, _ := io.ReadAll(resp.Body)
-	os.WriteFile(coverPath, imageData, 0644)
+	imageData, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read cover data: %w", err)
+	}
+	if len(imageData) < 100 {
+		return fmt.Errorf("cover data too small: %d bytes", len(imageData))
+	}
+	if err := os.WriteFile(coverPath, imageData, 0644); err != nil {
+		return fmt.Errorf("write cover file: %w", err)
+	}
 	relCover, _ := filepath.Rel(lib.Path, coverPath)
 	book.CoverPath = relCover
+	return nil
 }

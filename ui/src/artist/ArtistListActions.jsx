@@ -102,15 +102,17 @@ const BatchAvatarDialog = ({ open, onClose }) => {
         failCount++
       }
 
-      // Small delay to avoid overwhelming the server
-      await new Promise(resolve => setTimeout(resolve, 500))
+      // Delay to avoid overwhelming the server and ensure files are written
+      await new Promise(resolve => setTimeout(resolve, 1000))
     }
 
     setSaving(false)
     notify(`完成: ${successCount} 成功, ${failCount} 失败`, successCount > 0 ? 'info' : 'warning')
-    // Reload page to show new avatars
+    // Reload page to show new avatars (with cache-busting)
     if (successCount > 0) {
-      setTimeout(() => window.location.reload(), 1000)
+      setTimeout(() => {
+        window.location.href = window.location.href.split('?')[0] + '?t=' + Date.now()
+      }, 2000)
     }
   }
 
@@ -129,7 +131,7 @@ const BatchAvatarDialog = ({ open, onClose }) => {
         <h2 style={{ margin: '0 0 16px', fontSize: 18 }}>🔍 批量匹配艺人头像</h2>
 
         <p style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
-          自动为所有艺人搜索并保存头像。会从网易云音乐和QQ音乐搜索匹配的头像图片。
+          自动为所有艺人搜索并保存头像。会从网易云音乐、QQ音乐、酷我音乐、酷狗音乐搜索匹配的头像图片。
         </p>
 
         {!results && !loading && (

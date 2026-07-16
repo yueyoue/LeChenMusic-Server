@@ -53,6 +53,7 @@ func (api *Router) addAudiobookRoute(r chi.Router) {
 		r.Get("/{id}/cover", h.cover)
 		r.Post("/{id}/cover", h.uploadCover) // Upload cover image (file or URL)
 		r.Post("/{id}/rescan", h.rescan)
+		r.Post("/rescan-all", h.rescanAll) // Batch rescan all audiobooks
 		r.Post("/narrator/{name}/avatar", h.uploadNarratorAvatar) // Upload narrator avatar
 		r.Get("/narrator/{name}/avatar", h.getNarratorAvatar) // Serve narrator avatar
 	})
@@ -621,6 +622,94 @@ func (h *audiobookHandler) rescan(w http.ResponseWriter, r *http.Request) {
 	_ = repo.Put(book)
 
 	writeJSON(w, map[string]any{"data": map[string]any{"book": book, "chapters": chapters}})
+}
+
+// rescanAll rescans all audiobooks that have 0 chapters
+func (h *audiobookHandler) rescanAll(w http.ResponseWriter, r *http.Request) {
+	repo := h.ds.Audiobook(r.Context())
+	books, err := repo.GetAll()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	rescanned := 0
+	skipped := 0
+	failed := 0
+	for i := range books {
+		book := &books[i]
+		// Only rescan books with 0 chapters
+		if book.ChapterCount > 0 {
+			skipped++
+			continue
+		}
+		lib, libErr := h.ds.Library(r.Context()).Get(book.LibraryID)
+		if libErr != nil {
+			failed++
+			continue
+		}
+
+		// Delete existing chapters (should be none, but just in case)
+		_ = repo.DeleteChapters(book.ID)
+
+		// Rescan chapters from filesystem
+		bookPath := filepath.Join(lib.Path, book.Path)
+		entries, readErr := os.ReadDir(bookPath)
+		if readErr != nil {
+			failed++
+			continue
+		}
+
+		var audioFiles []string
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			ext := strings.ToLower(filepath.Ext(e.Name()))
+			if audiobookAudioExts[ext] {
+				audioFiles = append(audioFiles, e.Name())
+			}
+		}
+		sort.Strings(audioFiles)
+
+		var totalSize int64
+		for j, fname := range audioFiles {
+			chapterPath := filepath.Join(bookPath, fname)
+			chapterTitle := strings.TrimSuffix(fname, filepath.Ext(fname))
+			format := strings.TrimPrefix(strings.ToLower(filepath.Ext(fname)), ".")
+			var fileSize int64
+			if info, err := os.Stat(chapterPath); err == nil {
+				fileSize = info.Size()
+			}
+
+			chapter := model.AudiobookChapter{
+				ID:            fname,
+				AudiobookID:   book.ID,
+				Title:         chapterTitle,
+				ChapterNumber: j + 1,
+				Duration:      0,
+				Format:        format,
+				FileSize:      fileSize,
+				Path:          fname,
+			}
+			if err := repo.PutChapter(&chapter); err != nil {
+				log.Error(r.Context(), "RescanAll: Error saving chapter", "book", book.Title, "chapter", chapterTitle, err)
+			}
+			totalSize += fileSize
+		}
+
+		book.ChapterCount = len(audioFiles)
+		book.Size = totalSize
+		_ = repo.Put(book)
+		rescanned++
+	}
+
+	writeJSON(w, map[string]any{"data": map[string]any{
+		"rescanned": rescanned,
+		"skipped":   skipped,
+		"failed":    failed,
+		"total":     len(books),
+	}})
 }
 
 // uploadCover handles audiobook cover image upload (file upload or URL download)

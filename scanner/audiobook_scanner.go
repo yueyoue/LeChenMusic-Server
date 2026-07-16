@@ -145,9 +145,14 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 	// Try to read metadata from the first audio file's ID3 tags
 	tagArtist, tagTitle, tagAlbum, tagGenre, tagYear, tagNarrator := readFirstAudioFileTags(fullPath)
 	if tagTitle != "" && title == dirName {
-		// ID3 tag has a proper title, and the directory name was not parsed
+		// ID3 tag has a title, and the directory name was not parsed into author/title
 		// Strip chapter number suffixes (e.g. "背后有人-01" → "背后有人")
-		title = stripChapterSuffix(tagTitle)
+		stripped := stripChapterSuffix(tagTitle)
+		// Only use the ID3 title if it's meaningful (not just a number or too short)
+		// This prevents chapter numbers like "01" from overriding the directory name
+		if stripped != "" && !isNumericOnly(stripped) && len([]rune(stripped)) > 1 {
+			title = stripped
+		}
 	}
 	if tagAlbum != "" && title == "" {
 		title = tagAlbum
@@ -362,17 +367,33 @@ func audiobookHash(path string) string {
 	return fmt.Sprintf("%x", md5.Sum([]byte(path)))
 }
 
+// isNumericOnly checks if a string contains only digits (and optional leading/trailing whitespace)
+func isNumericOnly(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // stripChapterSuffix removes common chapter/episode number suffixes from a title.
-// This fixes cases where ID3 TITLE tags contain "BookName-01" or "BookName01" instead of just "BookName".
-// Patterns handled: "-01", "_01", " 01", "(01)", "第01章", "01" (direct append), etc.
+// This fixes cases where ID3 TITLE tags contain "BookName-01" or "BookName_01" instead of just "BookName".
+// IMPORTANT: Only strips numbers that follow clear separators (-, _, space, parentheses).
+// Does NOT strip bare numbers appended to text (e.g. "鬼吹灯1" stays as-is, since "1" is part of the book name).
 func stripChapterSuffix(title string) string {
 	trimmed := strings.TrimSpace(title)
 	if trimmed == "" {
 		return trimmed
 	}
 
-	// Helper: check if a string is a chapter-like number (1-4 digits, optionally with leading zero)
+	// Helper: check if a string is a chapter-like number (1-4 digits)
 	isChapterNum := func(s string) bool {
+		s = strings.TrimSpace(s)
 		if s == "" || len(s) > 4 {
 			return false
 		}
@@ -380,7 +401,8 @@ func stripChapterSuffix(title string) string {
 		return err == nil && n >= 1 && n <= 9999
 	}
 
-	// Pattern 1: "Title-01" or "Title-1" (dash followed by digits at end)
+	// Only process if the title has a clear separator before the number
+	// Pattern 1: "Title-01" (dash followed by digits at end)
 	if idx := strings.LastIndex(trimmed, "-"); idx > 0 {
 		suffix := strings.TrimSpace(trimmed[idx+1:])
 		if isChapterNum(suffix) {
@@ -416,7 +438,7 @@ func stripChapterSuffix(title string) string {
 
 	// Pattern 4: "Title(01)" or "Title（01）"
 	for _, pair := range []struct{ open, close string }{
-		{"(", ")"}, {"（", "）"},
+		{"(", ")"}, {"（", “）”},
 	} {
 		closeIdx := strings.LastIndex(trimmed, pair.close)
 		if closeIdx == len(trimmed)-len(pair.close) {
@@ -435,7 +457,6 @@ func stripChapterSuffix(title string) string {
 
 	// Pattern 5: "第01章" or "第1章" (Chinese chapter markers)
 	if idx := strings.LastIndex(trimmed, "章"); idx > 0 && idx == len(trimmed)-len("章") {
-		// Look for "第" before the number
 		prefix := trimmed[:idx]
 		if diIdx := strings.LastIndex(prefix, "第"); diIdx >= 0 {
 			numPart := strings.TrimSpace(prefix[diIdx+len("第"):])
@@ -448,27 +469,9 @@ func stripChapterSuffix(title string) string {
 		}
 	}
 
-	// Pattern 6: Direct digits appended (e.g. "贝姨01" → "贝姨", "鬼吹灯1" → "鬼吹灯")
-	// This handles the common Chinese audiobook pattern where chapter numbers are directly concatenated.
-	// Only strip if: digits are 1-4 chars, and the character before digits is NOT a digit.
-	for end := len(trimmed); end > 0; end-- {
-		if trimmed[end-1] < '0' || trimmed[end-1] > '9' {
-			digitStart := end
-			if digitStart < len(trimmed) {
-				suffix := trimmed[digitStart:]
-				if isChapterNum(suffix) {
-					result := strings.TrimSpace(trimmed[:digitStart])
-					if result != "" {
-						return result
-					}
-				}
-			}
-			break
-		}
-	}
-
-	return trimmed
-}
+	// Do NOT strip bare numbers (Pattern 6 removed)
+	// Bare numbers like "鬼吹灯1" or "贝姨01" are part of the book name,
+	// not chapter numbers. Only clear separators (above) trigger stripping.
 
 	return trimmed
 }
