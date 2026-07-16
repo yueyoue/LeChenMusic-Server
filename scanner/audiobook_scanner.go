@@ -439,9 +439,9 @@ func stripChapterSuffix(title string) string {
 		}
 	}
 
-	// Pattern 4: "Title(01)" or "Title（01）"
+	// Pattern 4: "Title(01)" or "Title(01)"
 	for _, pair := range []struct{ open, close string }{
-		{"(", ")"}, {"（", “）”},
+		{"(", ")"}, {"（", "）"},
 	} {
 		closeIdx := strings.LastIndex(trimmed, pair.close)
 		if closeIdx == len(trimmed)-len(pair.close) {
