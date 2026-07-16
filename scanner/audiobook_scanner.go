@@ -363,18 +363,27 @@ func audiobookHash(path string) string {
 }
 
 // stripChapterSuffix removes common chapter/episode number suffixes from a title.
-// This fixes cases where ID3 TITLE tags contain "BookName-01" instead of just "BookName".
-// Patterns handled: "-01", "-1", " 01", "_01", "(01)", "第01章", etc.
+// This fixes cases where ID3 TITLE tags contain "BookName-01" or "BookName01" instead of just "BookName".
+// Patterns handled: "-01", "_01", " 01", "(01)", "第01章", "01" (direct append), etc.
 func stripChapterSuffix(title string) string {
 	trimmed := strings.TrimSpace(title)
 	if trimmed == "" {
 		return trimmed
 	}
 
-	// Pattern: "Title-01" or "Title-1" (dash followed by digits at end)
+	// Helper: check if a string is a chapter-like number (1-4 digits, optionally with leading zero)
+	isChapterNum := func(s string) bool {
+		if s == "" || len(s) > 4 {
+			return false
+		}
+		n, err := strconv.Atoi(s)
+		return err == nil && n >= 1 && n <= 9999
+	}
+
+	// Pattern 1: "Title-01" or "Title-1" (dash followed by digits at end)
 	if idx := strings.LastIndex(trimmed, "-"); idx > 0 {
 		suffix := strings.TrimSpace(trimmed[idx+1:])
-		if _, err := strconv.Atoi(suffix); err == nil && len(suffix) <= 4 {
+		if isChapterNum(suffix) {
 			result := strings.TrimSpace(trimmed[:idx])
 			if result != "" {
 				return result
@@ -382,10 +391,10 @@ func stripChapterSuffix(title string) string {
 		}
 	}
 
-	// Pattern: "Title_01" (underscore followed by digits at end)
+	// Pattern 2: "Title_01" (underscore followed by digits at end)
 	if idx := strings.LastIndex(trimmed, "_"); idx > 0 {
 		suffix := strings.TrimSpace(trimmed[idx+1:])
-		if _, err := strconv.Atoi(suffix); err == nil && len(suffix) <= 4 {
+		if isChapterNum(suffix) {
 			result := strings.TrimSpace(trimmed[:idx])
 			if result != "" {
 				return result
@@ -393,11 +402,11 @@ func stripChapterSuffix(title string) string {
 		}
 	}
 
-	// Pattern: "Title 01" (space followed by digits at end)
+	// Pattern 3: "Title 01" (space followed by digits at end)
 	lastSpace := strings.LastIndex(trimmed, " ")
 	if lastSpace > 0 {
 		suffix := trimmed[lastSpace+1:]
-		if _, err := strconv.Atoi(suffix); err == nil && len(suffix) <= 4 {
+		if isChapterNum(suffix) {
 			result := strings.TrimSpace(trimmed[:lastSpace])
 			if result != "" {
 				return result
@@ -405,7 +414,7 @@ func stripChapterSuffix(title string) string {
 		}
 	}
 
-	// Pattern: "Title(01)" or "Title（01）"
+	// Pattern 4: "Title(01)" or "Title（01）"
 	for _, pair := range []struct{ open, close string }{
 		{"(", ")"}, {"（", "）"},
 	} {
@@ -414,7 +423,7 @@ func stripChapterSuffix(title string) string {
 			openIdx := strings.LastIndex(trimmed[:closeIdx], pair.open)
 			if openIdx > 0 {
 				numStr := strings.TrimSpace(trimmed[openIdx+len(pair.open) : closeIdx])
-				if _, err := strconv.Atoi(numStr); err == nil {
+				if isChapterNum(numStr) {
 					result := strings.TrimSpace(trimmed[:openIdx])
 					if result != "" {
 						return result
@@ -423,6 +432,43 @@ func stripChapterSuffix(title string) string {
 			}
 		}
 	}
+
+	// Pattern 5: "第01章" or "第1章" (Chinese chapter markers)
+	if idx := strings.LastIndex(trimmed, "章"); idx > 0 && idx == len(trimmed)-len("章") {
+		// Look for "第" before the number
+		prefix := trimmed[:idx]
+		if diIdx := strings.LastIndex(prefix, "第"); diIdx >= 0 {
+			numPart := strings.TrimSpace(prefix[diIdx+len("第"):])
+			if isChapterNum(numPart) {
+				result := strings.TrimSpace(prefix[:diIdx])
+				if result != "" {
+					return result
+				}
+			}
+		}
+	}
+
+	// Pattern 6: Direct digits appended (e.g. "贝姨01" → "贝姨", "鬼吹灯1" → "鬼吹灯")
+	// This handles the common Chinese audiobook pattern where chapter numbers are directly concatenated.
+	// Only strip if: digits are 1-4 chars, and the character before digits is NOT a digit.
+	for end := len(trimmed); end > 0; end-- {
+		if trimmed[end-1] < '0' || trimmed[end-1] > '9' {
+			digitStart := end
+			if digitStart < len(trimmed) {
+				suffix := trimmed[digitStart:]
+				if isChapterNum(suffix) {
+					result := strings.TrimSpace(trimmed[:digitStart])
+					if result != "" {
+						return result
+					}
+				}
+			}
+			break
+		}
+	}
+
+	return trimmed
+}
 
 	return trimmed
 }
