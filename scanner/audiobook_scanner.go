@@ -147,14 +147,12 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 	// [LeChenMusic-START:audiobook-id3-tags]
 	// Try to read metadata from the first audio file's ID3 tags
 	tagArtist, tagTitle, tagAlbum, tagGenre, tagYear, tagNarrator := readFirstAudioFileTags(fullPath)
-	if tagTitle != "" && title == dirName {
-		// ID3 tag has a title, and the directory name was not parsed into author/title
-		// Strip chapter number suffixes (e.g. "背后有人-01" → "背后有人")
+	if tagTitle != "" {
 		stripped := stripChapterSuffix(tagTitle)
-		// Only use the ID3 title if it's meaningful (not just a number or too short)
-		// This prevents chapter numbers like "01" from overriding the directory name
 		if stripped != "" && !isNumericOnly(stripped) && len([]rune(stripped)) > 1 {
-			title = stripped
+			if title == dirName {
+				title = stripped
+			}
 		}
 	}
 	if tagAlbum != "" && title == "" {
@@ -472,20 +470,62 @@ func stripChapterSuffix(title string) string {
 		}
 	}
 
-	// Do NOT strip bare numbers (Pattern 6 removed)
-	// Bare numbers like "鬼吹灯1" or "贝姨01" are part of the book name,
-	// not chapter numbers. Only clear separators (above) trigger stripping.
+	// Pattern 6: Bare numbers with leading zeros (e.g. "贝姨01" → "贝姨")
+	// Numbers with leading zeros (01, 02, 001, 002) are almost always chapter numbers.
+	// Single digits without leading zeros (like "鬼吹灯1") are part of the book name.
+	numStart := -1
+	for i := len(trimmed) - 1; i >= 0; i-- {
+		if trimmed[i] >= '0' && trimmed[i] <= '9' {
+			numStart = i
+		} else {
+			break
+		}
+	}
+	if numStart > 0 {
+		numStr := trimmed[numStart:]
+		if len(numStr) >= 2 && numStr[0] == '0' {
+			result := strings.TrimSpace(trimmed[:numStart])
+			if result != "" && !isNumericOnly(result) {
+				return result
+			}
+		}
+	}
 
 	return trimmed
 }
 
 func parseAudiobookDirName(name string) (author, title string) {
+	// Pattern 1: "Author - Title"
 	if idx := strings.Index(name, " - "); idx > 0 {
 		return strings.TrimSpace(name[:idx]), strings.TrimSpace(name[idx+3:])
 	}
+	// Pattern 2: "Title (Author)"
 	if start := strings.LastIndex(name, "("); start > 0 {
 		if end := strings.LastIndex(name, ")"); end > start {
 			return strings.TrimSpace(name[start+1 : end]), strings.TrimSpace(name[:start])
+		}
+	}
+	// Pattern 3: "X Title Narrator [XX回]" (Chinese audiobook common pattern)
+	// e.g. "B 贝姨 艾宝良 48回" → title="贝姨", narrator="艾宝良"
+	// e.g. "G 鬼吹灯 艾宝良" → title="鬼吹灯", narrator="艾宝良"
+	parts := strings.Fields(name)
+	if len(parts) >= 3 {
+		first := parts[0]
+		if len(first) == 1 && ((first[0] >= 'A' && first[0] <= 'Z') || (first[0] >= 'a' && first[0] <= 'z')) {
+			remaining := strings.TrimSpace(name[len(first):])
+			parts2 := strings.Fields(remaining)
+			if len(parts2) >= 2 {
+				lastPart := parts2[len(parts2)-1]
+				if strings.HasSuffix(lastPart, "回") || strings.HasSuffix(lastPart, "集") || strings.HasSuffix(lastPart, "集全") {
+					if len(parts2) >= 3 {
+						return strings.Join(parts2[len(parts2)-2:len(parts2)-1], " "), strings.Join(parts2[:len(parts2)-2], " ")
+					}
+					return "", strings.Join(parts2[:len(parts2)-1], " ")
+				}
+				if len(parts2) >= 3 {
+					return strings.Join(parts2[len(parts2)-1:], " "), strings.Join(parts2[:len(parts2)-1], " ")
+				}
+			}
 		}
 	}
 	return "", name
