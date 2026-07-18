@@ -78,7 +78,7 @@ func (h *duplicateSongsHandler) findDuplicates(w http.ResponseWriter, r *http.Re
 
 	// 筛选出有重复的组
 	var duplicates []duplicateGroup
-	for key, groupSongs := range groups {
+	for _, groupSongs := range groups {
 		if len(groupSongs) > 1 {
 			// 按路径排序，方便用户对比
 			sort.Slice(groupSongs, func(i, j int) bool {
