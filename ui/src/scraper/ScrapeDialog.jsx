@@ -91,6 +91,11 @@ const ScrapeDialog = ({ open, onClose, book, onApply }) => {
       if (fields.description && detail.intro) body.description = detail.intro
       if (fields.genre && detail.genre) body.genre = detail.genre
       if (fields.cover && detail.coverUrl) body.coverUrl = detail.coverUrl
+      // 传递刮削源信息，用于封面URL失效时重新获取
+      if (selectedResult) {
+        body.source = selectedResult.source
+        body.sourceId = selectedResult.id
+      }
 
       await httpClient(`${REST_URL}/scrape/audiobook/${book.id}/apply`, {
         method: 'POST',

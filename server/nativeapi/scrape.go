@@ -1,6 +1,7 @@
 package nativeapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -123,6 +124,8 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 		Description *string `json:"description"`
 		Genre       *string `json:"genre"`
 		CoverURL    *string `json:"coverUrl"`
+		Source      string  `json:"source"`      // 刮削源名称，用于封面URL失效时重新获取
+		SourceID    string  `json:"sourceId"`    // 刮削源上的ID
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", 400)
@@ -147,8 +150,20 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 		lib, libErr := h.ds.Library(r.Context()).Get(book.LibraryID)
 		if libErr == nil {
 			bookPath := filepath.Join(lib.Path, book.Path)
-			if dlErr := downloadCover(*req.CoverURL, bookPath, book, *lib); dlErr != nil {
-				log.Error(r.Context(), "Failed to download cover", "error", dlErr, "url", *req.CoverURL)
+			dlErr := downloadCover(*req.CoverURL, bookPath, book, *lib)
+			if dlErr != nil {
+				log.Warn(r.Context(), "Cover download failed, will try to re-scrape", "error", dlErr, "url", *req.CoverURL)
+				// 尝试重新从刮削源获取新鲜的封面URL并重试
+				freshURL := h.refreshCoverURL(r.Context(), req.Source, req.SourceID, book.Title)
+				if freshURL != "" && freshURL != *req.CoverURL {
+					log.Info(r.Context(), "Retrying cover download with fresh URL", "url", freshURL)
+					dlErr = downloadCover(freshURL, bookPath, book, *lib)
+					if dlErr != nil {
+						log.Error(r.Context(), "Cover retry also failed", "error", dlErr, "url", freshURL)
+					}
+				} else {
+					log.Warn(r.Context(), "Could not get fresh cover URL from scraper")
+				}
 			}
 		} else {
 			log.Error(r.Context(), "Failed to get library for cover download", "error", libErr)
@@ -159,6 +174,37 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"data": book})
+}
+
+// refreshCoverURL 尝试从刮削源重新获取封面URL
+// 当原始封面URL过期（如喜马拉雅CDN URL含时效token）时调用
+func (h *scrapeHandler) refreshCoverURL(ctx context.Context, source, sourceID, bookTitle string) string {
+	if source == "" {
+		return ""
+	}
+	s, ok := scraper.Get(source)
+	if !ok {
+		return ""
+	}
+	// 优先使用sourceID获取详情
+	if sourceID != "" {
+		detail, err := s.GetAudiobookDetail(sourceID)
+		if err == nil && detail.CoverURL != "" {
+			return detail.CoverURL
+		}
+	}
+	// 降级：用书名重新搜索
+	if bookTitle != "" {
+		results, err := s.SearchAudiobooks(bookTitle, 1)
+		if err == nil {
+			for _, r := range results {
+				if r.CoverURL != "" {
+					return r.CoverURL
+				}
+			}
+		}
+	}
+	return ""
 }
 
 func (h *scrapeHandler) searchArtists(w http.ResponseWriter, r *http.Request) {
@@ -363,6 +409,22 @@ func (h *scrapeHandler) batchScrape(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{"data": results})
+}
+
+// validateURL 验证URL是否可访问（HEAD请求）
+func validateURL(urlStr string) bool {
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("HEAD", urlStr, nil)
+	if err != nil {
+		return false
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode >= 200 && resp.StatusCode < 400
 }
 
 func downloadCover(coverURL, bookPath string, book *model.Audiobook, lib model.Library) error {

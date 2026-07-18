@@ -47,6 +47,10 @@ type ximalayaDetailResponse struct {
 		Intro struct {
 			RichIntro string `json:"richIntro"`
 		} `json:"intro"`
+		AlbumTitle  string `json:"albumTitle"`
+		Cover       string `json:"cover"`
+		NickName    string `json:"nickName"`
+		CategoryTitle string `json:"categoryTitle"`
 	} `json:"data"`
 }
 
@@ -122,10 +126,21 @@ func (s *ximalayaScraper) GetAudiobookDetail(sourceID string) (*ScrapeDetail, er
 		return nil, fmt.Errorf("ximalaya detail parse: %w", err)
 	}
 
+	coverURL := resp.Data.Cover
+	if coverURL != "" && !strings.HasPrefix(coverURL, "http") {
+		coverURL = "https:" + coverURL
+	}
+	// 移除图片处理后缀，获取原图
+	coverURL = strings.Split(coverURL, "!")[0]
+
 	detail := &ScrapeDetail{
-		Source: "ximalaya",
-		ID:     sourceID,
-		Intro:  resp.Data.Intro.RichIntro,
+		Source:   "ximalaya",
+		ID:       sourceID,
+		Title:    resp.Data.AlbumTitle,
+		Narrator: resp.Data.NickName,
+		Genre:    resp.Data.CategoryTitle,
+		CoverURL: coverURL,
+		Intro:    resp.Data.Intro.RichIntro,
 	}
 
 	// Clean HTML from rich intro
