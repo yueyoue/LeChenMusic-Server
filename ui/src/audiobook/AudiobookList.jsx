@@ -117,7 +117,8 @@ const AudiobookCover = ({ book }) => {
   const url = `/api/audiobook/${book.id}/cover?token=${token || ''}`
   const [imgError, setImgError] = useState(false)
 
-  if (imgError || !book.coverPath) {
+  // Show placeholder only if there's no local cover AND no remote cover URL
+  if (imgError || (!book.coverPath && !book.coverUrl)) {
     return (
       <div className={classes.coverPlaceholder}>
         <MenuBookIcon style={{ fontSize: 32, opacity: 0.5, color: '#fff' }} />

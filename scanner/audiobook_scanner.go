@@ -155,8 +155,11 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 			}
 		}
 	}
-	if tagAlbum != "" && title == "" {
-		title = tagAlbum
+	if tagAlbum != "" && (title == "" || title == dirName) {
+		// Use ALBUM tag as fallback, but only if it's a meaningful title
+		if !isNumericOnly(tagAlbum) && len([]rune(tagAlbum)) > 1 {
+			title = tagAlbum
+		}
 	}
 	if tagGenre != "" && genre == "有声读物" {
 		genre = tagGenre
@@ -437,16 +440,22 @@ func stripChapterSuffix(title string) string {
 		}
 	}
 
-	// Pattern 4: "Title(01)" or "Title(01)"
+	// Pattern 4: "Title(01)" or "Title(01)" or "Title(48集)" or "Title[48回]"
 	for _, pair := range []struct{ open, close string }{
-		{"(", ")"}, {"（", "）"},
+		{"(", ")"}, {"（", "）"}, {"[", "]"}, {"【", "】"},
 	} {
 		closeIdx := strings.LastIndex(trimmed, pair.close)
 		if closeIdx == len(trimmed)-len(pair.close) {
 			openIdx := strings.LastIndex(trimmed[:closeIdx], pair.open)
 			if openIdx > 0 {
 				numStr := strings.TrimSpace(trimmed[openIdx+len(pair.open) : closeIdx])
-				if isChapterNum(numStr) {
+				// Strip trailing 回/集/集全 suffix for chapter number detection
+				cleanNum := numStr
+				for _, suffix := range []string{"集全", "集", "回"} {
+					cleanNum = strings.TrimSuffix(cleanNum, suffix)
+				}
+				cleanNum = strings.TrimSpace(cleanNum)
+				if isChapterNum(cleanNum) {
 					result := strings.TrimSpace(trimmed[:openIdx])
 					if result != "" {
 						return result
@@ -495,39 +504,116 @@ func stripChapterSuffix(title string) string {
 }
 
 func parseAudiobookDirName(name string) (author, title string) {
-	// Pattern 1: "Author - Title"
+	// Pattern 1: "Author - Title" (with spaces around dash)
 	if idx := strings.Index(name, " - "); idx > 0 {
 		return strings.TrimSpace(name[:idx]), strings.TrimSpace(name[idx+3:])
 	}
-	// Pattern 2: "Title (Author)"
-	if start := strings.LastIndex(name, "("); start > 0 {
-		if end := strings.LastIndex(name, ")"); end > start {
-			return strings.TrimSpace(name[start+1 : end]), strings.TrimSpace(name[:start])
-		}
-	}
-	// Pattern 3: "X Title Narrator [XX回]" (Chinese audiobook common pattern)
-	// e.g. "B 贝姨 艾宝良 48回" → title="贝姨", narrator="艾宝良"
-	// e.g. "G 鬼吹灯 艾宝良" → title="鬼吹灯", narrator="艾宝良"
-	parts := strings.Fields(name)
-	if len(parts) >= 3 {
-		first := parts[0]
-		if len(first) == 1 && ((first[0] >= 'A' && first[0] <= 'Z') || (first[0] >= 'a' && first[0] <= 'z')) {
-			remaining := strings.TrimSpace(name[len(first):])
-			parts2 := strings.Fields(remaining)
-			if len(parts2) >= 2 {
-				lastPart := parts2[len(parts2)-1]
-				if strings.HasSuffix(lastPart, "回") || strings.HasSuffix(lastPart, "集") || strings.HasSuffix(lastPart, "集全") {
-					if len(parts2) >= 3 {
-						return strings.Join(parts2[len(parts2)-2:len(parts2)-1], " "), strings.Join(parts2[:len(parts2)-2], " ")
-					}
-					return "", strings.Join(parts2[:len(parts2)-1], " ")
-				}
-				if len(parts2) >= 3 {
-					return strings.Join(parts2[len(parts2)-1:], " "), strings.Join(parts2[:len(parts2)-1], " ")
+
+	// Pattern 2: "Title (Author)" or "Title（Author）"
+	for _, pair := range []struct{ open, close string }{
+		{"(", ")"}, {"（", "）"},
+	} {
+		closeIdx := strings.LastIndex(name, pair.close)
+		if closeIdx > 0 {
+			openIdx := strings.LastIndex(name[:closeIdx], pair.open)
+			if openIdx > 0 {
+				authorPart := strings.TrimSpace(name[openIdx+len(pair.open) : closeIdx])
+				titlePart := strings.TrimSpace(name[:openIdx])
+				if authorPart != "" && titlePart != "" {
+					return authorPart, titlePart
 				}
 			}
 		}
 	}
+
+	// Pattern 3: "数字_演播者评书《书名》" e.g. "07_单田芳评书《楚汉争雄》"
+	if idx := strings.Index(name, "_"); idx > 0 {
+		prefix := name[:idx]
+		rest := strings.TrimSpace(name[idx+1:])
+		isNumPrefix := true
+		for _, c := range prefix {
+			if c < '0' || c > '9' {
+				isNumPrefix = false
+				break
+			}
+		}
+		if isNumPrefix && rest != "" {
+			// Try to extract title from 《》 brackets
+			if start := strings.Index(rest, "《"); start >= 0 {
+				if end := strings.Index(rest[start:], "》"); end > 0 {
+					extractedTitle := strings.TrimSpace(rest[start+3 : start+end])
+					authorPart := strings.TrimSpace(rest[:start])
+					if extractedTitle != "" {
+						return authorPart, extractedTitle
+					}
+				}
+			}
+			// No brackets: split by spaces, last word might be narrator
+			parts := strings.Fields(rest)
+			if len(parts) >= 2 {
+				return strings.Join(parts[1:], " "), parts[0]
+			}
+			return "", rest
+		}
+	}
+
+	// Pattern 4: "X Title Narrator" (Chinese audiobook common pattern)
+	// e.g. "B 贝姨 艾宝良 48回" → narrator="艾宝良", title="贝姨"
+	// e.g. "G 鬼吹灯 艾宝良" → narrator="艾宝良", title="鬼吹灯"
+	// e.g. "Z 蜘蛛+十宗罪_艾宝良" → narrator="艾宝良", title="蜘蛛+十宗罪"
+	// e.g. "G《古镜魂迷》17集 EBC5版" → title="古镜魂迷"
+	parts := strings.Fields(name)
+	if len(parts) >= 1 {
+		first := parts[0]
+		if len(first) == 1 && ((first[0] >= 'A' && first[0] <= 'Z') || (first[0] >= 'a' && first[0] <= 'z')) {
+			remaining := strings.TrimSpace(name[len(first):])
+			// Handle "X《书名》..." format (letter directly attached to brackets)
+			if strings.HasPrefix(remaining, "《") {
+				if endIdx := strings.Index(remaining, "》"); endIdx > 0 {
+					extractedTitle := strings.TrimSpace(remaining[3:endIdx])
+					if extractedTitle != "" {
+						return "", extractedTitle
+					}
+				}
+			}
+			// Handle underscore-separated narrator: "蜘蛛+十宗罪_艾宝良"
+			if usIdx := strings.LastIndex(remaining, "_"); usIdx > 0 {
+				potentialNarrator := strings.TrimSpace(remaining[usIdx+1:])
+				potentialTitle := strings.TrimSpace(remaining[:usIdx])
+				if potentialNarrator != "" && potentialTitle != "" {
+					return potentialNarrator, potentialTitle
+				}
+			}
+			parts2 := strings.Fields(remaining)
+			if len(parts2) >= 3 {
+				// Has 回/集 suffix → last part before suffix is narrator
+				lastPart := parts2[len(parts2)-1]
+				if strings.HasSuffix(lastPart, "回") || strings.HasSuffix(lastPart, "集") || strings.HasSuffix(lastPart, "集全") {
+					if len(parts2) >= 4 {
+						return strings.Join(parts2[len(parts2)-2:len(parts2)-1], " "), strings.Join(parts2[:len(parts2)-2], " ")
+					}
+					return "", strings.Join(parts2[:len(parts2)-1], " ")
+				}
+				// No suffix: last part is narrator, rest is title
+				return strings.Join(parts2[len(parts2)-1:], " "), strings.Join(parts2[:len(parts2)-1], " ")
+			}
+			if len(parts2) == 2 {
+				// "X Title Narrator" → title=parts2[0], narrator=parts2[1]
+				return parts2[1], parts2[0]
+			}
+		}
+	}
+
+	// Pattern 5: "书名_演播者" (underscore separator, no leading letter)
+	if idx := strings.LastIndex(name, "_"); idx > 0 {
+		potentialTitle := strings.TrimSpace(name[:idx])
+		potentialNarrator := strings.TrimSpace(name[idx+1:])
+		if potentialTitle != "" && potentialNarrator != "" && !isNumericOnly(potentialNarrator) {
+			return potentialNarrator, potentialTitle
+		}
+	}
+
+	// Default: entire name is title
 	return "", name
 }
 
