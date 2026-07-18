@@ -146,7 +146,10 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 	if req.Genre != nil {
 		book.Genre = *req.Genre
 	}
+	// [LeChenMusic-START:audiobook-cover-url]
+	// 始终保存封面URL到数据库（无论下载是否成功）
 	if req.CoverURL != nil && *req.CoverURL != "" {
+		book.CoverUrl = *req.CoverURL
 		lib, libErr := h.ds.Library(r.Context()).Get(book.LibraryID)
 		if libErr == nil {
 			bookPath := filepath.Join(lib.Path, book.Path)
@@ -156,6 +159,7 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 				// 尝试重新从刮削源获取新鲜的封面URL并重试
 				freshURL := h.refreshCoverURL(r.Context(), req.Source, req.SourceID, book.Title)
 				if freshURL != "" && freshURL != *req.CoverURL {
+					book.CoverUrl = freshURL // 更新为新鲜URL
 					log.Info(r.Context(), "Retrying cover download with fresh URL", "url", freshURL)
 					dlErr = downloadCover(freshURL, bookPath, book, *lib)
 					if dlErr != nil {
@@ -169,6 +173,7 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 			log.Error(r.Context(), "Failed to get library for cover download", "error", libErr)
 		}
 	}
+	// [LeChenMusic-END:audiobook-cover-url]
 	if err := repo.Put(book); err != nil {
 		http.Error(w, err.Error(), 500)
 		return

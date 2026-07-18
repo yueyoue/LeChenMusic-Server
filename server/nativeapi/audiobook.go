@@ -541,6 +541,27 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// [LeChenMusic-START:audiobook-cover-fallback]
+	// 本地没有封面文件时，从数据库中的cover_url代理获取
+	if book.CoverUrl != "" {
+		client := &http.Client{Timeout: 15 * time.Second}
+		req, err := http.NewRequest("GET", book.CoverUrl, nil)
+		if err == nil {
+			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+			resp, err := client.Do(req)
+			if err == nil && resp.StatusCode == 200 {
+				defer resp.Body.Close()
+				w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
+				w.Header().Set("Cache-Control", "public, max-age=86400")
+				io.Copy(w, resp.Body)
+				return
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+		}
+	}
+	// [LeChenMusic-END:audiobook-cover-fallback]
 	http.Error(w, "No cover found", 404)
 }
 

@@ -15,6 +15,7 @@ type Audiobook struct {
 	Genre         string    `structs:"genre"         json:"genre"         db:"genre"`
 	Year          int       `structs:"year"          json:"year"          db:"year"`
 	CoverPath     string    `structs:"cover_path"    json:"coverPath"     db:"cover_path"`
+	CoverUrl      string    `structs:"cover_url"     json:"coverUrl"      db:"cover_url"`
 	TotalDuration int       `structs:"total_duration" json:"totalDuration" db:"total_duration"`
 	ChapterCount  int       `structs:"chapter_count" json:"chapterCount"  db:"chapter_count"`
 	Series        string    `structs:"series"        json:"series"        db:"series"`
