@@ -183,6 +183,8 @@ func (api *Router) addPlaylistRoute(r chi.Router) {
 			r.Delete("/", rest.Delete(constructor))
 			r.Post("/image", uploadPlaylistImage(api.playlists))
 			r.Delete("/image", deletePlaylistImage(api.playlists))
+			r.Post("/star", starPlaylist(api.ds, true))
+			r.Delete("/star", starPlaylist(api.ds, false))
 		})
 	})
 }

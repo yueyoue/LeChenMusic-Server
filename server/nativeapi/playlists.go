@@ -239,3 +239,36 @@ func deletePlaylistImage(pls playlists.Playlists) http.HandlerFunc {
 		return pls.RemoveImage(ctx, playlistId)
 	})
 }
+
+// starPlaylist handles starring/unstarring a playlist via the annotation system.
+// The playlistRepository embeds sqlRepository which provides SetStar.
+func starPlaylist(ds model.DataStore, starred bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			http.Error(w, "missing playlist id", http.StatusBadRequest)
+			return
+		}
+		repo := ds.Playlist(r.Context())
+		type starSetter interface {
+			SetStar(starred bool, itemIDs ...string) error
+		}
+		ss, ok := repo.(starSetter)
+		if !ok {
+			http.Error(w, "starring not supported", http.StatusInternalServerError)
+			return
+		}
+		err := ss.SetStar(starred, id)
+		if err != nil {
+			log.Error(r.Context(), "Error starring playlist", "id", id, "starred", starred, err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		action := "unstarred"
+		if starred {
+			action = "starred"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"` + id + `", "action":"` + action + `"}`)) //nolint:gosec
+	}
+}

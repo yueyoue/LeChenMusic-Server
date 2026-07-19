@@ -50,8 +50,9 @@ func NewPlaylistRepository(ctx context.Context, db dbx.Builder) model.PlaylistRe
 	r.ctx = ctx
 	r.db = db
 	r.registerModel(&model.Playlist{}, map[string]filterFunc{
-		"q":     playlistFilter,
-		"smart": smartPlaylistFilter,
+		"q":       playlistFilter,
+		"smart":   smartPlaylistFilter,
+		"starred": annotationBoolFilter("starred"),
 	})
 	r.setSortMappings(map[string]string{
 		"owner_name": "owner_name",
@@ -203,8 +204,9 @@ func (r *playlistRepository) GetPlaylists(mediaFileId string) (model.Playlists, 
 }
 
 func (r *playlistRepository) selectPlaylist(options ...model.QueryOptions) SelectBuilder {
-	return r.newSelect(options...).Join("user on user.id = owner_id").
+	sel := r.newSelect(options...).Join("user on user.id = owner_id").
 		Columns(r.tableName+".*", "user.user_name as owner_name")
+	return r.withAnnotation(sel, r.tableName+".id")
 }
 
 func (r *playlistRepository) updateTracks(id string, tracks model.MediaFiles) error {

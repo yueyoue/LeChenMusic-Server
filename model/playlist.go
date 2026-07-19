@@ -10,6 +10,7 @@ import (
 )
 
 type Playlist struct {
+	Annotations      `structs:"-" hash:"ignore"`
 	ID               string         `structs:"id" json:"id"`
 	Name             string         `structs:"name" json:"name"`
 	Comment          string         `structs:"comment" json:"comment"`
