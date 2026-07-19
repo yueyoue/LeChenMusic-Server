@@ -336,6 +336,17 @@ type Playlists struct {
 	Playlist []Playlist `xml:"playlist"                           json:"playlist,omitempty"`
 }
 
+type PlaylistID3 struct {
+	Id         string    `xml:"id,attr"                       json:"id"`
+	Name       string    `xml:"name,attr"                     json:"name"`
+	SongCount  int32     `xml:"songCount,attr"                json:"songCount"`
+	Duration   int32     `xml:"duration,attr"                 json:"duration"`
+	Public     bool      `xml:"public,attr"                   json:"public,omitempty"`
+	Owner      string    `xml:"owner,attr,omitempty"          json:"owner,omitempty"`
+	CoverArt   string    `xml:"coverArt,attr,omitempty"       json:"coverArt,omitempty"`
+	Starred    *time.Time `xml:"starred,attr,omitempty"       json:"starred,omitempty"`
+}
+
 type PlaylistWithSongs struct {
 	Playlist
 	Entry []Child `xml:"entry"                                    json:"entry,omitempty"`
@@ -360,9 +371,10 @@ type Starred struct {
 }
 
 type Starred2 struct {
-	Artist []ArtistID3 `xml:"artist"                                 json:"artist,omitempty"`
-	Album  []AlbumID3  `xml:"album"                                  json:"album,omitempty"`
-	Song   []Child     `xml:"song"                                   json:"song,omitempty"`
+	Artist   []ArtistID3   `xml:"artist"                                 json:"artist,omitempty"`
+	Album    []AlbumID3    `xml:"album"                                  json:"album,omitempty"`
+	Song     []Child       `xml:"song"                                   json:"song,omitempty"`
+	Playlist []PlaylistID3 `xml:"playlist"                               json:"playlist,omitempty"`
 }
 
 type NowPlayingEntry struct {

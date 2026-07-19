@@ -139,6 +139,19 @@ func (api *Router) setStar(ctx context.Context, star bool, ids ...string) error 
 				event = event.With("artist", id)
 				continue
 			}
+			// Check playlist
+			exist, err = tx.Playlist(ctx).Exists(id)
+			if err != nil {
+				return err
+			}
+			if exist {
+				err = tx.Playlist(ctx).SetStar(star, id)
+				if err != nil {
+					return err
+				}
+				event = event.With("playlist", id)
+				continue
+			}
 			err = tx.MediaFile(ctx).SetStar(star, id)
 			if err != nil {
 				return err

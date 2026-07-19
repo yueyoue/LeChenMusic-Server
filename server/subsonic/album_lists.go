@@ -117,23 +117,21 @@ func (api *Router) GetAlbumList2(w http.ResponseWriter, r *http.Request) (*respo
 	return response, nil
 }
 
-func (api *Router) getStarredItems(r *http.Request) (model.Artists, model.Albums, model.MediaFiles, error) {
+func (api *Router) getStarredItems(r *http.Request) (model.Artists, model.Albums, model.MediaFiles, model.Playlists, error) {
 	ctx := r.Context()
 
 	// Get optional library IDs from musicFolderId parameter
 	musicFolderIds, err := selectedMusicFolderIds(r, false)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	// Prepare variables to capture results from parallel execution
 	var artists model.Artists
 	var albums model.Albums
 	var mediaFiles model.MediaFiles
+	var playlists model.Playlists
 
-	// Execute all three queries in parallel for better performance
 	err = run.Parallel(
-		// Query starred artists
 		func() error {
 			artistOpts := filter.ApplyArtistLibraryFilter(filter.ArtistsByStarred(), musicFolderIds)
 			var err error
@@ -143,7 +141,6 @@ func (api *Router) getStarredItems(r *http.Request) (model.Artists, model.Albums
 			}
 			return err
 		},
-		// Query starred albums
 		func() error {
 			albumOpts := filter.ApplyLibraryFilter(filter.ByStarred(), musicFolderIds)
 			var err error
@@ -153,7 +150,6 @@ func (api *Router) getStarredItems(r *http.Request) (model.Artists, model.Albums
 			}
 			return err
 		},
-		// Query starred media files
 		func() error {
 			mediaFileOpts := filter.ApplyLibraryFilter(filter.ByStarred(), musicFolderIds)
 			var err error
@@ -163,18 +159,26 @@ func (api *Router) getStarredItems(r *http.Request) (model.Artists, model.Albums
 			}
 			return err
 		},
+		func() error {
+			// Get starred playlists
+			var err error
+			playlists, err = api.ds.Playlist(ctx).GetAll(filter.ByStarred())
+			if err != nil {
+				log.Error(r, "Error retrieving starred playlists", err)
+			}
+			return err
+		},
 	)()
 
-	// Return the first error if any occurred
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	return artists, albums, mediaFiles, nil
+	return artists, albums, mediaFiles, playlists, nil
 }
 
 func (api *Router) GetStarred(r *http.Request) (*responses.Subsonic, error) {
-	artists, albums, mediaFiles, err := api.getStarredItems(r)
+	artists, albums, mediaFiles, _, err := api.getStarredItems(r)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +192,7 @@ func (api *Router) GetStarred(r *http.Request) (*responses.Subsonic, error) {
 }
 
 func (api *Router) GetStarred2(r *http.Request) (*responses.Subsonic, error) {
-	artists, albums, mediaFiles, err := api.getStarredItems(r)
+	artists, albums, mediaFiles, playlists, err := api.getStarredItems(r)
 	if err != nil {
 		return nil, err
 	}
@@ -198,6 +202,22 @@ func (api *Router) GetStarred2(r *http.Request) (*responses.Subsonic, error) {
 	response.Starred2.Artist = slice.MapWithArg(artists, r, toArtistID3)
 	response.Starred2.Album = slice.MapWithArg(albums, r.Context(), buildAlbumID3)
 	response.Starred2.Song = slice.MapWithArg(mediaFiles, r.Context(), childFromMediaFile)
+	// Add starred playlists
+	for _, pl := range playlists {
+		plResp := responses.PlaylistID3{
+			Id:        pl.ID,
+			Name:      pl.Name,
+			SongCount: int32(pl.SongCount),
+			Duration:  int32(pl.Duration),
+			Public:    pl.Public,
+			Owner:     pl.OwnerName,
+			CoverArt:  pl.CoverArt,
+		}
+		if pl.StarredAt != nil {
+			plResp.Starred = pl.StarredAt
+		}
+		response.Starred2.Playlist = append(response.Starred2.Playlist, plResp)
+	}
 	return response, nil
 }
 
