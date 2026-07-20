@@ -211,7 +211,7 @@ func (api *Router) GetStarred2(r *http.Request) (*responses.Subsonic, error) {
 			Duration:  int32(pl.Duration),
 			Public:    pl.Public,
 			Owner:     pl.OwnerName,
-			CoverArt:  pl.CoverArt,
+			CoverArt:  pl.CoverArtID().String(),
 		}
 		if pl.StarredAt != nil {
 			plResp.Starred = pl.StarredAt
