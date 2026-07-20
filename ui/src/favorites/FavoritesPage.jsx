@@ -14,6 +14,7 @@ import FavoriteIcon from '@material-ui/icons/Favorite'
 import AlbumIcon from '@material-ui/icons/Album'
 import MusicNoteIcon from '@material-ui/icons/MusicNote'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
+import QueueMusicIcon from '@material-ui/icons/QueueMusic'
 import { useDataProvider, useNotify } from 'react-admin'
 import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
@@ -155,6 +156,7 @@ const FavoritesPage = () => {
   const [loading, setLoading] = useState(true)
   const [starredAlbums, setStarredAlbums] = useState([])
   const [starredSongs, setStarredSongs] = useState([])
+  const [starredPlaylists, setStarredPlaylists] = useState([])
   const [starredAudiobooks, setStarredAudiobooks] = useState([])
 
   useEffect(() => {
@@ -183,6 +185,18 @@ const FavoritesPage = () => {
 
         setStarredAlbums(albumsResult.data || [])
         setStarredSongs(songsResult.data || [])
+
+        // Fetch starred playlists via REST API
+        try {
+          const plsResult = await dataProvider.getList('playlist', {
+            pagination: { page: 1, perPage: 100 },
+            sort: { field: 'starred_at', order: 'DESC' },
+            filter: { starred: true },
+          })
+          setStarredPlaylists(plsResult.data || [])
+        } catch (e) {
+          console.error('Failed to fetch starred playlists:', e)
+        }
 
         // Fetch starred audiobooks via custom API
         try {
@@ -235,6 +249,11 @@ const FavoritesPage = () => {
         <Tab
           label={`歌曲 (${starredSongs.length})`}
           icon={<MusicNoteIcon />}
+          className={classes.tab}
+        />
+        <Tab
+          label={`歌单 (${starredPlaylists.length})`}
+          icon={<QueueMusicIcon />}
           className={classes.tab}
         />
         <Tab
@@ -341,8 +360,55 @@ const FavoritesPage = () => {
         </Box>
       )}
 
-      {/* Audiobooks Tab */}
+      {/* Playlists Tab */}
       {tab === 2 && (
+        <Box>
+          {starredPlaylists.length === 0 ? (
+            <Box className={classes.empty}>
+              <QueueMusicIcon style={{ fontSize: 48, opacity: 0.3 }} />
+              <Typography style={{ marginTop: 8 }}>暂无收藏的歌单</Typography>
+              <Typography style={{ marginTop: 4, fontSize: 12, color: 'text.secondary' }}>
+                在歌单列表中点击 ❤️ 即可收藏
+              </Typography>
+            </Box>
+          ) : (
+            <Box className={classes.audiobookGrid}>
+              {starredPlaylists.map((pls) => (
+                <Card
+                  key={pls.id}
+                  className={classes.audiobookCard}
+                  elevation={2}
+                  onClick={() => { window.location.hash = `#/playlist/${pls.id}/show` }}
+                >
+                  <Box className={classes.coverWrap}>
+                    <img
+                      src={`/rest/getCoverArt?u=${encodeURIComponent(localStorage.getItem('username') || '')}&p=enc:${encodeURIComponent(localStorage.getItem('subsonic-token') || '')}&v=1.8.0&c=LeChenMusic&id=pl-${pls.id}`}
+                      alt={pls.name}
+                      className={classes.cover}
+                      onError={(e) => {
+                        e.target.style.display = 'none'
+                        e.target.nextElementSibling.style.display = 'flex'
+                      }}
+                    />
+                    <Box className={classes.cover} style={{ display: 'none', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' }}>
+                      <QueueMusicIcon style={{ fontSize: 32, color: 'white', opacity: 0.8 }} />
+                    </Box>
+                  </Box>
+                  <CardContent className={classes.audiobookContent}>
+                    <Typography className={classes.audiobookTitle}>{pls.name}</Typography>
+                    <Typography className={classes.audiobookSub}>
+                      {pls.songCount || 0}首 · {formatDuration(pls.duration)}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              ))}
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {/* Audiobooks Tab */}
+      {tab === 3 && (
         <Box>
           {starredAudiobooks.length === 0 ? (
             <Box className={classes.empty}>
