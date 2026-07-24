@@ -35,7 +35,16 @@ func (h *backupHandler) export(w http.ResponseWriter, r *http.Request) {
 	filename := "backup-" + time.Now().Format("2006-01-02-150405") + ".json"
 	outputPath := filepath.Join(backupDir, filename)
 
-	result, err := backup.Export(r.Context(), h.ds, outputPath, "dev")
+	// 从请求体读取备份选项
+	opts := backup.DefaultBackupOptions()
+	if r.Body != nil {
+		var reqOpts backup.BackupOptions
+		if err := json.NewDecoder(r.Body).Decode(&reqOpts); err == nil {
+			opts = reqOpts
+		}
+	}
+
+	result, err := backup.Export(r.Context(), h.ds, outputPath, "dev", &opts)
 	if err != nil {
 		log.Error(r.Context(), "Backup export failed", err)
 		http.Error(w, err.Error(), 500)

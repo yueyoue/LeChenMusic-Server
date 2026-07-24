@@ -157,7 +157,9 @@ func ByRating() Options {
 }
 
 func ByStarred() Options {
-	return addDefaultFilters(Options{Sort: "starred_at", Order: "desc", Filters: Eq{"starred": true}})
+	// 收藏查询不加 missing 过滤，避免数据库缺少该列时报错
+	// 收藏是用户主动操作，不需要过滤 missing 状态
+	return Options{Sort: "starred_at", Order: "desc", Filters: Eq{"starred": true}}
 }
 
 func ArtistsByStarred() Options {
