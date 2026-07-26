@@ -43,6 +43,13 @@ const BackupPage = () => {
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [importFile, setImportFile] = useState(null)
   const [importing, setImporting] = useState(false)
+  const [backupOptions, setBackupOptions] = useState({
+    include_music_meta: true,
+    include_audiobook_meta: true,
+    include_starred: true,
+    include_playlists: true,
+    include_progress: true,
+  })
 
   const getToken = () => localStorage.getItem('token')
 
@@ -80,7 +87,11 @@ const BackupPage = () => {
     try {
       const res = await fetch('/api/backup/export', {
         method: 'POST',
-        headers: { 'X-ND-Authorization': 'Bearer ' + getToken() },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-ND-Authorization': 'Bearer ' + getToken(),
+        },
+        body: JSON.stringify(backupOptions),
       })
       const data = await res.json()
       if (data.data) {
@@ -182,9 +193,34 @@ const BackupPage = () => {
                 恢复备份
               </Button>
             </Box>
-            <Typography variant="body2" color="textSecondary" style={{ marginTop: 8 }}>
-              备份内容：用户账号（含密码）、歌单、收藏、有声书进度和书签
-            </Typography>
+            <Box style={{ marginTop: 12 }}>
+              <Typography variant="body2" style={{ fontWeight: 600, marginBottom: 8 }}>备份内容选择：</Typography>
+              <Box style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {[
+                  { key: 'include_music_meta', label: '🎵 音乐元数据（歌手/专辑/歌曲）' },
+                  { key: 'include_audiobook_meta', label: '📖 有声书元数据（书目/章节）' },
+                  { key: 'include_starred', label: '⭐ 收藏（歌曲/专辑/歌手/有声书）' },
+                  { key: 'include_playlists', label: '📋 歌单' },
+                  { key: 'include_progress', label: '⏱️ 有声书进度和书签' },
+                ].map(({ key, label }) => (
+                  <FormControlLabel
+                    key={key}
+                    control={
+                      <Checkbox
+                        checked={backupOptions[key]}
+                        onChange={(e) => setBackupOptions({ ...backupOptions, [key]: e.target.checked })}
+                        color="primary"
+                        size="small"
+                      />
+                    }
+                    label={label}
+                  />
+                ))}
+              </Box>
+              <Typography variant="body2" color="textSecondary" style={{ marginTop: 4 }}>
+                用户账号和媒体库配置始终包含在备份中
+              </Typography>
+            </Box>
           </CardContent>
         </Card>
 

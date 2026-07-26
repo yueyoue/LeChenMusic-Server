@@ -23,6 +23,7 @@ func (api *Router) addAppManageRoute(r chi.Router) {
 		r.Post("/apk", h.uploadApk)
 		r.Get("/apk/download", h.downloadApk)
 		r.Get("/apk/info", h.getApkInfo)
+		r.Get("/version/check", h.checkAppVersion)
 		r.Post("/splash", h.uploadSplash)
 		r.Post("/slide", h.addSlide)                        // Legacy: adds to music slides
 		r.Post("/slide/music", h.addMusicSlide)              // Music homepage slide
@@ -172,6 +173,37 @@ func (h *appManageHandler) getApkInfo(w http.ResponseWriter, r *http.Request) {
 			"updateLog":   config.UpdateLog,
 			"forceUpdate": config.ForceUpdate,
 			"downloadUrl": "/api/app/apk/download",
+		},
+	})
+}
+
+// checkAppVersion returns version check info for the APP client
+func (h *appManageHandler) checkAppVersion(w http.ResponseWriter, r *http.Request) {
+	config := loadAppConfig()
+	// Get current client version from query params
+	clientVersionCode := 0
+	fmt.Sscanf(r.URL.Query().Get("currentVersionCode"), "%d", &clientVersionCode)
+
+	hasUpdate := config.VersionCode > 0 && config.VersionCode > clientVersionCode
+
+	apkDir := getAppUploadDir()
+	apkPath := filepath.Join(apkDir, "app-release.apk")
+	apkExists := false
+	if info, err := os.Stat(apkPath); err == nil && info.Size() > 0 {
+		apkExists = true
+	}
+
+	writeJSON(w, map[string]any{
+		"data": map[string]any{
+			"hasUpdate":     hasUpdate,
+			"latestVersion":  config.VersionName,
+			"latestCode":     config.VersionCode,
+			"updateLog":      config.UpdateLog,
+			"forceUpdate":    config.ForceUpdate,
+			"apkAvailable":   apkExists,
+			"downloadUrl":    "/api/app/apk/download",
+			"fileSize":       config.ApkFileSize,
+			"uploadTime":     config.ApkUploadTime,
 		},
 	})
 }

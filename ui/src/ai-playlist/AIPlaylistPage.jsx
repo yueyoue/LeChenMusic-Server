@@ -68,6 +68,7 @@ const AIPlaylistPage = () => {
   const [coverTheme, setCoverTheme] = useState('')
   const [coverEnabled, setCoverEnabled] = useState(true)
   const [coverPreviewUrl, setCoverPreviewUrl] = useState(null)
+  const [importedCoverUrl, setImportedCoverUrl] = useState('')
   const [themes, setThemes] = useState([])
   const [sources, setSources] = useState(['酷我', '网易云', 'QQ音乐', '酷狗'])
 
@@ -112,6 +113,7 @@ const AIPlaylistPage = () => {
     setLoading(true)
     setResults(null)
     setCreated(null)
+    setImportedCoverUrl('')
     try {
       const res = await fetch('/api/ai-playlist/from-url', {
         method: 'POST',
@@ -123,6 +125,9 @@ const AIPlaylistPage = () => {
         setResults(data)
         setSelectedSongs(new Set(data.matched.map((_, i) => i)))
         setPlaylistName(data.playlistName || '导入歌单')
+        if (data.coverURL) {
+          setImportedCoverUrl(data.coverURL)
+        }
       }
     } catch (err) {
       console.error('Import failed:', err)
@@ -152,7 +157,8 @@ const AIPlaylistPage = () => {
           name: playlistName,
           songIds,
           coverTheme,
-          coverEnabled,
+          coverEnabled: importedCoverUrl ? false : coverEnabled,
+          coverURL: importedCoverUrl || '',
         }),
       })
       if (res.ok) {
@@ -343,6 +349,12 @@ const AIPlaylistPage = () => {
             <Box className={classes.createSection}>
               <Typography style={{ fontWeight: 600 }}>📋 创建歌单</Typography>
               <Box className={classes.createRow}>
+                {importedCoverUrl && (
+                  <Box style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                    <img src={importedCoverUrl} alt="封面" className={classes.coverPreview} />
+                    <Typography style={{ fontSize: 11, color: 'text.secondary' }}>原歌单封面</Typography>
+                  </Box>
+                )}
                 <TextField
                   size="small"
                   variant="outlined"
@@ -351,6 +363,7 @@ const AIPlaylistPage = () => {
                   onChange={(e) => setPlaylistName(e.target.value)}
                   style={{ flex: 1 }}
                 />
+                {!importedCoverUrl && (<>
                 <FormControl variant="outlined" size="small" className={classes.themeSelect}>
                   <InputLabel>封面风格</InputLabel>
                   <Select
@@ -366,6 +379,7 @@ const AIPlaylistPage = () => {
                   control={<Checkbox checked={coverEnabled} onChange={(e) => setCoverEnabled(e.target.checked)} color="primary" />}
                   label="生成封面"
                 />
+                </>)}
                 <Button
                   variant="contained"
                   color="primary"

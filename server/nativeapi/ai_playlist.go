@@ -60,10 +60,11 @@ type searchResponse struct {
 }
 
 type createPlaylistRequest struct {
-	Name        string   `json:"name"`
-	SongIDs     []string `json:"songIds"`
-	CoverTheme string   `json:"coverTheme,omitempty"`
-	CoverEnabled bool   `json:"coverEnabled"`
+	Name         string   `json:"name"`
+	SongIDs      []string `json:"songIds"`
+	CoverTheme   string   `json:"coverTheme,omitempty"`
+	CoverEnabled bool     `json:"coverEnabled"`
+	CoverURL     string   `json:"coverURL,omitempty"`
 }
 
 // ==================== 搜索引擎 ====================
@@ -266,10 +267,10 @@ func parsePlaylistURL(url string) (platform, id string) {
 	return "", ""
 }
 
-func fetchPlaylistFromURL(url string) (string, []externalSong, error) {
+func fetchPlaylistFromURL(url string) (string, string, []externalSong, error) {
 	platform, pid := parsePlaylistURL(url)
 	if platform == "" || pid == "" {
-		return "", nil, fmt.Errorf("无法识别此链接格式，请确认是网易云/QQ音乐/酷我/酷狗的歌单链接")
+		return "", "", nil, fmt.Errorf("无法识别此链接格式，请确认是网易云/QQ音乐/酷我/酷狗的歌单链接")
 	}
 	switch platform {
 	case "netease":
@@ -281,23 +282,24 @@ func fetchPlaylistFromURL(url string) (string, []externalSong, error) {
 	case "kugou":
 		return fetchKugouPlaylist(pid)
 	}
-	return "", nil, fmt.Errorf("不支持的平台: %s", platform)
+	return "", "", nil, fmt.Errorf("不支持的平台: %s", platform)
 }
 
-func fetchNeteasePlaylist(pid string) (string, []externalSong, error) {
+func fetchNeteasePlaylist(pid string) (string, string, []externalSong, error) {
 	url := fmt.Sprintf("http://music.163.com/api/playlist/detail?id=%s", pid)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Referer", "https://music.163.com/")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	defer resp.Body.Close()
 	var result struct {
 		Playlist struct {
-			Name   string `json:"name"`
-			Tracks []struct {
+			Name        string `json:"name"`
+			CoverImgURL string `json:"coverImgUrl"`
+			Tracks      []struct {
 				Name    string `json:"name"`
 				Artists []struct {
 					Name string `json:"name"`
@@ -309,12 +311,13 @@ func fetchNeteasePlaylist(pid string) (string, []externalSong, error) {
 		} `json:"playlist"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	name := result.Playlist.Name
 	if name == "" {
 		name = "网易云歌单"
 	}
+	coverURL := result.Playlist.CoverImgURL
 	var songs []externalSong
 	for _, t := range result.Playlist.Tracks {
 		artists := make([]string, len(t.Artists))
@@ -326,23 +329,24 @@ func fetchNeteasePlaylist(pid string) (string, []externalSong, error) {
 			songs = append(songs, externalSong{Title: t.Name, Artist: artist, Album: t.Album.Name, Source: "网易云"})
 		}
 	}
-	return name, songs, nil
+	return name, coverURL, songs, nil
 }
 
-func fetchQQPlaylist(pid string) (string, []externalSong, error) {
+func fetchQQPlaylist(pid string) (string, string, []externalSong, error) {
 	url := fmt.Sprintf("https://c.y.qq.com/v8/fcg-bin/fcg_v8_playlist_cp.fcg?disstid=%s&type=1&json=1&utf8=1&onlysong=0&new_format=1&loginUin=0&hostUin=0&format=json&inCharset=utf-8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0", pid)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Referer", "https://y.qq.com/")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	defer resp.Body.Close()
 	var result struct {
 		Data struct {
 			Cdlist []struct {
 				Dissname string `json:"dissname"`
+				Logo     string `json:"logo"`
 				Songlist []struct {
 					Name      string `json:"name"`
 					SongName  string `json:"songname"`
@@ -359,16 +363,17 @@ func fetchQQPlaylist(pid string) (string, []externalSong, error) {
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	if len(result.Data.Cdlist) == 0 {
-		return "QQ音乐歌单", nil, nil
+		return "QQ音乐歌单", "", nil, nil
 	}
 	cd := result.Data.Cdlist[0]
 	name := cd.Dissname
 	if name == "" {
 		name = "QQ音乐歌单"
 	}
+	coverURL := cd.Logo
 	var songs []externalSong
 	for _, item := range cd.Songlist {
 		title := item.Name
@@ -393,14 +398,14 @@ func fetchQQPlaylist(pid string) (string, []externalSong, error) {
 			songs = append(songs, externalSong{Title: title, Artist: artist, Album: album, Source: "QQ音乐"})
 		}
 	}
-	return name, songs, nil
+	return name, coverURL, songs, nil
 }
 
-func fetchKuwoPlaylist(pid string) (string, []externalSong, error) {
+func fetchKuwoPlaylist(pid string) (string, string, []externalSong, error) {
 	url := fmt.Sprintf("http://www.kuwo.cn/playlist_detail/%s", pid)
 	resp, err := httpClient.Get(url)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
@@ -412,6 +417,19 @@ func fetchKuwoPlaylist(pid string) (string, []externalSong, error) {
 		parts := strings.Split(m[1], "_")
 		if len(parts) > 0 {
 			name = strings.TrimSpace(parts[0])
+		}
+	}
+
+	// 提取封面图
+	coverURL := ""
+	coverRe := regexp.MustCompile(`class="imgbox"[^>]*>\s*<img[^>]*src="([^"]+)"`)
+	if cm := coverRe.FindStringSubmatch(text); len(cm) > 1 {
+		coverURL = cm[1]
+	}
+	if coverURL == "" {
+		coverRe2 := regexp.MustCompile(`<meta[^>]*property="og:image"[^>]*content="([^"]+)"`)
+		if cm2 := coverRe2.FindStringSubmatch(text); len(cm2) > 1 {
+			coverURL = cm2[1]
 		}
 	}
 
@@ -440,14 +458,14 @@ func fetchKuwoPlaylist(pid string) (string, []externalSong, error) {
 			songs = append(songs, externalSong{Title: songName, Artist: artist, Source: "酷我"})
 		}
 	}
-	return name, songs, nil
+	return name, coverURL, songs, nil
 }
 
-func fetchKugouPlaylist(pid string) (string, []externalSong, error) {
+func fetchKugouPlaylist(pid string) (string, string, []externalSong, error) {
 	url := fmt.Sprintf("http://mobilecdn.kugou.com/api/v3/special/song?specialid=%s&page=1&pagesize=100&plat=2&version=8970", pid)
 	resp, err := httpClient.Get(url)
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	defer resp.Body.Close()
 	var result struct {
@@ -459,7 +477,7 @@ func fetchKugouPlaylist(pid string) (string, []externalSong, error) {
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	var songs []externalSong
 	for _, item := range result.Data.Info {
@@ -471,7 +489,7 @@ func fetchKugouPlaylist(pid string) (string, []externalSong, error) {
 			songs = append(songs, externalSong{Title: title, Artist: item.SingerName, Source: "酷狗"})
 		}
 	}
-	return "酷狗歌单", songs, nil
+	return "酷狗歌单", "", songs, nil
 }
 
 // ==================== 曲库匹配 ====================
@@ -735,7 +753,7 @@ func (api *Router) aiPlaylistFromURL(w http.ResponseWriter, r *http.Request) {
 
 	log.Info(r.Context(), "AI Playlist: Importing from URL", "url", req.URL)
 
-	playlistName, urlSongs, err := fetchPlaylistFromURL(req.URL)
+	playlistName, coverURL, urlSongs, err := fetchPlaylistFromURL(req.URL)
 	if err != nil {
 		http.Error(w, err.Error(), 400)
 		return
@@ -761,6 +779,7 @@ func (api *Router) aiPlaylistFromURL(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, map[string]any{
 		"playlistName":  playlistName,
+		"coverURL":      coverURL,
 		"source":        urlSongs[0].Source,
 		"searchTotal":   len(urlSongs),
 		"matched":       matched,
@@ -797,8 +816,18 @@ func (api *Router) aiPlaylistCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate and set cover if enabled
-	if req.CoverEnabled {
+	// Set cover: prefer imported cover URL, fallback to generated cover
+	if req.CoverURL != "" {
+		coverResp, err := httpClient.Get(req.CoverURL)
+		if err == nil {
+			defer coverResp.Body.Close()
+			if coverResp.StatusCode == 200 {
+				if err := pls.SetImage(r.Context(), plID, coverResp.Body, "jpg"); err != nil {
+					log.Warn(r.Context(), "AI Playlist: Set imported cover failed", "error", err)
+				}
+			}
+		}
+	} else if req.CoverEnabled {
 		coverData, err := generatePlaylistCover(req.Name, len(req.SongIDs), req.CoverTheme)
 		if err != nil {
 			log.Warn(r.Context(), "AI Playlist: Cover generation failed", "error", err)
