@@ -240,6 +240,7 @@ var allSearchers = []struct {
 	{"网易云", searchNetease},
 	{"QQ音乐", searchQQ},
 	{"酷狗", searchKugou},
+	{"汽水音乐", searchQishui},
 }
 
 // ==================== 歌单链接解析 ====================
@@ -256,6 +257,8 @@ var playlistURLPatterns = []struct {
 	{"kuwo", regexp.MustCompile(`kuwo\.cn.*?pid=(\d+)`)},
 	{"kugou", regexp.MustCompile(`kugou\.com.*?special/(\d+)`)},
 	{"kugou", regexp.MustCompile(`kugou\.com.*?code=(\w+)`)},
+	{"qishui", regexp.MustCompile(`music\.douyin\.com/qishui/share/playlist\?.*?playlist_id=(\d+)`)},
+	{"qishui", regexp.MustCompile(`qishui\.douyin\.com/s/(\w+)`)},
 }
 
 func parsePlaylistURL(url string) (platform, id string) {
@@ -268,9 +271,16 @@ func parsePlaylistURL(url string) (platform, id string) {
 }
 
 func fetchPlaylistFromURL(url string) (string, string, []externalSong, error) {
+	// 汽水音乐短链接需要先解析
+	if strings.Contains(url, "qishui.douyin.com/s/") {
+		realURL, err := resolveQishuiShortURL(url)
+		if err == nil {
+			url = realURL
+		}
+	}
 	platform, pid := parsePlaylistURL(url)
 	if platform == "" || pid == "" {
-		return "", "", nil, fmt.Errorf("无法识别此链接格式，请确认是网易云/QQ音乐/酷我/酷狗的歌单链接")
+		return "", "", nil, fmt.Errorf("无法识别此链接格式，请确认是网易云/QQ音乐/酷我/酷狗/汽水音乐的歌单链接")
 	}
 	switch platform {
 	case "netease":
@@ -281,6 +291,8 @@ func fetchPlaylistFromURL(url string) (string, string, []externalSong, error) {
 		return fetchKuwoPlaylist(pid)
 	case "kugou":
 		return fetchKugouPlaylist(pid)
+	case "qishui":
+		return fetchQishuiPlaylist(pid)
 	}
 	return "", "", nil, fmt.Errorf("不支持的平台: %s", platform)
 }
@@ -490,6 +502,166 @@ func fetchKugouPlaylist(pid string) (string, string, []externalSong, error) {
 		}
 	}
 	return "酷狗歌单", "", songs, nil
+}
+
+// ==================== 汽水音乐 ====================
+
+func searchQishui(keyword string, limit int) []externalSong {
+	var songs []externalSong
+	// 汽水音乐 Web 搜索 API
+	searchURL := fmt.Sprintf("https://music.douyin.com/qishui/share/search?keyword=%s&count=%d", keyword, limit)
+	req, _ := http.NewRequest("GET", searchURL, nil)
+	req.Header.Set("Referer", "https://music.douyin.com/")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		log.Warn("AI Playlist: Qishui search failed", "error", err)
+		return songs
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Data struct {
+			SongList []struct {
+				Title  string `json:"title"`
+				Author string `json:"author"`
+				Album  string `json:"album"`
+			} `json:"song_list"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		// 尝试备用解析：从HTML提取
+		text := string(body)
+		titleRe := regexp.MustCompile(`"title":"([^"]+)"`)
+		artistRe := regexp.MustCompile(`"author":"([^"]+)"`)
+		titles := titleRe.FindAllStringSubmatch(text, -1)
+		artists := artistRe.FindAllStringSubmatch(text, -1)
+		for i := 0; i < len(titles) && i < limit; i++ {
+			title := titles[i][1]
+			artist := ""
+			if i < len(artists) {
+				artist = artists[i][1]
+			}
+			if title != "" {
+				songs = append(songs, externalSong{Title: title, Artist: artist, Source: "汽水音乐"})
+			}
+		}
+		return songs
+	}
+	for _, item := range result.Data.SongList {
+		if item.Title != "" {
+			songs = append(songs, externalSong{Title: item.Title, Artist: item.Author, Source: "汽水音乐"})
+		}
+	}
+	return songs
+}
+
+// resolveQishuiShortURL 解析汽水音乐短链接获取真实URL
+func resolveQishuiShortURL(shortURL string) (string, error) {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // 不自动跟随重定向
+		},
+	}
+	resp, err := client.Get(shortURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	location := resp.Header.Get("Location")
+	if location != "" {
+		return location, nil
+	}
+	// 如果没有重定向，从页面中提取
+	body, _ := io.ReadAll(resp.Body)
+	text := string(body)
+	re := regexp.MustCompile(`https?://music\.douyin\.com/qishui/share/playlist\?playlist_id=(\d+)`)
+	if m := re.FindStringSubmatch(text); len(m) > 1 {
+		return m[0], nil
+	}
+	return "", fmt.Errorf("无法解析短链接")
+}
+
+func fetchQishuiPlaylist(pid string) (string, string, []externalSong, error) {
+	url := fmt.Sprintf("https://music.douyin.com/qishui/share/playlist?playlist_id=%s", pid)
+	req, _ := http.NewRequest("GET", url, nil)
+	req.Header.Set("Referer", "https://music.douyin.com/")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", "", nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	text := string(body)
+
+	// 提取歌单名称
+	name := "汽水音乐歌单"
+	nameRe := regexp.MustCompile(`"playlist_name":"([^"]+)"`)
+	if m := nameRe.FindStringSubmatch(text); len(m) > 1 {
+		name = m[1]
+	}
+	if name == "汽水音乐歌单" {
+		titleRe := regexp.MustCompile(`<title>(.*?)</title>`)
+		if m := titleRe.FindStringSubmatch(text); len(m) > 1 {
+			t := strings.TrimSpace(m[1])
+			if t != "" && t != "汽水音乐" {
+				name = t
+			}
+		}
+	}
+
+	// 提取封面
+	coverURL := ""
+	coverRe := regexp.MustCompile(`"cover_url":"([^"]+)"`)
+	if m := coverRe.FindStringSubmatch(text); len(m) > 1 {
+		coverURL = m[1]
+	}
+	if coverURL == "" {
+		ogImageRe := regexp.MustCompile(`<meta[^>]*property="og:image"[^>]*content="([^"]+)"`)
+		if m := ogImageRe.FindStringSubmatch(text); len(m) > 1 {
+			coverURL = m[1]
+		}
+	}
+
+	// 提取歌曲列表
+	var songs []externalSong
+	// 方式1: JSON数据
+	songListRe := regexp.MustCompile(`"song_list":\[\{(.*?)\}\]`)
+	if m := songListRe.FindStringSubmatch(text); len(m) > 0 {
+		// 解析JSON数组
+		arrText := "[{" + m[1] + "}]"
+		var items []struct {
+			Title  string `json:"title"`
+			Author string `json:"author"`
+			Album  string `json:"album"`
+		}
+		if json.Unmarshal([]byte(arrText), &items) == nil {
+			for _, item := range items {
+				if item.Title != "" {
+					songs = append(songs, externalSong{Title: item.Title, Artist: item.Author, Album: item.Album, Source: "汽水音乐"})
+				}
+			}
+		}
+	}
+	// 方式2: 正则提取
+	if len(songs) == 0 {
+		titles := regexp.MustCompile(`"title":"([^"]{2,80})"`).FindAllStringSubmatch(text, -1)
+		artists := regexp.MustCompile(`"author":"([^"]{1,60})"`).FindAllStringSubmatch(text, -1)
+		for i := 0; i < len(titles); i++ {
+			title := titles[i][1]
+			artist := ""
+			if i < len(artists) {
+				artist = artists[i][1]
+			}
+			if title != "汽水音乐" && title != name {
+				songs = append(songs, externalSong{Title: title, Artist: artist, Source: "汽水音乐"})
+			}
+		}
+	}
+
+	return name, coverURL, songs, nil
 }
 
 // ==================== 曲库匹配 ====================

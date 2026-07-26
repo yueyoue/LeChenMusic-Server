@@ -70,7 +70,7 @@ const AIPlaylistPage = () => {
   const [coverPreviewUrl, setCoverPreviewUrl] = useState(null)
   const [importedCoverUrl, setImportedCoverUrl] = useState('')
   const [themes, setThemes] = useState([])
-  const [sources, setSources] = useState(['酷我', '网易云', 'QQ音乐', '酷狗'])
+  const [sources, setSources] = useState(['酷我', '网易云', 'QQ音乐', '酷狗', '汽水音乐'])
 
   const getToken = () => localStorage.getItem('token')
   const getHeaders = () => ({ 'X-ND-Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' })
@@ -214,7 +214,7 @@ const AIPlaylistPage = () => {
           </Button>
         </Box>
         <Box className={classes.sourceChips}>
-          {['酷我', '网易云', 'QQ音乐', '酷狗'].map(src => (
+          {['酷我', '网易云', 'QQ音乐', '酷狗', '汽水音乐'].map(src => (
             <Chip
               key={src}
               label={src}
@@ -235,7 +235,7 @@ const AIPlaylistPage = () => {
             className={classes.searchInput}
             size="small"
             variant="outlined"
-            placeholder="粘贴网易云/QQ音乐/酷我/酷狗歌单链接..."
+            placeholder="粘贴网易云/QQ音乐/酷我/酷狗/汽水音乐歌单链接..."
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleImportURL()}
@@ -417,10 +417,93 @@ const AIPlaylistPage = () => {
           <MusicNoteIcon style={{ fontSize: 64, opacity: 0.2 }} />
           <Typography style={{ marginTop: 16, fontSize: 16 }}>输入歌单主题或粘贴歌单链接开始</Typography>
           <Typography style={{ marginTop: 8, fontSize: 13, color: 'text.secondary' }}>
-            支持酷我、网易云、QQ音乐、酷狗平台搜索
+            支持酷我、网易云、QQ音乐、酷狗、汽水音乐平台搜索
           </Typography>
         </Box>
       )}
+
+      {/* 使用教程 */}
+      <Card style={{ marginTop: 24, padding: '16px 20px' }} elevation={1}>
+        <Typography variant="h6" gutterBottom style={{ fontWeight: 700, fontSize: 16 }}>
+          📖 各平台歌单采集教程
+        </Typography>
+        <Box style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginTop: 12 }}>
+          {/* 网易云音乐 */}
+          <Box style={{ padding: 12, border: '1px solid #e0e0e0', borderRadius: 8 }}>
+            <Typography style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: '#e94560' }}>
+              🎵 网易云音乐
+            </Typography>
+            <Typography style={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.8 }}>
+              1. 打开网易云音乐APP或网页版<br/>
+              2. 进入要采集的歌单页面<br/>
+              3. 点击「分享」→「复制链接」<br/>
+              4. 链接格式：<code>music.163.com/playlist?id=数字</code>
+            </Typography>
+          </Box>
+          {/* QQ音乐 */}
+          <Box style={{ padding: 12, border: '1px solid #e0e0e0', borderRadius: 8 }}>
+            <Typography style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: '#2ed573' }}>
+              🎵 QQ音乐
+            </Typography>
+            <Typography style={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.8 }}>
+              1. 打开QQ音乐APP或网页版<br/>
+              2. 进入歌单页面，点击「分享」<br/>
+              3. 选择「复制链接」<br/>
+              4. 链接格式：<code>y.qq.com/n/ryqq/playlist/数字</code>
+            </Typography>
+          </Box>
+          {/* 酷我音乐 */}
+          <Box style={{ padding: 12, border: '1px solid #e0e0e0', borderRadius: 8 }}>
+            <Typography style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: '#f39c12' }}>
+              🎵 酷我音乐
+            </Typography>
+            <Typography style={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.8 }}>
+              1. 打开酷我音乐APP或网页版<br/>
+              2. 进入歌单页面<br/>
+              3. 点击「分享」→「复制链接」<br/>
+              4. 链接格式：<code>kuwo.cn/playlist_detail/数字</code>
+            </Typography>
+          </Box>
+          {/* 酷狗音乐 */}
+          <Box style={{ padding: 12, border: '1px solid #e0e0e0', borderRadius: 8 }}>
+            <Typography style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: '#5352ed' }}>
+              🎵 酷狗音乐
+            </Typography>
+            <Typography style={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.8 }}>
+              1. 打开酷狗音乐APP或网页版<br/>
+              2. 进入歌单页面<br/>
+              3. 点击「分享」→「复制链接」<br/>
+              4. 链接格式：<code>kugou.com/special/数字</code>
+            </Typography>
+          </Box>
+          {/* 汽水音乐 */}
+          <Box style={{ padding: 12, border: '1px solid #e0e0e0', borderRadius: 8 }}>
+            <Typography style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: '#00b894' }}>
+              🎵 汽水音乐
+            </Typography>
+            <Typography style={{ fontSize: 12, color: 'text.secondary', lineHeight: 1.8 }}>
+              1. 打开汽水音乐APP<br/>
+              2. 进入歌单页面，点击「分享」<br/>
+              3. 选择「复制链接」<br/>
+              4. 链接格式：<code>qishui.douyin.com/s/短链</code><br/>
+              &nbsp;&nbsp;或 <code>music.douyin.com/qishui/share/playlist?playlist_id=数字</code>
+            </Typography>
+          </Box>
+          {/* 提示 */}
+          <Box style={{ padding: 12, border: '1px solid #bbdefb', borderRadius: 8, backgroundColor: '#e3f2fd' }}>
+            <Typography style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, color: '#1976d2' }}>
+              💡 温馨提示
+            </Typography>
+            <Typography style={{ fontSize: 12, color: '#424242', lineHeight: 1.8 }}>
+              • 粘贴链接后自动识别平台并采集歌曲列表<br/>
+              • 采集到的歌曲会与本地曲库智能匹配<br/>
+              • 支持模糊匹配（歌名包含即可）<br/>
+              • 匹配成功的歌曲可一键创建为本地歌单<br/>
+              • 网易云/QQ音乐同时支持采集歌单封面
+            </Typography>
+          </Box>
+        </Box>
+      </Card>
     </Box>
   )
 }
