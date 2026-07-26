@@ -23,6 +23,7 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Checkbox,
 } from '@material-ui/core'
 import { Alert } from '@material-ui/lab'
 import SettingsIcon from '@material-ui/icons/Settings'
