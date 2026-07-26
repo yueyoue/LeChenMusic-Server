@@ -135,13 +135,26 @@ const BackupPage = () => {
           file_path: importFile.path,
           import_users: true,
           overwrite_users: true,
+          import_playlists: true,
+          import_starred: true,
+          import_progress: true,
+          import_music_meta: true,
+          import_audiobook_meta: true,
         }),
       })
       const data = await res.json()
       if (data.data) {
         const r = data.data
         notify(
-          '恢复成功! 用户:' + r.users_imported + ' 歌单:' + r.playlists_imported + ' 收藏:' + r.annotations_imported,
+          '恢复成功! 用户:' + r.users_imported +
+          ' 歌手:' + r.artists_imported +
+          ' 专辑:' + r.albums_imported +
+          ' 歌曲:' + r.songs_imported +
+          ' 有声书:' + r.audiobooks_imported +
+          ' 歌单:' + r.playlists_imported +
+          ' 收藏:' + r.starred_imported +
+          ' 进度:' + r.progress_imported +
+          ' 电台:' + r.radios_imported,
           'success'
         )
         setImportDialogOpen(false)

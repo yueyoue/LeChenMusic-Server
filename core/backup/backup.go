@@ -39,6 +39,8 @@ type BackupData struct {
 	// 有声书元数据
 	Audiobooks        []model.Audiobook           `json:"audiobooks,omitempty"`
 	AudiobookChapters []model.AudiobookChapter    `json:"audiobook_chapters,omitempty"`
+	// 电台
+	Radios            []model.Radio               `json:"radios,omitempty"`
 }
 
 // BackupOptions controls what data to include in the backup
@@ -194,6 +196,11 @@ func Export(ctx context.Context, ds model.DataStore, outputPath string, serverVe
 		log.Info(ctx, "Backup: exported chapters", "count", len(backup.AudiobookChapters))
 	}
 
+	// Radio stations (always included)
+	allRadios, _ := ds.Radio(ctx).GetAll()
+	backup.Radios = allRadios
+	log.Info(ctx, "Backup: exported radios", "count", len(allRadios))
+
 	// Write to file
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
 		return nil, fmt.Errorf("create backup dir: %w", err)
@@ -237,7 +244,7 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 	result := &ImportResult{}
 	log.Info(ctx, "Starting restore", "version", backup.Version, "created", backup.CreatedAt)
 
-	// Import users
+	// 1. Import users
 	if opts.ImportUsers {
 		for _, ub := range backup.Users {
 			existing, _ := ds.User(ctx).FindByUsername(ub.UserName)
@@ -259,7 +266,61 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 		}
 	}
 
-	// Import playlists
+	// 2. Import music metadata (artists → albums → songs)
+	if opts.ImportMusicMeta {
+		// Artists
+		for i := range backup.Artists {
+			if err := ds.Artist(ctx).Put(&backup.Artists[i]); err != nil {
+				log.Debug(ctx, "Restore: failed to import artist", "name", backup.Artists[i].Name, err)
+			} else {
+				result.ArtistsImported++
+			}
+		}
+		log.Info(ctx, "Restore: artists imported", "count", result.ArtistsImported)
+
+		// Albums
+		for i := range backup.Albums {
+			if err := ds.Album(ctx).Put(&backup.Albums[i]); err != nil {
+				log.Debug(ctx, "Restore: failed to import album", "name", backup.Albums[i].Name, err)
+			} else {
+				result.AlbumsImported++
+			}
+		}
+		log.Info(ctx, "Restore: albums imported", "count", result.AlbumsImported)
+
+		// Songs (media files)
+		for i := range backup.MediaFiles {
+			if err := ds.MediaFile(ctx).Put(&backup.MediaFiles[i]); err != nil {
+				log.Debug(ctx, "Restore: failed to import song", "title", backup.MediaFiles[i].Title, err)
+			} else {
+				result.SongsImported++
+			}
+		}
+		log.Info(ctx, "Restore: songs imported", "count", result.SongsImported)
+	}
+
+	// 3. Import audiobook metadata (books → chapters)
+	if opts.ImportAudiobookMeta {
+		for i := range backup.Audiobooks {
+			if err := ds.Audiobook(ctx).Put(&backup.Audiobooks[i]); err != nil {
+				log.Debug(ctx, "Restore: failed to import audiobook", "title", backup.Audiobooks[i].Title, err)
+			} else {
+				result.AudiobooksImported++
+			}
+		}
+		log.Info(ctx, "Restore: audiobooks imported", "count", result.AudiobooksImported)
+
+		for i := range backup.AudiobookChapters {
+			if err := ds.Audiobook(ctx).PutChapter(&backup.AudiobookChapters[i]); err != nil {
+				log.Debug(ctx, "Restore: failed to import chapter", "title", backup.AudiobookChapters[i].Title, err)
+			} else {
+				result.ChaptersImported++
+			}
+		}
+		log.Info(ctx, "Restore: chapters imported", "count", result.ChaptersImported)
+	}
+
+	// 4. Import playlists (depends on songs existing)
 	if opts.ImportPlaylists {
 		for _, pb := range backup.Playlists {
 			pl := pb.Playlist
@@ -274,7 +335,7 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 		}
 	}
 
-	// Import starred items
+	// 5. Import starred items (depends on songs/albums/artists existing)
 	if opts.ImportStarred {
 		if len(backup.StarredSongIDs) > 0 {
 			ds.MediaFile(ctx).SetStar(true, backup.StarredSongIDs...)
@@ -297,7 +358,7 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 		result.StarredImported += len(backup.StarredAudiobookIDs)
 	}
 
-	// Import audiobook progress
+	// 6. Import audiobook progress and bookmarks
 	if opts.ImportProgress {
 		for _, p := range backup.AudiobookProgress {
 			if err := ds.Audiobook(ctx).SaveProgress(&p); err != nil {
@@ -315,8 +376,26 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 		}
 	}
 
-	log.Info(ctx, "Restore completed", "users", result.UsersImported,
-		"playlists", result.PlaylistsImported, "starred", result.StarredImported)
+	// 7. Import radio stations
+	for i := range backup.Radios {
+		if err := ds.Radio(ctx).Put(&backup.Radios[i]); err != nil {
+			log.Debug(ctx, "Restore: failed to import radio", "name", backup.Radios[i].Name, err)
+		} else {
+			result.RadiosImported++
+		}
+	}
+
+	log.Info(ctx, "Restore completed",
+		"users", result.UsersImported,
+		"artists", result.ArtistsImported,
+		"albums", result.AlbumsImported,
+		"songs", result.SongsImported,
+		"audiobooks", result.AudiobooksImported,
+		"chapters", result.ChaptersImported,
+		"playlists", result.PlaylistsImported,
+		"starred", result.StarredImported,
+		"progress", result.ProgressImported,
+		"radios", result.RadiosImported)
 
 	return result, nil
 }
@@ -336,21 +415,29 @@ type ExportResult struct {
 
 // ImportOptions controls restore behavior
 type ImportOptions struct {
-	FilePath       string `json:"file_path"`
-	ImportUsers    bool   `json:"import_users"`
-	OverwriteUsers bool   `json:"overwrite_users"`
-	ImportPlaylists bool  `json:"import_playlists"`
-	ImportStarred   bool  `json:"import_starred"`
-	ImportProgress  bool  `json:"import_progress"`
+	FilePath           string `json:"file_path"`
+	ImportUsers        bool   `json:"import_users"`
+	OverwriteUsers     bool   `json:"overwrite_users"`
+	ImportPlaylists    bool   `json:"import_playlists"`
+	ImportStarred      bool   `json:"import_starred"`
+	ImportProgress     bool   `json:"import_progress"`
+	ImportMusicMeta    bool   `json:"import_music_meta"`
+	ImportAudiobookMeta bool  `json:"import_audiobook_meta"`
 }
 
 // ImportResult contains info about the imported data
 type ImportResult struct {
-	UsersImported      int `json:"users_imported"`
-	PlaylistsImported  int `json:"playlists_imported"`
-	StarredImported    int `json:"starred_imported"`
-	ProgressImported   int `json:"progress_imported"`
-	BookmarksImported  int `json:"bookmarks_imported"`
+	UsersImported       int `json:"users_imported"`
+	ArtistsImported     int `json:"artists_imported"`
+	AlbumsImported      int `json:"albums_imported"`
+	SongsImported       int `json:"songs_imported"`
+	AudiobooksImported  int `json:"audiobooks_imported"`
+	ChaptersImported    int `json:"chapters_imported"`
+	PlaylistsImported   int `json:"playlists_imported"`
+	StarredImported     int `json:"starred_imported"`
+	ProgressImported    int `json:"progress_imported"`
+	BookmarksImported   int `json:"bookmarks_imported"`
+	RadiosImported      int `json:"radios_imported"`
 }
 
 // BackupConfig holds scheduled backup configuration
