@@ -74,7 +74,7 @@ const LibraryCreate = (props) => {
     <Create title={<Title subTitle={title} />} {...props}>
       <SimpleForm save={save} variant={'outlined'}>
         <TextInput source="name" validate={[required()]} />
-        <TextInput source="path" validate={[required()]} fullWidth />
+        <TextInput source="path" validate={[required()]} fullWidth helperText="如果是有声书媒体库，请填写 /audiobooks" />
         <BooleanInput source="defaultNewUsers" />
       </SimpleForm>
     </Create>

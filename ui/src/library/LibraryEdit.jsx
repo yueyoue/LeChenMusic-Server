@@ -109,6 +109,7 @@ const LibraryEdit = (props) => {
                     fullWidth
                     variant="outlined"
                     InputProps={{ readOnly: !canEditPath }} // Disable editing path for library 1
+                    helperText={canEditPath ? "如果是有声书媒体库，请填写 /audiobooks" : ""}
                   />
                   <BooleanInput
                     source="defaultNewUsers"

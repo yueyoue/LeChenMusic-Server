@@ -45,6 +45,7 @@ const BackupPage = () => {
   const [importFile, setImportFile] = useState(null)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
+  const [backupResult, setBackupResult] = useState(null)
   const [backupOptions, setBackupOptions] = useState({
     include_music_meta: true,
     include_audiobook_meta: true,
@@ -97,7 +98,7 @@ const BackupPage = () => {
       })
       const data = await res.json()
       if (data.data) {
-        notify('备份成功: ' + data.data.file_path, 'success')
+        setBackupResult(data.data)
         loadBackups()
       }
     } catch (err) {
@@ -430,6 +431,49 @@ const BackupPage = () => {
         <DialogActions>
           <Button onClick={() => { setImportResult(null); setImportDialogOpen(false); setImportFile(null) }} color="primary" variant="contained">
             关闭
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Backup Result Dialog with Artwork Reminder */}
+      <Dialog open={!!backupResult} onClose={() => setBackupResult(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>备份成功</DialogTitle>
+        <DialogContent>
+          {backupResult && (
+            <>
+              <Alert severity="success" style={{ marginBottom: 16 }}>
+                <Typography variant="body2">
+                  <strong>备份文件：</strong>{backupResult.file_path}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>文件大小：</strong>{formatSize(backupResult.size)}
+                </Typography>
+                <Typography variant="body2">
+                  用户 {backupResult.user_count} · 歌手 {backupResult.artist_count} · 专辑 {backupResult.album_count} · 歌曲 {backupResult.song_count} · 有声书 {backupResult.audiobook_count} · 歌单 {backupResult.playlist_count}
+                </Typography>
+              </Alert>
+              <Alert severity="warning">
+                <Typography variant="body2" style={{ fontWeight: 600 }}>
+                  ⚠️ 图片文件需要手动备份！
+                </Typography>
+                <Typography variant="body2" style={{ marginTop: 8 }}>
+                  JSON 备份不包含以下图片文件，请在服务器上手动执行：
+                </Typography>
+                <Paper variant="outlined" style={{ marginTop: 8, padding: '8px 12px', background: '#fffde7', fontFamily: 'monospace', fontSize: 13 }}>
+                  <Typography variant="body2" component="pre" style={{ margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
+                    {"# 备份图片文件\ntar -czf /data/backups/artwork-backup.tar.gz -C / data/artwork/\n\n# 有声书封面（如果有本地封面文件）\ntar -czf /data/backups/audiobook-covers.tar.gz -C / 你的有声书路径/ ../*/cover.jpg ../*/folder.jpg"}
+                  </Typography>
+                </Paper>
+                <Typography variant="body2" style={{ marginTop: 8 }}>
+                  恢复时，将 artwork-backup.tar.gz 解压回 / 目录即可。
+                </Typography>
+              </Alert>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBackupResult(null)} color="primary" variant="contained">
+            我知道了
           </Button>
         </DialogActions>
       </Dialog>
