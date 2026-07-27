@@ -226,6 +226,7 @@ func (h *backupHandler) inspect(w http.ResponseWriter, r *http.Request) {
 		"progress":      len(bd.AudiobookProgress),
 		"bookmarks":     len(bd.AudiobookBookmarks),
 		"radios":        len(bd.Radios),
+		"images":        len(bd.Images),
 	}
 	if len(bd.Users) > 0 {
 		result["user0"] = bd.Users[0].UserName

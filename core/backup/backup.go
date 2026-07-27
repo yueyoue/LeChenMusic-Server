@@ -1,12 +1,14 @@
-// [LeChenMusic] Backup & Restore - simplified version using available repository interfaces
+// [LeChenMusic] Backup & Restore - with embedded Base64 images
 package backup
 
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,12 +18,13 @@ import (
 
 	squirrel "github.com/Masterminds/squirrel"
 	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/consts"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 )
 
-const BackupVersion = "2.0"
+const BackupVersion = "3.0"
 
 // BackupData is the complete backup export structure
 type BackupData struct {
@@ -46,6 +49,17 @@ type BackupData struct {
 	AudiobookChapters []model.AudiobookChapter    `json:"audiobook_chapters,omitempty"`
 	// 电台
 	Radios            []model.Radio               `json:"radios,omitempty"`
+	// 内嵌图片（Base64编码）
+	Images            []ImageEntry                `json:"images,omitempty"`
+}
+
+// ImageEntry represents a single image file embedded in the backup
+type ImageEntry struct {
+	Key      string `json:"key"`       // Unique key for restore (e.g. "artwork/artist/ar-123_xxx.jpg")
+	Path     string `json:"path"`      // Original absolute filesystem path
+	MimeType string `json:"mime_type"` // MIME type (image/jpeg, image/png, etc.)
+	Size     int64  `json:"size"`      // Original file size in bytes
+	Data     string `json:"data"`      // Base64 encoded image data
 }
 
 // BackupOptions controls what data to include in the backup
@@ -206,6 +220,15 @@ func Export(ctx context.Context, ds model.DataStore, outputPath string, serverVe
 	backup.Radios = allRadios
 	log.Info(ctx, "Backup: exported radios", "count", len(allRadios))
 
+	// Collect and embed images as Base64
+	log.Info(ctx, "Backup: collecting images for embedding...")
+	backup.Images = collectAllImages(ctx, ds)
+	var totalImageSize int64
+	for _, img := range backup.Images {
+		totalImageSize += img.Size
+	}
+	log.Info(ctx, "Backup: images embedded", "count", len(backup.Images), "original_size", totalImageSize)
+
 	// Write to file
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
 		return nil, fmt.Errorf("create backup dir: %w", err)
@@ -222,23 +245,16 @@ func Export(ctx context.Context, ds model.DataStore, outputPath string, serverVe
 	log.Info(ctx, "Backup exported", "path", outputPath, "size", info.Size(),
 		"users", len(backup.Users), "playlists", len(backup.Playlists),
 		"artists", len(backup.Artists), "albums", len(backup.Albums),
-		"songs", len(backup.MediaFiles), "audiobooks", len(backup.Audiobooks))
+		"songs", len(backup.MediaFiles), "audiobooks", len(backup.Audiobooks),
+		"images", len(backup.Images))
 
 	result := &ExportResult{
 		FilePath: outputPath, Size: info.Size(), CreatedAt: backup.CreatedAt,
 		UserCount: len(backup.Users), PlaylistCount: len(backup.Playlists),
 		ArtistCount: len(backup.Artists), AlbumCount: len(backup.Albums),
 		SongCount: len(backup.MediaFiles), AudiobookCount: len(backup.Audiobooks),
-	}
-
-	// Also export images
-	imagesPath := ImagesTarPath(outputPath)
-	imgSize, imgErr := ExportImages(ctx, ds, imagesPath)
-	if imgErr != nil {
-		log.Warn(ctx, "Backup: image export failed (non-fatal)", "error", imgErr)
-	} else if imgSize > 0 {
-		result.ImagesSize = imgSize
-		result.HasImages = true
+		ImageCount: len(backup.Images), ImagesSize: totalImageSize,
+		HasImages: len(backup.Images) > 0,
 	}
 
 	return result, nil
@@ -261,14 +277,21 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 	result := &ImportResult{}
 	log.Info(ctx, "Starting restore", "version", backup.Version, "created", backup.CreatedAt)
 
-	// Restore images first (if available)
-	imagesPath := ImagesTarPath(opts.FilePath)
-	if _, imgErr := os.Stat(imagesPath); imgErr == nil {
-		log.Info(ctx, "Restore: importing images...", "file", imagesPath)
-		if err := ImportImages(ctx, imagesPath); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("图片文件恢复失败: %v", err))
-		} else {
-			result.ImagesRestored = true
+	// Restore embedded images (Base64 in JSON) - new format
+	if len(backup.Images) > 0 {
+		log.Info(ctx, "Restore: importing embedded images...", "count", len(backup.Images))
+		restored := restoreEmbeddedImages(ctx, backup.Images)
+		result.ImagesRestored = restored > 0
+	} else {
+		// Fallback: try legacy tar.gz image file
+		imagesPath := ImagesTarPath(opts.FilePath)
+		if _, imgErr := os.Stat(imagesPath); imgErr == nil {
+			log.Info(ctx, "Restore: importing legacy tar.gz images...", "file", imagesPath)
+			if err := ImportImages(ctx, imagesPath); err != nil {
+				result.Errors = append(result.Errors, fmt.Sprintf("图片文件恢复失败: %v", err))
+			} else {
+				result.ImagesRestored = true
+			}
 		}
 	}
 
@@ -536,8 +559,9 @@ type ExportResult struct {
 	AlbumCount     int       `json:"album_count"`
 	SongCount      int       `json:"song_count"`
 	AudiobookCount int       `json:"audiobook_count"`
-	HasImages      bool      `json:"has_images"`
+	ImageCount     int       `json:"image_count"`
 	ImagesSize     int64     `json:"images_size,omitempty"`
+	HasImages      bool      `json:"has_images"`
 }
 
 // ImportOptions controls restore behavior
@@ -650,10 +674,23 @@ func ListBackups(dir string) ([]BackupFileInfo, error) {
 		}
 		totalSize := info.Size()
 		hasImg := false
+		// Check for legacy tar.gz image file
 		imgInfo, imgErr := os.Stat(filepath.Join(dir, ImagesTarPath(e.Name())))
 		if imgErr == nil {
 			totalSize += imgInfo.Size()
 			hasImg = true
+		}
+		// Check for embedded images in JSON (new format)
+		if !hasImg {
+			bData, readErr := os.ReadFile(filepath.Join(dir, e.Name()))
+			if readErr == nil {
+				var partial struct {
+					Images []json.RawMessage `json:"images"`
+				}
+				if json.Unmarshal(bData, &partial) == nil && len(partial.Images) > 0 {
+					hasImg = true
+				}
+			}
 		}
 		backups = append(backups, BackupFileInfo{
 			Name: e.Name(), Path: filepath.Join(dir, e.Name()),
@@ -686,10 +723,12 @@ func GetBackupInfo(filePath string) (*BackupData, error) {
 	for i := range backup.Playlists {
 		backup.Playlists[i].TrackIDs = nil
 	}
+	// Clear image data (keep count only)
+	backup.Images = nil
 	return &backup, nil
 }
 
-// ExportImages exports all image files to a tar.gz file
+// ExportImages exports all image files to a tar.gz file (legacy, kept for backward compatibility)
 func ExportImages(ctx context.Context, ds model.DataStore, outputPath string) (int64, error) {
 	dataDir := conf.Server.DataFolder.String()
 	var dirs []string
@@ -739,7 +778,7 @@ func ExportImages(ctx context.Context, ds model.DataStore, outputPath string) (i
 	return 0, nil
 }
 
-// ImportImages restores image files from a tar.gz file
+// ImportImages restores image files from a tar.gz file (legacy)
 func ImportImages(ctx context.Context, imagesPath string) error {
 	f, err := os.Open(imagesPath)
 	if err != nil {
@@ -755,6 +794,262 @@ func ImportImages(ctx context.Context, imagesPath string) error {
 	}
 	log.Info(ctx, "Restore: images imported", "from", imagesPath)
 	return nil
+}
+
+// ==================== Image Base64 Embedding ====================
+
+// isImageFile checks if a file is an image by extension
+func isImageFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp":
+		return true
+	}
+	return false
+}
+
+// fileToBase64 reads a file and returns its base64-encoded content, MIME type, and size
+func fileToBase64(filePath string) (encoded string, mimeType string, size int64, err error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", "", 0, err
+	}
+	size = int64(len(data))
+	// Detect MIME type
+	mimeBuf := data
+	if len(mimeBuf) > 512 {
+		mimeBuf = mimeBuf[:512]
+	}
+	mimeType = http.DetectContentType(mimeBuf)
+	// Fallback for common types
+	if mimeType == "application/octet-stream" {
+		switch strings.ToLower(filepath.Ext(filePath)) {
+		case ".jpg", ".jpeg":
+			mimeType = "image/jpeg"
+		case ".png":
+			mimeType = "image/png"
+		case ".gif":
+			mimeType = "image/gif"
+		case ".webp":
+			mimeType = "image/webp"
+		}
+	}
+	encoded = base64.StdEncoding.EncodeToString(data)
+	return encoded, mimeType, size, nil
+}
+
+// base64ToFile decodes base64 data and writes it to a file
+func base64ToFile(encoded, filePath string) error {
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return fmt.Errorf("base64 decode: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return fmt.Errorf("create dir: %w", err)
+	}
+	return os.WriteFile(filePath, data, 0644)
+}
+
+// collectAllImages gathers all images from data directory and library paths
+func collectAllImages(ctx context.Context, ds model.DataStore) []ImageEntry {
+	var images []ImageEntry
+	dataDir := conf.Server.DataFolder.String()
+	seen := make(map[string]bool) // deduplicate by absolute path
+
+	// 1. Collect all files from artwork directory (artist, playlist, radio uploads)
+	artworkDir := filepath.Join(dataDir, consts.ArtworkFolder)
+	images = append(images, collectImagesFromDir(ctx, artworkDir, "artwork", seen)...)
+
+	// 2. Collect artist-images directory (scraped artist images)
+	artistImgDir := filepath.Join(dataDir, "artist-images")
+	images = append(images, collectImagesFromDir(ctx, artistImgDir, "artist-images", seen)...)
+
+	// 3. Collect narrator-avatars directory
+	narratorDir := filepath.Join(dataDir, "narrator-avatars")
+	images = append(images, collectImagesFromDir(ctx, narratorDir, "narrator-avatars", seen)...)
+
+	// 4. Collect audiobook cover files from library paths
+	images = append(images, collectAudiobookCovers(ctx, ds, seen)...)
+
+	// 5. Collect album cover files from library paths
+	images = append(images, collectAlbumCovers(ctx, ds, seen)...)
+
+	log.Info(ctx, "Backup: image collection complete", "total_images", len(images))
+	return images
+}
+
+// collectImagesFromDir walks a directory and collects all image files
+func collectImagesFromDir(ctx context.Context, dir, prefix string, seen map[string]bool) []ImageEntry {
+	var images []ImageEntry
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		log.Info(ctx, "Backup: image dir not found, skipping", "dir", dir)
+		return nil
+	}
+	count := 0
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			return nil
+		}
+		if !isImageFile(path) {
+			return nil
+		}
+		absPath, _ := filepath.Abs(path)
+		if seen[absPath] {
+			return nil
+		}
+		seen[absPath] = true
+
+		encoded, mimeType, size, err := fileToBase64(path)
+		if err != nil {
+			log.Warn(ctx, "Backup: failed to read image", "path", path, "error", err)
+			return nil
+		}
+		relPath, _ := filepath.Rel(dir, path)
+		images = append(images, ImageEntry{
+			Key:      prefix + "/" + relPath,
+			Path:     absPath,
+			MimeType: mimeType,
+			Size:     size,
+			Data:     encoded,
+		})
+		count++
+		return nil
+	})
+	if err != nil {
+		log.Warn(ctx, "Backup: error walking image dir", "dir", dir, "error", err)
+	}
+	log.Info(ctx, "Backup: collected images from dir", "dir", dir, "count", count)
+	return images
+}
+
+// collectAudiobookCovers collects cover images for all audiobooks
+func collectAudiobookCovers(ctx context.Context, ds model.DataStore, seen map[string]bool) []ImageEntry {
+	var images []ImageEntry
+	allBooks, err := ds.Audiobook(ctx).GetAll()
+	if err != nil {
+		log.Warn(ctx, "Backup: failed to get audiobooks for cover collection", "error", err)
+		return nil
+	}
+	// Build library path map
+	libs, _ := ds.Library(ctx).GetAll()
+	libPaths := make(map[int]string)
+	for _, lib := range libs {
+		libPaths[lib.ID] = lib.Path
+	}
+
+	count := 0
+	for _, book := range allBooks {
+		if book.CoverPath == "" {
+			continue
+		}
+		libPath, ok := libPaths[book.LibraryID]
+		if !ok {
+			continue
+		}
+		absCover := filepath.Join(libPath, book.CoverPath)
+		if seen[absCover] {
+			continue
+		}
+		if _, err := os.Stat(absCover); os.IsNotExist(err) {
+			continue
+		}
+		seen[absCover] = true
+
+		encoded, mimeType, size, err := fileToBase64(absCover)
+		if err != nil {
+			log.Warn(ctx, "Backup: failed to read audiobook cover", "book", book.Title, "path", absCover, "error", err)
+			continue
+		}
+		images = append(images, ImageEntry{
+			Key:      "audiobook-cover/" + book.ID + filepath.Ext(absCover),
+			Path:     absCover,
+			MimeType: mimeType,
+			Size:     size,
+			Data:     encoded,
+		})
+		count++
+	}
+	log.Info(ctx, "Backup: collected audiobook covers", "count", count)
+	return images
+}
+
+// collectAlbumCovers collects cover files (cover.jpg, folder.jpg, etc.) from all library paths
+func collectAlbumCovers(ctx context.Context, ds model.DataStore, seen map[string]bool) []ImageEntry {
+	var images []ImageEntry
+	libs, _ := ds.Library(ctx).GetAll()
+	coverNames := map[string]bool{
+		"cover.jpg": true, "cover.jpeg": true, "cover.png": true,
+		"folder.jpg": true, "folder.jpeg": true, "folder.png": true,
+	}
+
+	count := 0
+	for _, lib := range libs {
+		if lib.MediaType == "audiobook" {
+			continue // audiobook covers handled separately
+		}
+		err := filepath.Walk(lib.Path, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() {
+				return nil
+			}
+			if !coverNames[info.Name()] {
+				return nil
+			}
+			absPath, _ := filepath.Abs(path)
+			if seen[absPath] {
+				return nil
+			}
+			seen[absPath] = true
+
+			encoded, mimeType, size, err := fileToBase64(path)
+			if err != nil {
+				return nil
+			}
+			relPath, _ := filepath.Rel(lib.Path, path)
+			images = append(images, ImageEntry{
+				Key:      "album-cover/" + relPath,
+				Path:     absPath,
+				MimeType: mimeType,
+				Size:     size,
+				Data:     encoded,
+			})
+			count++
+			return nil
+		})
+		if err != nil {
+			log.Warn(ctx, "Backup: error walking library for covers", "lib", lib.Name, "error", err)
+		}
+	}
+	log.Info(ctx, "Backup: collected album covers", "count", count)
+	return images
+}
+
+// restoreEmbeddedImages writes all embedded images back to their original paths
+func restoreEmbeddedImages(ctx context.Context, images []ImageEntry) int {
+	restored := 0
+	for _, img := range images {
+		targetPath := img.Path
+		if targetPath == "" {
+			continue
+		}
+		// Skip if file already exists (don't overwrite user's files)
+		if _, err := os.Stat(targetPath); err == nil {
+			log.Trace(ctx, "Restore: image already exists, skipping", "path", targetPath)
+			continue
+		}
+		if err := base64ToFile(img.Data, targetPath); err != nil {
+			log.Warn(ctx, "Restore: failed to write image", "path", targetPath, "error", err)
+			continue
+		}
+		restored++
+	}
+	log.Info(ctx, "Restore: embedded images restored", "total", len(images), "restored", restored)
+	return restored
 }
 
 func ImagesTarPath(jsonPath string) string {

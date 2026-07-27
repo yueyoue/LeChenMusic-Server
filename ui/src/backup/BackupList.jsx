@@ -121,7 +121,7 @@ const BackupPage = () => {
           if (job.status === 'done') {
             const r = job.result
             const sizeStr = formatSize(r.size)
-            const imgStr = r.has_images ? ' + 图片(' + formatSize(r.images_size) + ')' : ''
+            const imgStr = r.has_images ? ' + 图片(' + formatSize(r.images_size) + ', ' + (r.image_count || 0) + '张)' : ''
             setExportResult({
               summary: '备份完成！\n文件：' + r.file_path + '\n大小：' + sizeStr + imgStr +
                 '\n用户 ' + r.user_count + ' · 歌手 ' + r.artist_count +
