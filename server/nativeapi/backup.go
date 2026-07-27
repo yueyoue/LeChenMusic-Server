@@ -2,6 +2,7 @@
 package nativeapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -92,19 +93,20 @@ func (h *backupHandler) importBackup(w http.ResponseWriter, r *http.Request) {
 	importJobs[jobID] = job
 	importJobsMu.Unlock()
 
-	// 后台执行导入
+	// 后台执行导入（使用 Background context，因为 r.Context() 在响应返回后会被取消）
 	go func() {
-		log.Info(r.Context(), "Backup import started (async)", "job_id", jobID, "file", opts.FilePath)
-		result, err := backup.Import(r.Context(), h.ds, opts)
+		ctx := context.Background()
+		log.Info(ctx, "Backup import started (async)", "job_id", jobID, "file", opts.FilePath)
+		result, err := backup.Import(ctx, h.ds, opts)
 		importJobsMu.Lock()
 		if err != nil {
 			job.Status = "error"
 			job.Error = err.Error()
-			log.Error(r.Context(), "Backup import failed", err, "job_id", jobID)
+			log.Error(ctx, "Backup import failed", err, "job_id", jobID)
 		} else {
 			job.Status = "done"
 			job.Result = result
-			log.Info(r.Context(), "Backup import completed", "job_id", jobID,
+			log.Info(ctx, "Backup import completed", "job_id", jobID,
 				"users", result.UsersImported, "artists", result.ArtistsImported,
 				"albums", result.AlbumsImported, "songs", result.SongsImported,
 				"playlists", result.PlaylistsImported, "starred", result.StarredImported)
