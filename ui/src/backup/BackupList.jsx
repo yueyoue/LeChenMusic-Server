@@ -152,9 +152,9 @@ const BackupPage = () => {
       }
 
       // 2. 轮询等待完成
-      notify('恢复任务已启动，正在处理...', 'info')
+      notify('恢复任务已启动，正在处理（数据量大可能需要几分钟）...', 'info')
       let attempts = 0
-      const maxAttempts = 120 // 最多等 2 分钟
+      const maxAttempts = 600 // 最多等 10 分钟
       while (attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 1000))
         attempts++
@@ -194,7 +194,7 @@ const BackupPage = () => {
         }
       }
       if (attempts >= maxAttempts) {
-        notify('恢复超时，请稍后查看结果', 'warning')
+        notify('恢复超时（10分钟），但任务可能仍在后台运行，请稍后刷新查看数据', 'warning')
       }
     } catch (err) {
       notify('恢复失败: ' + err.message, 'error')
