@@ -3,6 +3,7 @@ package nativeapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -23,6 +24,7 @@ func (api *Router) addBackupRoute(r chi.Router) {
 		r.Post("/import", h.importBackup)
 		r.Get("/import/status", h.importStatus)
 		r.Get("/list", h.list)
+		r.Get("/inspect", h.inspect)
 		r.Get("/config", h.getConfig)
 		r.Post("/config", h.saveConfig)
 	})
@@ -140,6 +142,53 @@ func (h *backupHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"data": backups})
+}
+
+func (h *backupHandler) inspect(w http.ResponseWriter, r *http.Request) {
+	filePath := r.URL.Query().Get("file")
+	if filePath == "" {
+		http.Error(w, "file param required", 400)
+		return
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("read error: %v", err), 500)
+		return
+	}
+	var bd backup.BackupData
+	if err := json.Unmarshal(data, &bd); err != nil {
+		http.Error(w, fmt.Sprintf("parse error: %v", err), 500)
+		return
+	}
+	result := map[string]any{
+		"version":       bd.Version,
+		"created_at":    bd.CreatedAt,
+		"users":         len(bd.Users),
+		"libraries":     len(bd.Libraries),
+		"artists":       len(bd.Artists),
+		"albums":        len(bd.Albums),
+		"songs":         len(bd.MediaFiles),
+		"playlists":     len(bd.Playlists),
+		"audiobooks":    len(bd.Audiobooks),
+		"chapters":      len(bd.AudiobookChapters),
+		"starred_songs": len(bd.StarredSongIDs),
+		"starred_albums": len(bd.StarredAlbumIDs),
+		"starred_artists": len(bd.StarredArtistIDs),
+		"starred_abs":   len(bd.StarredAudiobookIDs),
+		"progress":      len(bd.AudiobookProgress),
+		"bookmarks":     len(bd.AudiobookBookmarks),
+		"radios":        len(bd.Radios),
+	}
+	if len(bd.Users) > 0 {
+		result["user0"] = bd.Users[0].UserName
+	}
+	if len(bd.Artists) > 0 {
+		result["artist0"] = bd.Artists[0].Name
+	}
+	if len(bd.MediaFiles) > 0 {
+		result["song0"] = bd.MediaFiles[0].Title
+	}
+	writeJSON(w, map[string]any{"data": result})
 }
 
 func (h *backupHandler) getConfig(w http.ResponseWriter, r *http.Request) {
