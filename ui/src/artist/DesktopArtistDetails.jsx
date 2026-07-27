@@ -91,7 +91,6 @@ const DesktopArtistDetails = ({ artistInfo, record, biography }) => {
   const [expanded, setExpanded] = useState(false)
   const classes = useStyles()
   const title = record.name
-  const [customAvatarUrl, setCustomAvatarUrl] = useState(null)
   const {
     imageLoading,
     imageError,
@@ -102,23 +101,14 @@ const DesktopArtistDetails = ({ artistInfo, record, biography }) => {
     handleCloseLightbox,
   } = useImageLoadingState(record.id)
 
-  // Check for saved avatar from scrape endpoint
-  React.useEffect(() => {
-    const checkSavedAvatar = async () => {
-      try {
-        const token = localStorage.getItem('token')
-        const tokenParam = token ? `?token=${token}` : ''
-        const res = await fetch(`/api/scrape/image/artist/${record.id}${tokenParam}`)
-        if (res.ok) {
-          setCustomAvatarUrl(`/api/scrape/image/artist/${record.id}${tokenParam}`)
-        }
-      } catch (e) {}
-    }
-    checkSavedAvatar()
-  }, [record.id])
+  // 直接使用本地头像URL（如果存在则显示，不存在则404自动fallback）
+  const token = localStorage.getItem('token')
+  const tokenParam = token ? `?token=${token}` : ''
+  const localAvatarUrl = `/api/scrape/image/artist/${record.id}${tokenParam}`
+  const [useLocalAvatar, setUseLocalAvatar] = useState(true)
 
-  const imageUrl = customAvatarUrl || subsonic.getCoverArtUrl(record, config.uiCoverArtSize)
-  const fullImageUrl = customAvatarUrl || subsonic.getCoverArtUrl(record)
+  const imageUrl = useLocalAvatar ? localAvatarUrl : subsonic.getCoverArtUrl(record, config.uiCoverArtSize)
+  const fullImageUrl = useLocalAvatar ? localAvatarUrl : subsonic.getCoverArtUrl(record)
 
   return (
     <div className={classes.root}>
@@ -132,7 +122,14 @@ const DesktopArtistDetails = ({ artistInfo, record, biography }) => {
               className={`${classes.cover} ${imageLoading ? classes.coverLoading : ''}`}
               onClick={handleOpenLightbox}
               onLoad={handleImageLoad}
-              onError={handleImageError}
+              onError={(e) => {
+                // 本地头像加载失败，回退到默认封面
+                if (useLocalAvatar) {
+                  setUseLocalAvatar(false)
+                } else {
+                  handleImageError(e)
+                }
+              }}
               title={title}
               style={{
                 cursor: imageError ? 'default' : 'pointer',

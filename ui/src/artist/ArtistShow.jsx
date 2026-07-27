@@ -90,9 +90,6 @@ const ArtistShowLayout = (props) => {
   let perPage = 0
   let pagination = null
 
-  // Use the main credit count instead of total count, as this is a precise measure
-  // of the number of albums where the artist is credited as an album artist OR
-  // artist
   const count = record?.stats?.['maincredit']?.albumCount || 0
 
   if (count > maxPerPage) {

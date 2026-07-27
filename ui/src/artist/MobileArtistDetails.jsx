@@ -89,25 +89,15 @@ const useStyles = makeStyles(
 )
 
 const MobileArtistDetails = ({ artistInfo, biography, record }) => {
-  const [customAvatarUrl, setCustomAvatarUrl] = useState(null)
   const [expanded, setExpanded] = useState(false)
 
-  // Check for saved avatar from scrape endpoint
-  React.useEffect(() => {
-    const checkSavedAvatar = async () => {
-      try {
-        const token = localStorage.getItem('token')
-        const tokenParam = token ? `?token=${token}` : ''
-        const res = await fetch(`/api/scrape/image/artist/${record.id}${tokenParam}`)
-        if (res.ok) {
-          setCustomAvatarUrl(`/api/scrape/image/artist/${record.id}${tokenParam}`)
-        }
-      } catch (e) {}
-    }
-    checkSavedAvatar()
-  }, [record.id])
+  // 直接使用本地头像URL（如果不存在则自动fallback）
+  const token = localStorage.getItem('token')
+  const tokenParam = token ? `?token=${token}` : ''
+  const [useLocalAvatar, setUseLocalAvatar] = useState(true)
+  const localAvatarUrl = `/api/scrape/image/artist/${record.id}${tokenParam}`
 
-  const img = customAvatarUrl || subsonic.getCoverArtUrl(record, 800)
+  const img = useLocalAvatar ? localAvatarUrl : subsonic.getCoverArtUrl(record, 800)
   const classes = useStyles({ img, expanded })
   const title = record.name
   const {
@@ -129,7 +119,7 @@ const MobileArtistDetails = ({ artistInfo, biography, record }) => {
               <CardMedia
                 key={record.id}
                 component="img"
-                src={customAvatarUrl || subsonic.getCoverArtUrl(record, config.uiCoverArtSize)}
+                src={useLocalAvatar ? localAvatarUrl : subsonic.getCoverArtUrl(record, config.uiCoverArtSize)}
                 className={`${classes.cover} ${imageLoading ? classes.coverLoading : ''}`}
                 onClick={handleOpenLightbox}
                 onLoad={handleImageLoad}

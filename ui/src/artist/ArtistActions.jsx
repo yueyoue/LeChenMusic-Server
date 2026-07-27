@@ -275,6 +275,38 @@ const ArtistActions = ({ className, record, ...rest }) => {
   const [loadingAction, setLoadingAction] = useState(null)
   const isLoading = !!loadingAction
   const [dialogOpen, setDialogOpen] = useState(false)
+  const [nextArtistId, setNextArtistId] = useState(null)
+
+  // 获取下一个艺人ID
+  React.useEffect(() => {
+    if (!record?.id) return
+    dataProvider.getList('artist', {
+      pagination: { page: 1, perPage: 1 },
+      sort: { field: 'name', order: 'ASC' },
+      filter: { name_gt: record.name },
+    }).then(({ data }) => {
+      if (data.length > 0) {
+        setNextArtistId(data[0].id)
+      } else {
+        // 如果没有更大的名字，回到第一个
+        dataProvider.getList('artist', {
+          pagination: { page: 1, perPage: 1 },
+          sort: { field: 'name', order: 'ASC' },
+          filter: {},
+        }).then(({ data: first }) => {
+          if (first.length > 0 && first[0].id !== record.id) {
+            setNextArtistId(first[0].id)
+          }
+        })
+      }
+    }).catch(() => {})
+  }, [record?.id, record?.name, dataProvider])
+
+  const handleNextArtist = React.useCallback(() => {
+    if (nextArtistId) {
+      window.location.hash = `#/artist/${nextArtistId}`
+    }
+  }, [nextArtistId])
 
   const handlePlay = React.useCallback(async () => {
     setLoadingAction('play')
@@ -346,6 +378,18 @@ const ArtistActions = ({ className, record, ...rest }) => {
           🔍 匹配头像
         </span>
       </Tooltip>
+      {nextArtistId && (
+        <Tooltip title="下一个艺人">
+          <Button
+            onClick={handleNextArtist}
+            className={classes.button}
+            size={isMobile ? 'small' : 'medium'}
+            disabled={isLoading}
+            label="下一个"
+            icon={<span style={{ fontSize: 16 }}>⏭️</span>}
+          />
+        </Tooltip>
+      )}
       <ArtistAvatarDialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}

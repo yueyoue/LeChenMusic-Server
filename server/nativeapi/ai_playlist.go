@@ -990,13 +990,32 @@ func (api *Router) aiPlaylistCreate(w http.ResponseWriter, r *http.Request) {
 
 	// Set cover: prefer imported cover URL, fallback to generated cover
 	if req.CoverURL != "" {
-		coverResp, err := httpClient.Get(req.CoverURL)
+		coverReq, err := http.NewRequest("GET", req.CoverURL, nil)
 		if err == nil {
-			defer coverResp.Body.Close()
-			if coverResp.StatusCode == 200 {
-				if err := pls.SetImage(r.Context(), plID, coverResp.Body, "jpg"); err != nil {
-					log.Warn(r.Context(), "AI Playlist: Set imported cover failed", "error", err)
+			// 添加 Referer 头防止防盗链拦截
+			coverReq.Header.Set("Referer", "https://music.163.com/")
+			coverReq.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+			coverResp, err := httpClient.Do(coverReq)
+			if err == nil {
+				defer coverResp.Body.Close()
+				if coverResp.StatusCode == 200 {
+					contentType := coverResp.Header.Get("Content-Type")
+					ext := "jpg"
+					if strings.Contains(contentType, "png") {
+						ext = "png"
+					} else if strings.Contains(contentType, "webp") {
+						ext = "webp"
+					}
+					if err := pls.SetImage(r.Context(), plID, coverResp.Body, ext); err != nil {
+						log.Warn(r.Context(), "AI Playlist: Set imported cover failed", "error", err)
+					} else {
+						log.Info(r.Context(), "AI Playlist: Imported cover set successfully", "url", req.CoverURL)
+					}
+				} else {
+					log.Warn(r.Context(), "AI Playlist: Cover fetch HTTP error", "status", coverResp.StatusCode, "url", req.CoverURL)
 				}
+			} else {
+				log.Warn(r.Context(), "AI Playlist: Cover fetch network error", "error", err, "url", req.CoverURL)
 			}
 		}
 	} else if req.CoverEnabled {

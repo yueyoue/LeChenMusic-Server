@@ -241,6 +241,7 @@ const AudiobookDetail = ({ id, onBack }) => {
   const [coverUploading, setCoverUploading] = useState(false)
   const [scrapeOpen, setScrapeOpen] = useState(false)
   const [expandedNotes, setExpandedNotes] = useState(false)
+  const [nextBookId, setNextBookId] = useState(null)
 
   const currentPlaying = useSelector((state) => state.player.currentPlaying)
   const isPlayingCurrent = currentPlaying?.albumId === `audiobook-${id}`
@@ -251,6 +252,30 @@ const AudiobookDetail = ({ id, onBack }) => {
     const token = getToken()
     return `/api/audiobook/${bookId}/cover${token ? '?token=' + token : ''}`
   }
+
+  // 获取下一部有声书
+  useEffect(() => {
+    if (!book) return
+    const fetchNext = async () => {
+      try {
+        const headers = getAuthHeaders()
+        const genreParam = book.genre ? `&genre=${encodeURIComponent(book.genre)}` : ''
+        const res = await fetch(`/api/audiobook?limit=100${genreParam}`, { headers })
+        if (res.ok) {
+          const data = await res.json()
+          const books = data.data || data.audiobooks || []
+          const currentIdx = books.findIndex(b => b.id === id)
+          if (currentIdx >= 0 && currentIdx < books.length - 1) {
+            setNextBookId(books[currentIdx + 1].id)
+          } else if (books.length > 1) {
+            // 循环到第一部
+            setNextBookId(books[0].id)
+          }
+        }
+      } catch (e) {}
+    }
+    fetchNext()
+  }, [book?.id, id])
 
   useEffect(() => {
     const fetchData = async () => {
@@ -522,6 +547,19 @@ const AudiobookDetail = ({ id, onBack }) => {
                   startIcon={<QueueMusicIcon />} onClick={handleAddToQueue} size={isXsmall ? 'small' : 'medium'}>
                   加入队列
                 </Button>
+                {nextBookId && (
+                  <Button variant="outlined" className={classes.playBtn}
+                    startIcon={<span style={{ fontSize: 16 }}>⏭️</span>}
+                    onClick={() => {
+                      if (onBack) onBack()
+                      setTimeout(() => {
+                        window.location.hash = `#/audiobook/${nextBookId}`
+                      }, 100)
+                    }}
+                    size={isXsmall ? 'small' : 'medium'}>
+                    下一部
+                  </Button>
+                )}
               </Box>
             </CardContent>
           </div>
