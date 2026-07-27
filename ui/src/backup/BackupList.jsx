@@ -44,6 +44,7 @@ const BackupPage = () => {
   const [importDialogOpen, setImportDialogOpen] = useState(false)
   const [importFile, setImportFile] = useState(null)
   const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState(null)
   const [backupOptions, setBackupOptions] = useState({
     include_music_meta: true,
     include_audiobook_meta: true,
@@ -168,21 +169,25 @@ const BackupPage = () => {
 
           if (job.status === 'done') {
             const r = job.result
-            notify(
-              '恢复成功! 用户:' + r.users_imported +
-              ' 歌手:' + r.artists_imported +
-              ' 专辑:' + r.albums_imported +
-              ' 歌曲:' + r.songs_imported +
-              ' 有声书:' + r.audiobooks_imported +
-              ' 章节:' + r.chapters_imported +
-              ' 歌单:' + r.playlists_imported +
-              ' 收藏:' + r.starred_imported +
-              ' 进度:' + r.progress_imported +
-              ' 电台:' + r.radios_imported,
-              'success'
-            )
-            setImportDialogOpen(false)
-            setImportFile(null)
+            const summary =
+              '恢复完成!\n' +
+              '用户: ' + r.users_imported +
+              ' | 歌手: ' + r.artists_imported +
+              ' | 专辑: ' + r.albums_imported +
+              ' | 歌曲: ' + r.songs_imported +
+              ' | 有声书: ' + r.audiobooks_imported +
+              ' | 章节: ' + r.chapters_imported +
+              ' | 歌单: ' + r.playlists_imported +
+              ' | 收藏: ' + r.starred_imported +
+              ' | 进度: ' + r.progress_imported +
+              ' | 电台: ' + r.radios_imported
+            if (r.errors && r.errors.length > 0) {
+              setImportResult({ summary, errors: r.errors })
+            } else {
+              notify(summary, 'success')
+              setImportDialogOpen(false)
+              setImportFile(null)
+            }
             break
           } else if (job.status === 'error') {
             notify('恢复失败: ' + job.error, 'error')
@@ -390,6 +395,41 @@ const BackupPage = () => {
             startIcon={importing ? <CircularProgress size={20} /> : <UndoIcon />}
           >
             {importing ? '恢复中...' : '确认恢复'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Import Result Dialog with Errors */}
+      <Dialog open={!!importResult} onClose={() => { setImportResult(null); setImportDialogOpen(false); setImportFile(null) }} maxWidth="md" fullWidth>
+        <DialogTitle>恢复结果</DialogTitle>
+        <DialogContent>
+          {importResult && (
+            <>
+              <Alert severity={importResult.errors && importResult.errors.length > 0 ? 'warning' : 'success'} style={{ marginBottom: 16 }}>
+                <Typography variant="body2" style={{ whiteSpace: 'pre-line' }}>
+                  {importResult.summary}
+                </Typography>
+              </Alert>
+              {importResult.errors && importResult.errors.length > 0 && (
+                <>
+                  <Typography variant="subtitle2" style={{ marginBottom: 8, color: '#d32f2f' }}>
+                    ⚠️ 以下 {importResult.errors.length} 条数据导入失败：
+                  </Typography>
+                  <Paper variant="outlined" style={{ maxHeight: 300, overflow: 'auto', padding: 8, background: '#fff5f5' }}>
+                    {importResult.errors.map((err, idx) => (
+                      <Typography key={idx} variant="body2" style={{ color: '#d32f2f', marginBottom: 4, fontFamily: 'monospace', fontSize: 13 }}>
+                        {idx + 1}. {err}
+                      </Typography>
+                    ))}
+                  </Paper>
+                </>
+              )}
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setImportResult(null); setImportDialogOpen(false); setImportFile(null) }} color="primary" variant="contained">
+            关闭
           </Button>
         </DialogActions>
       </Dialog>

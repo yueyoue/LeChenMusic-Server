@@ -14,6 +14,7 @@ import (
 	 squirrel "github.com/Masterminds/squirrel"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
+	"github.com/navidrome/navidrome/model/request"
 )
 
 const BackupVersion = "2.0"
@@ -244,6 +245,26 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 	result := &ImportResult{}
 	log.Info(ctx, "Starting restore", "version", backup.Version, "created", backup.CreatedAt)
 
+	// Helper to collect errors
+	collectError := func(format string, args ...any) {
+		msg := fmt.Sprintf(format, args...)
+		result.Errors = append(result.Errors, msg)
+		log.Warn(ctx, "Restore: "+msg)
+	}
+
+	// Create an admin context for operations that require permission checks (Radio, Playlist)
+	adminCtx := ctx
+	if len(backup.Users) > 0 {
+		for _, u := range backup.Users {
+			if u.IsAdmin {
+				adminCtx = request.WithUser(ctx, model.User{
+					ID: u.ID, UserName: u.UserName, IsAdmin: true,
+				})
+				break
+			}
+		}
+	}
+
 	// 1. Import users
 	if opts.ImportUsers {
 		for _, ub := range backup.Users {
@@ -259,7 +280,7 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 				user.ID = existing.ID
 			}
 			if err := ds.User(ctx).Put(user); err != nil {
-				log.Warn(ctx, "Restore: failed to import user", "username", ub.UserName, err)
+				collectError("用户 '%s' 导入失败: %v", ub.UserName, err)
 				continue
 			}
 			result.UsersImported++
@@ -272,42 +293,51 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 		for i := range backup.Artists {
 			if err := ds.Artist(ctx).Put(&backup.Artists[i]); err != nil {
 				artistFail++
-				if artistFail <= 3 {
-					log.Warn(ctx, "Restore: failed to import artist", "name", backup.Artists[i].Name, "id", backup.Artists[i].ID, "error", err)
+				if artistFail <= 5 {
+					collectError("歌手 '%s' 导入失败: %v", backup.Artists[i].Name, err)
 				}
 			} else {
 				artistOK++
 			}
 		}
 		result.ArtistsImported = artistOK
+		if artistFail > 5 {
+			collectError("歌手还有 %d 条导入失败（已省略详细信息）", artistFail-5)
+		}
 		log.Info(ctx, "Restore: artists done", "ok", artistOK, "fail", artistFail)
 
 		albumOK, albumFail := 0, 0
 		for i := range backup.Albums {
 			if err := ds.Album(ctx).Put(&backup.Albums[i]); err != nil {
 				albumFail++
-				if albumFail <= 3 {
-					log.Warn(ctx, "Restore: failed to import album", "name", backup.Albums[i].Name, "id", backup.Albums[i].ID, "error", err)
+				if albumFail <= 5 {
+					collectError("专辑 '%s' 导入失败: %v", backup.Albums[i].Name, err)
 				}
 			} else {
 				albumOK++
 			}
 		}
 		result.AlbumsImported = albumOK
+		if albumFail > 5 {
+			collectError("专辑还有 %d 条导入失败（已省略详细信息）", albumFail-5)
+		}
 		log.Info(ctx, "Restore: albums done", "ok", albumOK, "fail", albumFail)
 
 		songOK, songFail := 0, 0
 		for i := range backup.MediaFiles {
 			if err := ds.MediaFile(ctx).Put(&backup.MediaFiles[i]); err != nil {
 				songFail++
-				if songFail <= 3 {
-					log.Warn(ctx, "Restore: failed to import song", "title", backup.MediaFiles[i].Title, "id", backup.MediaFiles[i].ID, "error", err)
+				if songFail <= 5 {
+					collectError("歌曲 '%s' 导入失败: %v", backup.MediaFiles[i].Title, err)
 				}
 			} else {
 				songOK++
 			}
 		}
 		result.SongsImported = songOK
+		if songFail > 5 {
+			collectError("歌曲还有 %d 条导入失败（已省略详细信息）", songFail-5)
+		}
 		log.Info(ctx, "Restore: songs done", "ok", songOK, "fail", songFail)
 	}
 
@@ -317,28 +347,34 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 		for i := range backup.Audiobooks {
 			if err := ds.Audiobook(ctx).Put(&backup.Audiobooks[i]); err != nil {
 				bookFail++
-				if bookFail <= 3 {
-					log.Warn(ctx, "Restore: failed to import audiobook", "title", backup.Audiobooks[i].Title, "id", backup.Audiobooks[i].ID, "error", err)
+				if bookFail <= 5 {
+					collectError("有声书 '%s' 导入失败: %v", backup.Audiobooks[i].Title, err)
 				}
 			} else {
 				bookOK++
 			}
 		}
 		result.AudiobooksImported = bookOK
+		if bookFail > 5 {
+			collectError("有声书还有 %d 条导入失败（已省略详细信息）", bookFail-5)
+		}
 		log.Info(ctx, "Restore: audiobooks done", "ok", bookOK, "fail", bookFail, "total_in_backup", len(backup.Audiobooks))
 
 		chOK, chFail := 0, 0
 		for i := range backup.AudiobookChapters {
 			if err := ds.Audiobook(ctx).PutChapter(&backup.AudiobookChapters[i]); err != nil {
 				chFail++
-				if chFail <= 3 {
-					log.Warn(ctx, "Restore: failed to import chapter", "title", backup.AudiobookChapters[i].Title, "book_id", backup.AudiobookChapters[i].AudiobookID, "error", err)
+				if chFail <= 5 {
+					collectError("章节 '%s' (书ID: %s) 导入失败: %v", backup.AudiobookChapters[i].Title, backup.AudiobookChapters[i].AudiobookID, err)
 				}
 			} else {
 				chOK++
 			}
 		}
 		result.ChaptersImported = chOK
+		if chFail > 5 {
+			collectError("章节还有 %d 条导入失败（已省略详细信息）", chFail-5)
+		}
 		log.Info(ctx, "Restore: chapters done", "ok", chOK, "fail", chFail, "total_in_backup", len(backup.AudiobookChapters))
 	}
 
@@ -347,15 +383,15 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 		plOK, plFail := 0, 0
 		for _, pb := range backup.Playlists {
 			pl := pb.Playlist
-			if err := ds.Playlist(ctx).Put(&pl); err != nil {
+			if err := ds.Playlist(adminCtx).Put(&pl); err != nil {
 				plFail++
-				log.Warn(ctx, "Restore: failed to import playlist", "name", pl.Name, "id", pl.ID, "error", err)
+				collectError("歌单 '%s' 导入失败: %v", pl.Name, err)
 				continue
 			}
 			if len(pb.TrackIDs) > 0 {
-				added, err := ds.Playlist(ctx).Tracks(pl.ID, false).Add(pb.TrackIDs)
+				added, err := ds.Playlist(adminCtx).Tracks(pl.ID, false).Add(pb.TrackIDs)
 				if err != nil {
-					log.Warn(ctx, "Restore: failed to add tracks to playlist", "name", pl.Name, "tracks", len(pb.TrackIDs), "error", err)
+					collectError("歌单 '%s' 添加曲目失败 (%d首): %v", pl.Name, len(pb.TrackIDs), err)
 				} else {
 					log.Info(ctx, "Restore: playlist tracks added", "name", pl.Name, "added", added)
 				}
@@ -369,24 +405,36 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 	// 5. Import starred items (depends on songs/albums/artists existing)
 	if opts.ImportStarred {
 		if len(backup.StarredSongIDs) > 0 {
-			ds.MediaFile(ctx).SetStar(true, backup.StarredSongIDs...)
-			result.StarredImported += len(backup.StarredSongIDs)
+			if err := ds.MediaFile(ctx).SetStar(true, backup.StarredSongIDs...); err != nil {
+				collectError("歌曲收藏导入失败: %v", err)
+			} else {
+				result.StarredImported += len(backup.StarredSongIDs)
+			}
 		}
 		if len(backup.StarredAlbumIDs) > 0 {
-			ds.Album(ctx).SetStar(true, backup.StarredAlbumIDs...)
-			result.StarredImported += len(backup.StarredAlbumIDs)
+			if err := ds.Album(ctx).SetStar(true, backup.StarredAlbumIDs...); err != nil {
+				collectError("专辑收藏导入失败: %v", err)
+			} else {
+				result.StarredImported += len(backup.StarredAlbumIDs)
+			}
 		}
 		if len(backup.StarredArtistIDs) > 0 {
-			ds.Artist(ctx).SetStar(true, backup.StarredArtistIDs...)
-			result.StarredImported += len(backup.StarredArtistIDs)
+			if err := ds.Artist(ctx).SetStar(true, backup.StarredArtistIDs...); err != nil {
+				collectError("歌手收藏导入失败: %v", err)
+			} else {
+				result.StarredImported += len(backup.StarredArtistIDs)
+			}
 		}
 		// Import starred audiobooks
 		for _, abID := range backup.StarredAudiobookIDs {
 			if len(backup.Users) > 0 {
-				ds.Audiobook(ctx).Star(backup.Users[0].ID, abID)
+				if err := ds.Audiobook(ctx).Star(backup.Users[0].ID, abID); err != nil {
+					collectError("有声书收藏导入失败 (ID: %s): %v", abID, err)
+				} else {
+					result.StarredImported++
+				}
 			}
 		}
-		result.StarredImported += len(backup.StarredAudiobookIDs)
 	}
 
 	// 6. Import audiobook progress and bookmarks
@@ -395,35 +443,41 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 		for _, p := range backup.AudiobookProgress {
 			if err := ds.Audiobook(ctx).SaveProgress(&p); err != nil {
 				progFail++
-				if progFail <= 3 {
-					log.Warn(ctx, "Restore: failed to import progress", "book_id", p.AudiobookID, "chapter_id", p.ChapterID, "error", err)
+				if progFail <= 5 {
+					collectError("播放进度导入失败 (书: %s): %v", p.AudiobookID, err)
 				}
 				continue
 			}
 			progOK++
 		}
 		result.ProgressImported = progOK
+		if progFail > 5 {
+			collectError("播放进度还有 %d 条导入失败（已省略详细信息）", progFail-5)
+		}
 		log.Info(ctx, "Restore: progress done", "ok", progOK, "fail", progFail, "total_in_backup", len(backup.AudiobookProgress))
 
 		bmOK, bmFail := 0, 0
 		for _, bm := range backup.AudiobookBookmarks {
 			if err := ds.Audiobook(ctx).SaveBookmark(&bm); err != nil {
 				bmFail++
-				if bmFail <= 3 {
-					log.Warn(ctx, "Restore: failed to import bookmark", "book_id", bm.AudiobookID, "error", err)
+				if bmFail <= 5 {
+					collectError("书签导入失败 (书: %s): %v", bm.AudiobookID, err)
 				}
 				continue
 			}
 			bmOK++
 		}
 		result.BookmarksImported = bmOK
+		if bmFail > 5 {
+			collectError("书签还有 %d 条导入失败（已省略详细信息）", bmFail-5)
+		}
 		log.Info(ctx, "Restore: bookmarks done", "ok", bmOK, "fail", bmFail)
 	}
 
-	// 7. Import radio stations
+	// 7. Import radio stations (requires admin permission)
 	for i := range backup.Radios {
-		if err := ds.Radio(ctx).Put(&backup.Radios[i]); err != nil {
-			log.Debug(ctx, "Restore: failed to import radio", "name", backup.Radios[i].Name, err)
+		if err := ds.Radio(adminCtx).Put(&backup.Radios[i]); err != nil {
+			collectError("电台 '%s' 导入失败: %v", backup.Radios[i].Name, err)
 		} else {
 			result.RadiosImported++
 		}
@@ -471,17 +525,18 @@ type ImportOptions struct {
 
 // ImportResult contains info about the imported data
 type ImportResult struct {
-	UsersImported       int `json:"users_imported"`
-	ArtistsImported     int `json:"artists_imported"`
-	AlbumsImported      int `json:"albums_imported"`
-	SongsImported       int `json:"songs_imported"`
-	AudiobooksImported  int `json:"audiobooks_imported"`
-	ChaptersImported    int `json:"chapters_imported"`
-	PlaylistsImported   int `json:"playlists_imported"`
-	StarredImported     int `json:"starred_imported"`
-	ProgressImported    int `json:"progress_imported"`
-	BookmarksImported   int `json:"bookmarks_imported"`
-	RadiosImported      int `json:"radios_imported"`
+	UsersImported       int      `json:"users_imported"`
+	ArtistsImported     int      `json:"artists_imported"`
+	AlbumsImported      int      `json:"albums_imported"`
+	SongsImported       int      `json:"songs_imported"`
+	AudiobooksImported  int      `json:"audiobooks_imported"`
+	ChaptersImported    int      `json:"chapters_imported"`
+	PlaylistsImported   int      `json:"playlists_imported"`
+	StarredImported     int      `json:"starred_imported"`
+	ProgressImported    int      `json:"progress_imported"`
+	BookmarksImported   int      `json:"bookmarks_imported"`
+	RadiosImported      int      `json:"radios_imported"`
+	Errors              []string `json:"errors,omitempty"`
 }
 
 // BackupConfig holds scheduled backup configuration

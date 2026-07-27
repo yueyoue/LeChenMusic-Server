@@ -98,12 +98,21 @@ func (r *audiobookRepository) PutChapter(chapter *model.AudiobookChapter) error 
 	if err != nil {
 		return err
 	}
-	sq := Insert("audiobook_chapter").SetMap(values)
-	_, err = r.executeSQL(sq)
-	if err == nil {
-		r.updateAudiobookStats(chapter.AudiobookID)
+	// Upsert: try update first, then insert if not found
+	update := Update("audiobook_chapter").Where(Eq{"id": chapter.ID}).SetMap(filterUpdateValues(values, chapter.ID))
+	count, err := r.executeSQL(update)
+	if err != nil {
+		return err
 	}
-	return err
+	if count == 0 {
+		sq := Insert("audiobook_chapter").SetMap(values)
+		_, err = r.executeSQL(sq)
+		if err != nil {
+			return err
+		}
+	}
+	r.updateAudiobookStats(chapter.AudiobookID)
+	return nil
 }
 
 func (r *audiobookRepository) DeleteChapters(audiobookID string) error {
