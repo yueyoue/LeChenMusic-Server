@@ -2,16 +2,19 @@
 package backup
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	 squirrel "github.com/Masterminds/squirrel"
+	squirrel "github.com/Masterminds/squirrel"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
@@ -220,12 +223,24 @@ func Export(ctx context.Context, ds model.DataStore, outputPath string, serverVe
 		"artists", len(backup.Artists), "albums", len(backup.Albums),
 		"songs", len(backup.MediaFiles), "audiobooks", len(backup.Audiobooks))
 
-	return &ExportResult{
+	result := &ExportResult{
 		FilePath: outputPath, Size: info.Size(), CreatedAt: backup.CreatedAt,
 		UserCount: len(backup.Users), PlaylistCount: len(backup.Playlists),
 		ArtistCount: len(backup.Artists), AlbumCount: len(backup.Albums),
 		SongCount: len(backup.MediaFiles), AudiobookCount: len(backup.Audiobooks),
-	}, nil
+	}
+
+	// Also export images
+	imagesPath := ImagesTarPath(outputPath)
+	imgSize, imgErr := ExportImages(ctx, ds, imagesPath)
+	if imgErr != nil {
+		log.Warn(ctx, "Backup: image export failed (non-fatal)", "error", imgErr)
+	} else if imgSize > 0 {
+		result.ImagesSize = imgSize
+		result.HasImages = true
+	}
+
+	return result, nil
 }
 
 // Import reads a backup file and restores data
@@ -244,6 +259,17 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 
 	result := &ImportResult{}
 	log.Info(ctx, "Starting restore", "version", backup.Version, "created", backup.CreatedAt)
+
+	// Restore images first (if available)
+	imagesPath := ImagesTarPath(opts.FilePath)
+	if _, imgErr := os.Stat(imagesPath); imgErr == nil {
+		log.Info(ctx, "Restore: importing images...", "file", imagesPath)
+		if err := ImportImages(ctx, imagesPath); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("图片文件恢复失败: %v", err))
+		} else {
+			result.ImagesRestored = true
+		}
+	}
 
 	// Helper to collect errors
 	collectError := func(format string, args ...any) {
@@ -509,6 +535,8 @@ type ExportResult struct {
 	AlbumCount     int       `json:"album_count"`
 	SongCount      int       `json:"song_count"`
 	AudiobookCount int       `json:"audiobook_count"`
+	HasImages      bool      `json:"has_images"`
+	ImagesSize     int64     `json:"images_size,omitempty"`
 }
 
 // ImportOptions controls restore behavior
@@ -536,6 +564,7 @@ type ImportResult struct {
 	ProgressImported    int      `json:"progress_imported"`
 	BookmarksImported   int      `json:"bookmarks_imported"`
 	RadiosImported      int      `json:"radios_imported"`
+	ImagesRestored      bool     `json:"images_restored"`
 	Errors              []string `json:"errors,omitempty"`
 }
 
@@ -587,6 +616,7 @@ func cleanupOldBackups(dir string, keep int) {
 	sort.Slice(files, func(i, j int) bool { return files[i].Name() > files[j].Name() })
 	for _, f := range files[keep:] {
 		os.Remove(filepath.Join(dir, f.Name()))
+		os.Remove(filepath.Join(dir, ImagesTarPath(f.Name())))
 	}
 }
 
@@ -596,6 +626,7 @@ type BackupFileInfo struct {
 	Path      string    `json:"path"`
 	Size      int64     `json:"size"`
 	CreatedAt time.Time `json:"created_at"`
+	HasImages bool      `json:"has_images"`
 }
 
 // ListBackups returns all backup files in the directory
@@ -616,9 +647,16 @@ func ListBackups(dir string) ([]BackupFileInfo, error) {
 		if err != nil {
 			continue
 		}
+		totalSize := info.Size()
+		hasImg := false
+		imgInfo, imgErr := os.Stat(filepath.Join(dir, ImagesTarPath(e.Name())))
+		if imgErr == nil {
+			totalSize += imgInfo.Size()
+			hasImg = true
+		}
 		backups = append(backups, BackupFileInfo{
 			Name: e.Name(), Path: filepath.Join(dir, e.Name()),
-			Size: info.Size(), CreatedAt: info.ModTime(),
+			Size: totalSize, CreatedAt: info.ModTime(), HasImages: hasImg,
 		})
 	}
 	sort.Slice(backups, func(i, j int) bool { return backups[i].CreatedAt.After(backups[j].CreatedAt) })
@@ -648,4 +686,101 @@ func GetBackupInfo(filePath string) (*BackupData, error) {
 		backup.Playlists[i].TrackIDs = nil
 	}
 	return &backup, nil
+}
+
+// ExportImages exports all image files to a tar.gz file
+func ExportImages(ctx context.Context, ds model.DataStore, outputPath string) (int64, error) {
+	var dirs []string
+	for _, d := range []string{"data/artwork", "data/artist-images", "data/narrator-avatars"} {
+		if _, err := os.Stat(d); err == nil {
+			dirs = append(dirs, d)
+		}
+	}
+	libs, _ := ds.Library(ctx).GetAll()
+	coverNames := map[string]bool{"cover.jpg": true, "cover.jpeg": true, "cover.png": true, "folder.jpg": true, "folder.jpeg": true, "folder.png": true}
+	var coverFiles []string
+	for _, lib := range libs {
+		filepath.Walk(lib.Path, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if !info.IsDir() && coverNames[info.Name()] {
+				coverFiles = append(coverFiles, path)
+			}
+			return nil
+		})
+	}
+	if len(dirs) == 0 && len(coverFiles) == 0 {
+		return 0, nil
+	}
+	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
+		return 0, err
+	}
+	args := []string{"-czf", outputPath, "-C", "/"}
+	args = append(args, dirs...)
+	args = append(args, coverFiles...)
+	cmd := exec.CommandContext(ctx, "tar", args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return 0, fmt.Errorf("tar: %w: %s", err, stderr.String())
+	}
+	if info, _ := os.Stat(outputPath); info != nil {
+		log.Info(ctx, "Backup: images exported", "size", info.Size(), "covers", len(coverFiles))
+		return info.Size(), nil
+	}
+	return 0, nil
+}
+
+// ImportImages restores image files from a tar.gz file
+func ImportImages(ctx context.Context, imagesPath string) error {
+	f, err := os.Open(imagesPath)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	cmd := exec.CommandContext(ctx, "tar", "-xzf", "-", "-C", "/")
+	cmd.Stdin = f
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("extract images: %w: %s", err, stderr.String())
+	}
+	log.Info(ctx, "Restore: images imported", "from", imagesPath)
+	return nil
+}
+
+func ImagesTarPath(jsonPath string) string {
+	return strings.TrimSuffix(jsonPath, ".json") + ".images.tar.gz"
+}
+
+func hasImagesTar(jsonPath string) bool {
+	_, err := os.Stat(ImagesTarPath(jsonPath))
+	return err == nil
+}
+
+func BackupFileSize(jsonPath string) int64 {
+	var total int64
+	if info, err := os.Stat(jsonPath); err == nil {
+		total += info.Size()
+	}
+	if info, err := os.Stat(ImagesTarPath(jsonPath)); err == nil {
+		total += info.Size()
+	}
+	return total
+}
+
+func copyFile(dst, src string) error {
+	sf, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sf.Close()
+	df, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer df.Close()
+	_, err = io.Copy(df, sf)
+	return err
 }

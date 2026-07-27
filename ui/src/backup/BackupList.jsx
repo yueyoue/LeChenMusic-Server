@@ -45,7 +45,7 @@ const BackupPage = () => {
   const [importFile, setImportFile] = useState(null)
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState(null)
-  const [backupResult, setBackupResult] = useState(null)
+  const [exportResult, setExportResult] = useState(null)
   const [backupOptions, setBackupOptions] = useState({
     include_music_meta: true,
     include_audiobook_meta: true,
@@ -97,12 +97,52 @@ const BackupPage = () => {
         body: JSON.stringify(backupOptions),
       })
       const data = await res.json()
-      if (data.data) {
-        setBackupResult(data.data)
-        loadBackups()
+      const jobId = data.data && data.data.job_id
+      if (!jobId) {
+        notify('备份启动失败', 'error')
+        setExporting(false)
+        return
+      }
+
+      notify('备份任务已启动，正在打包数据和图片（可能需要几分钟）...', 'info')
+      let attempts = 0
+      const maxAttempts = 600
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        attempts++
+        try {
+          const statusRes = await fetch('/api/backup/export/status?job_id=' + jobId, {
+            headers: { 'X-ND-Authorization': 'Bearer ' + getToken() },
+          })
+          const statusData = await statusRes.json()
+          const job = statusData.data
+          if (!job) continue
+
+          if (job.status === 'done') {
+            const r = job.result
+            const sizeStr = formatSize(r.size)
+            const imgStr = r.has_images ? ' + 图片(' + formatSize(r.images_size) + ')' : ''
+            setExportResult({
+              summary: '备份完成！\n文件：' + r.file_path + '\n大小：' + sizeStr + imgStr +
+                '\n用户 ' + r.user_count + ' · 歌手 ' + r.artist_count +
+                ' · 专辑 ' + r.album_count + ' · 歌曲 ' + r.song_count +
+                ' · 有声书 ' + r.audiobook_count + ' · 歌单 ' + r.playlist_count,
+              hasImages: r.has_images,
+              filePath: r.file_path,
+            })
+            loadBackups()
+            break
+          } else if (job.status === 'error') {
+            notify('备份失败: ' + job.error, 'error')
+            break
+          }
+        } catch (_) {}
+      }
+      if (attempts >= maxAttempts) {
+        notify('备份超时（10分钟），但任务可能仍在后台运行', 'warning')
       }
     } catch (err) {
-      notify('备份失败', 'error')
+      notify('备份失败: ' + err.message, 'error')
     }
     setExporting(false)
   }
@@ -127,7 +167,6 @@ const BackupPage = () => {
     if (!importFile) return
     setImporting(true)
     try {
-      // 1. 启动异步导入任务
       const res = await fetch('/api/backup/import', {
         method: 'POST',
         headers: {
@@ -153,10 +192,9 @@ const BackupPage = () => {
         return
       }
 
-      // 2. 轮询等待完成
-      notify('恢复任务已启动，正在处理（数据量大可能需要几分钟）...', 'info')
+      notify('恢复任务已启动，正在恢复数据和图片（可能需要几分钟）...', 'info')
       let attempts = 0
-      const maxAttempts = 600 // 最多等 10 分钟
+      const maxAttempts = 600
       while (attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 1000))
         attempts++
@@ -169,9 +207,10 @@ const BackupPage = () => {
           if (!job) continue
 
           if (job.status === 'done') {
-            const r = job.result
+            const r = job.import_result
+            const imgStr = r.images_restored ? ' ✅ 图片已恢复' : ' ⚠️ 无图片备份'
             const summary =
-              '恢复完成!\n' +
+              '恢复完成！' + imgStr + '\n' +
               '用户: ' + r.users_imported +
               ' | 歌手: ' + r.artists_imported +
               ' | 专辑: ' + r.albums_imported +
@@ -179,8 +218,6 @@ const BackupPage = () => {
               ' | 有声书: ' + r.audiobooks_imported +
               ' | 章节: ' + r.chapters_imported +
               ' | 歌单: ' + r.playlists_imported +
-              ' | 收藏: ' + r.starred_imported +
-              ' | 进度: ' + r.progress_imported +
               ' | 电台: ' + r.radios_imported
             if (r.errors && r.errors.length > 0) {
               setImportResult({ summary, errors: r.errors })
@@ -194,13 +231,10 @@ const BackupPage = () => {
             notify('恢复失败: ' + job.error, 'error')
             break
           }
-          // status === 'running' → 继续等待
-        } catch (_) {
-          // 忽略轮询错误，继续重试
-        }
+        } catch (_) {}
       }
       if (attempts >= maxAttempts) {
-        notify('恢复超时（10分钟），但任务可能仍在后台运行，请稍后刷新查看数据', 'warning')
+        notify('恢复超时（10分钟），但任务可能仍在后台运行', 'warning')
       }
     } catch (err) {
       notify('恢复失败: ' + err.message, 'error')
@@ -209,6 +243,7 @@ const BackupPage = () => {
   }
 
   const formatSize = (bytes) => {
+    if (!bytes || bytes === 0) return '0 B'
     if (bytes < 1024) return bytes + ' B'
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
@@ -230,6 +265,9 @@ const BackupPage = () => {
           <CardContent>
             <Typography variant="h6" gutterBottom>
               备份操作
+            </Typography>
+            <Typography variant="body2" color="textSecondary" style={{ marginBottom: 12 }}>
+              备份包含：数据库（用户/元数据/歌单/电台/收藏）+ 图片文件（艺人头像/演播者头像/有声书封面/歌单封面）
             </Typography>
             <Box display="flex" style={{ gap: 16 }} flexWrap="wrap">
               <Button
@@ -274,7 +312,7 @@ const BackupPage = () => {
                 ))}
               </Box>
               <Typography variant="body2" color="textSecondary" style={{ marginTop: 4 }}>
-                用户账号和媒体库配置始终包含在备份中
+                用户账号、媒体库配置、图片文件（头像/封面）始终包含在备份中
               </Typography>
             </Box>
           </CardContent>
@@ -335,6 +373,7 @@ const BackupPage = () => {
                     <TableRow>
                       <TableCell>文件名</TableCell>
                       <TableCell>大小</TableCell>
+                      <TableCell>图片</TableCell>
                       <TableCell>创建时间</TableCell>
                       <TableCell align="right">操作</TableCell>
                     </TableRow>
@@ -346,11 +385,18 @@ const BackupPage = () => {
                           <Chip label={bk.name} size="small" variant="outlined" />
                         </TableCell>
                         <TableCell>{formatSize(bk.size)}</TableCell>
+                        <TableCell>
+                          {bk.has_images ? (
+                            <Chip label="含图片" size="small" color="primary" variant="outlined" />
+                          ) : (
+                            <Chip label="仅数据" size="small" variant="outlined" />
+                          )}
+                        </TableCell>
                         <TableCell>{formatDate(bk.created_at)}</TableCell>
                         <TableCell align="right">
                           <IconButton
                             size="small"
-                            title="恢复此备份"
+                            title="恢复此备份（含图片）"
                             onClick={() => {
                               setImportFile(bk)
                               setImportDialogOpen(true)
@@ -369,6 +415,7 @@ const BackupPage = () => {
         </Card>
       </Box>
 
+      {/* Import Dialog */}
       <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>恢复备份</DialogTitle>
         <DialogContent>
@@ -378,8 +425,11 @@ const BackupPage = () => {
                 <strong>即将恢复以下备份：</strong>
               </Typography>
               <Typography variant="body2">文件：{importFile.name}</Typography>
+              <Typography variant="body2">
+                包含图片：{importFile.has_images ? '✅ 是（艺人头像/演播者头像/有声书封面/歌单封面）' : '❌ 无图片备份'}
+              </Typography>
               <Typography variant="body2" style={{ marginTop: 8 }}>
-                <strong>注意：</strong>恢复会导入备份中的用户、歌单和收藏数据。已存在的用户会被覆盖。
+                <strong>注意：</strong>恢复会覆盖现有数据。如果备份包含图片，图片文件会自动恢复到原始位置。
               </Typography>
             </Alert>
           ) : (
@@ -396,6 +446,30 @@ const BackupPage = () => {
             startIcon={importing ? <CircularProgress size={20} /> : <UndoIcon />}
           >
             {importing ? '恢复中...' : '确认恢复'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Export Result Dialog */}
+      <Dialog open={!!exportResult} onClose={() => setExportResult(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>备份成功</DialogTitle>
+        <DialogContent>
+          {exportResult && (
+            <Alert severity="success">
+              <Typography variant="body2" style={{ whiteSpace: 'pre-line' }}>
+                {exportResult.summary}
+              </Typography>
+              {exportResult.hasImages && (
+                <Typography variant="body2" style={{ marginTop: 8, fontWeight: 600 }}>
+                  ✅ 图片文件已自动打包在备份中，恢复时会自动还原，无需手动操作！
+                </Typography>
+              )}
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setExportResult(null)} color="primary" variant="contained">
+            好的
           </Button>
         </DialogActions>
       </Dialog>
@@ -431,49 +505,6 @@ const BackupPage = () => {
         <DialogActions>
           <Button onClick={() => { setImportResult(null); setImportDialogOpen(false); setImportFile(null) }} color="primary" variant="contained">
             关闭
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Backup Result Dialog with Artwork Reminder */}
-      <Dialog open={!!backupResult} onClose={() => setBackupResult(null)} maxWidth="sm" fullWidth>
-        <DialogTitle>备份成功</DialogTitle>
-        <DialogContent>
-          {backupResult && (
-            <>
-              <Alert severity="success" style={{ marginBottom: 16 }}>
-                <Typography variant="body2">
-                  <strong>备份文件：</strong>{backupResult.file_path}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>文件大小：</strong>{formatSize(backupResult.size)}
-                </Typography>
-                <Typography variant="body2">
-                  用户 {backupResult.user_count} · 歌手 {backupResult.artist_count} · 专辑 {backupResult.album_count} · 歌曲 {backupResult.song_count} · 有声书 {backupResult.audiobook_count} · 歌单 {backupResult.playlist_count}
-                </Typography>
-              </Alert>
-              <Alert severity="warning">
-                <Typography variant="body2" style={{ fontWeight: 600 }}>
-                  ⚠️ 图片文件需要手动备份！
-                </Typography>
-                <Typography variant="body2" style={{ marginTop: 8 }}>
-                  JSON 备份不包含以下图片文件，请在服务器上手动执行：
-                </Typography>
-                <Paper variant="outlined" style={{ marginTop: 8, padding: '8px 12px', background: '#fffde7', fontFamily: 'monospace', fontSize: 13 }}>
-                  <Typography variant="body2" component="pre" style={{ margin: 0, fontFamily: 'inherit', fontSize: 'inherit' }}>
-                    {"# 备份图片文件\ntar -czf /data/backups/artwork-backup.tar.gz -C / data/artwork/\n\n# 有声书封面（如果有本地封面文件）\ntar -czf /data/backups/audiobook-covers.tar.gz -C / 你的有声书路径/ ../*/cover.jpg ../*/folder.jpg"}
-                  </Typography>
-                </Paper>
-                <Typography variant="body2" style={{ marginTop: 8 }}>
-                  恢复时，将 artwork-backup.tar.gz 解压回 / 目录即可。
-                </Typography>
-              </Alert>
-            </>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setBackupResult(null)} color="primary" variant="contained">
-            我知道了
           </Button>
         </DialogActions>
       </Dialog>
