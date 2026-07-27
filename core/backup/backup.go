@@ -268,71 +268,102 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 
 	// 2. Import music metadata (artists → albums → songs)
 	if opts.ImportMusicMeta {
-		// Artists
+		artistOK, artistFail := 0, 0
 		for i := range backup.Artists {
 			if err := ds.Artist(ctx).Put(&backup.Artists[i]); err != nil {
-				log.Debug(ctx, "Restore: failed to import artist", "name", backup.Artists[i].Name, err)
+				artistFail++
+				if artistFail <= 3 {
+					log.Warn(ctx, "Restore: failed to import artist", "name", backup.Artists[i].Name, "id", backup.Artists[i].ID, "error", err)
+				}
 			} else {
-				result.ArtistsImported++
+				artistOK++
 			}
 		}
-		log.Info(ctx, "Restore: artists imported", "count", result.ArtistsImported)
+		result.ArtistsImported = artistOK
+		log.Info(ctx, "Restore: artists done", "ok", artistOK, "fail", artistFail)
 
-		// Albums
+		albumOK, albumFail := 0, 0
 		for i := range backup.Albums {
 			if err := ds.Album(ctx).Put(&backup.Albums[i]); err != nil {
-				log.Debug(ctx, "Restore: failed to import album", "name", backup.Albums[i].Name, err)
+				albumFail++
+				if albumFail <= 3 {
+					log.Warn(ctx, "Restore: failed to import album", "name", backup.Albums[i].Name, "id", backup.Albums[i].ID, "error", err)
+				}
 			} else {
-				result.AlbumsImported++
+				albumOK++
 			}
 		}
-		log.Info(ctx, "Restore: albums imported", "count", result.AlbumsImported)
+		result.AlbumsImported = albumOK
+		log.Info(ctx, "Restore: albums done", "ok", albumOK, "fail", albumFail)
 
-		// Songs (media files)
+		songOK, songFail := 0, 0
 		for i := range backup.MediaFiles {
 			if err := ds.MediaFile(ctx).Put(&backup.MediaFiles[i]); err != nil {
-				log.Debug(ctx, "Restore: failed to import song", "title", backup.MediaFiles[i].Title, err)
+				songFail++
+				if songFail <= 3 {
+					log.Warn(ctx, "Restore: failed to import song", "title", backup.MediaFiles[i].Title, "id", backup.MediaFiles[i].ID, "error", err)
+				}
 			} else {
-				result.SongsImported++
+				songOK++
 			}
 		}
-		log.Info(ctx, "Restore: songs imported", "count", result.SongsImported)
+		result.SongsImported = songOK
+		log.Info(ctx, "Restore: songs done", "ok", songOK, "fail", songFail)
 	}
 
 	// 3. Import audiobook metadata (books → chapters)
 	if opts.ImportAudiobookMeta {
+		bookOK, bookFail := 0, 0
 		for i := range backup.Audiobooks {
 			if err := ds.Audiobook(ctx).Put(&backup.Audiobooks[i]); err != nil {
-				log.Debug(ctx, "Restore: failed to import audiobook", "title", backup.Audiobooks[i].Title, err)
+				bookFail++
+				if bookFail <= 3 {
+					log.Warn(ctx, "Restore: failed to import audiobook", "title", backup.Audiobooks[i].Title, "id", backup.Audiobooks[i].ID, "error", err)
+				}
 			} else {
-				result.AudiobooksImported++
+				bookOK++
 			}
 		}
-		log.Info(ctx, "Restore: audiobooks imported", "count", result.AudiobooksImported)
+		result.AudiobooksImported = bookOK
+		log.Info(ctx, "Restore: audiobooks done", "ok", bookOK, "fail", bookFail, "total_in_backup", len(backup.Audiobooks))
 
+		chOK, chFail := 0, 0
 		for i := range backup.AudiobookChapters {
 			if err := ds.Audiobook(ctx).PutChapter(&backup.AudiobookChapters[i]); err != nil {
-				log.Debug(ctx, "Restore: failed to import chapter", "title", backup.AudiobookChapters[i].Title, err)
+				chFail++
+				if chFail <= 3 {
+					log.Warn(ctx, "Restore: failed to import chapter", "title", backup.AudiobookChapters[i].Title, "book_id", backup.AudiobookChapters[i].AudiobookID, "error", err)
+				}
 			} else {
-				result.ChaptersImported++
+				chOK++
 			}
 		}
-		log.Info(ctx, "Restore: chapters imported", "count", result.ChaptersImported)
+		result.ChaptersImported = chOK
+		log.Info(ctx, "Restore: chapters done", "ok", chOK, "fail", chFail, "total_in_backup", len(backup.AudiobookChapters))
 	}
 
 	// 4. Import playlists (depends on songs existing)
 	if opts.ImportPlaylists {
+		plOK, plFail := 0, 0
 		for _, pb := range backup.Playlists {
 			pl := pb.Playlist
 			if err := ds.Playlist(ctx).Put(&pl); err != nil {
-				log.Warn(ctx, "Restore: failed to import playlist", "name", pl.Name, err)
+				plFail++
+				log.Warn(ctx, "Restore: failed to import playlist", "name", pl.Name, "id", pl.ID, "error", err)
 				continue
 			}
 			if len(pb.TrackIDs) > 0 {
-				ds.Playlist(ctx).Tracks(pl.ID, false).Add(pb.TrackIDs)
+				added, err := ds.Playlist(ctx).Tracks(pl.ID, false).Add(pb.TrackIDs)
+				if err != nil {
+					log.Warn(ctx, "Restore: failed to add tracks to playlist", "name", pl.Name, "tracks", len(pb.TrackIDs), "error", err)
+				} else {
+					log.Info(ctx, "Restore: playlist tracks added", "name", pl.Name, "added", added)
+				}
 			}
-			result.PlaylistsImported++
+			plOK++
 		}
+		result.PlaylistsImported = plOK
+		log.Info(ctx, "Restore: playlists done", "ok", plOK, "fail", plFail, "total_in_backup", len(backup.Playlists))
 	}
 
 	// 5. Import starred items (depends on songs/albums/artists existing)
@@ -360,20 +391,33 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 
 	// 6. Import audiobook progress and bookmarks
 	if opts.ImportProgress {
+		progOK, progFail := 0, 0
 		for _, p := range backup.AudiobookProgress {
 			if err := ds.Audiobook(ctx).SaveProgress(&p); err != nil {
-				log.Debug(ctx, "Restore: could not import audiobook progress", "book_id", p.AudiobookID, err)
+				progFail++
+				if progFail <= 3 {
+					log.Warn(ctx, "Restore: failed to import progress", "book_id", p.AudiobookID, "chapter_id", p.ChapterID, "error", err)
+				}
 				continue
 			}
-			result.ProgressImported++
+			progOK++
 		}
+		result.ProgressImported = progOK
+		log.Info(ctx, "Restore: progress done", "ok", progOK, "fail", progFail, "total_in_backup", len(backup.AudiobookProgress))
+
+		bmOK, bmFail := 0, 0
 		for _, bm := range backup.AudiobookBookmarks {
 			if err := ds.Audiobook(ctx).SaveBookmark(&bm); err != nil {
-				log.Debug(ctx, "Restore: could not import audiobook bookmark", "book_id", bm.AudiobookID, err)
+				bmFail++
+				if bmFail <= 3 {
+					log.Warn(ctx, "Restore: failed to import bookmark", "book_id", bm.AudiobookID, "error", err)
+				}
 				continue
 			}
-			result.BookmarksImported++
+			bmOK++
 		}
+		result.BookmarksImported = bmOK
+		log.Info(ctx, "Restore: bookmarks done", "ok", bmOK, "fail", bmFail)
 	}
 
 	// 7. Import radio stations

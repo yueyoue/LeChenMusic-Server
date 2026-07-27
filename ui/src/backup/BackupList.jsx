@@ -125,6 +125,7 @@ const BackupPage = () => {
     if (!importFile) return
     setImporting(true)
     try {
+      // 1. 启动异步导入任务
       const res = await fetch('/api/backup/import', {
         method: 'POST',
         headers: {
@@ -143,25 +144,60 @@ const BackupPage = () => {
         }),
       })
       const data = await res.json()
-      if (data.data) {
-        const r = data.data
-        notify(
-          '恢复成功! 用户:' + r.users_imported +
-          ' 歌手:' + r.artists_imported +
-          ' 专辑:' + r.albums_imported +
-          ' 歌曲:' + r.songs_imported +
-          ' 有声书:' + r.audiobooks_imported +
-          ' 歌单:' + r.playlists_imported +
-          ' 收藏:' + r.starred_imported +
-          ' 进度:' + r.progress_imported +
-          ' 电台:' + r.radios_imported,
-          'success'
-        )
-        setImportDialogOpen(false)
-        setImportFile(null)
+      const jobId = data.data && data.data.job_id
+      if (!jobId) {
+        notify('恢复启动失败', 'error')
+        setImporting(false)
+        return
+      }
+
+      // 2. 轮询等待完成
+      notify('恢复任务已启动，正在处理...', 'info')
+      let attempts = 0
+      const maxAttempts = 120 // 最多等 2 分钟
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        attempts++
+        try {
+          const statusRes = await fetch('/api/backup/import/status?job_id=' + jobId, {
+            headers: { 'X-ND-Authorization': 'Bearer ' + getToken() },
+          })
+          const statusData = await statusRes.json()
+          const job = statusData.data
+          if (!job) continue
+
+          if (job.status === 'done') {
+            const r = job.result
+            notify(
+              '恢复成功! 用户:' + r.users_imported +
+              ' 歌手:' + r.artists_imported +
+              ' 专辑:' + r.albums_imported +
+              ' 歌曲:' + r.songs_imported +
+              ' 有声书:' + r.audiobooks_imported +
+              ' 章节:' + r.chapters_imported +
+              ' 歌单:' + r.playlists_imported +
+              ' 收藏:' + r.starred_imported +
+              ' 进度:' + r.progress_imported +
+              ' 电台:' + r.radios_imported,
+              'success'
+            )
+            setImportDialogOpen(false)
+            setImportFile(null)
+            break
+          } else if (job.status === 'error') {
+            notify('恢复失败: ' + job.error, 'error')
+            break
+          }
+          // status === 'running' → 继续等待
+        } catch (_) {
+          // 忽略轮询错误，继续重试
+        }
+      }
+      if (attempts >= maxAttempts) {
+        notify('恢复超时，请稍后查看结果', 'warning')
       }
     } catch (err) {
-      notify('恢复失败', 'error')
+      notify('恢复失败: ' + err.message, 'error')
     }
     setImporting(false)
   }

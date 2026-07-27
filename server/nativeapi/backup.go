@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,6 +21,7 @@ func (api *Router) addBackupRoute(r chi.Router) {
 	r.Route("/backup", func(r chi.Router) {
 		r.Post("/export", h.export)
 		r.Post("/import", h.importBackup)
+		r.Get("/import/status", h.importStatus)
 		r.Get("/list", h.list)
 		r.Get("/config", h.getConfig)
 		r.Post("/config", h.saveConfig)
@@ -30,12 +32,25 @@ type backupHandler struct {
 	ds model.DataStore
 }
 
+// 异步导入任务管理
+type importJob struct {
+	ID        string             `json:"id"`
+	Status    string             `json:"status"` // running / done / error
+	Result    *backup.ImportResult `json:"result,omitempty"`
+	Error     string             `json:"error,omitempty"`
+	StartedAt time.Time          `json:"started_at"`
+}
+
+var (
+	importJobs   = map[string]*importJob{}
+	importJobsMu sync.Mutex
+)
+
 func (h *backupHandler) export(w http.ResponseWriter, r *http.Request) {
 	backupDir := getBackupDir()
 	filename := "backup-" + time.Now().Format("2006-01-02-150405") + ".json"
 	outputPath := filepath.Join(backupDir, filename)
 
-	// 从请求体读取备份选项
 	opts := backup.DefaultBackupOptions()
 	if r.Body != nil {
 		var reqOpts backup.BackupOptions
@@ -63,13 +78,58 @@ func (h *backupHandler) importBackup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "file_path required", 400)
 		return
 	}
-	result, err := backup.Import(r.Context(), h.ds, opts)
-	if err != nil {
-		log.Error(r.Context(), "Backup import failed", err)
-		http.Error(w, err.Error(), 500)
+
+	// 创建异步任务
+	jobID := time.Now().Format("20060102150405.000")
+	job := &importJob{
+		ID:        jobID,
+		Status:    "running",
+		StartedAt: time.Now(),
+	}
+	importJobsMu.Lock()
+	importJobs[jobID] = job
+	importJobsMu.Unlock()
+
+	// 后台执行导入
+	go func() {
+		log.Info(r.Context(), "Backup import started (async)", "job_id", jobID, "file", opts.FilePath)
+		result, err := backup.Import(r.Context(), h.ds, opts)
+		importJobsMu.Lock()
+		if err != nil {
+			job.Status = "error"
+			job.Error = err.Error()
+			log.Error(r.Context(), "Backup import failed", err, "job_id", jobID)
+		} else {
+			job.Status = "done"
+			job.Result = result
+			log.Info(r.Context(), "Backup import completed", "job_id", jobID,
+				"users", result.UsersImported, "artists", result.ArtistsImported,
+				"albums", result.AlbumsImported, "songs", result.SongsImported,
+				"playlists", result.PlaylistsImported, "starred", result.StarredImported)
+		}
+		importJobsMu.Unlock()
+	}()
+
+	writeJSON(w, map[string]any{"data": map[string]any{
+		"job_id": jobID,
+		"status": "running",
+	}})
+}
+
+func (h *backupHandler) importStatus(w http.ResponseWriter, r *http.Request) {
+	jobID := r.URL.Query().Get("job_id")
+	if jobID == "" {
+		http.Error(w, "job_id required", 400)
 		return
 	}
-	writeJSON(w, map[string]any{"data": result})
+	importJobsMu.Lock()
+	job, ok := importJobs[jobID]
+	importJobsMu.Unlock()
+	if !ok {
+		http.Error(w, "job not found", 404)
+		return
+	}
+	writeJSON(w, map[string]any{"data": job})
 }
 
 func (h *backupHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -113,5 +173,3 @@ func getBackupDir() string {
 	_ = os.MkdirAll(dir, 0755)
 	return dir
 }
-
-// writeJSON is defined in audiobook.go
