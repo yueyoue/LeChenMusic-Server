@@ -15,6 +15,7 @@ import (
 	"time"
 
 	squirrel "github.com/Masterminds/squirrel"
+	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
@@ -690,12 +691,15 @@ func GetBackupInfo(filePath string) (*BackupData, error) {
 
 // ExportImages exports all image files to a tar.gz file
 func ExportImages(ctx context.Context, ds model.DataStore, outputPath string) (int64, error) {
+	dataDir := conf.Server.DataFolder.String()
 	var dirs []string
-	for _, d := range []string{"data/artwork", "data/artist-images", "data/narrator-avatars"} {
-		if _, err := os.Stat(d); err == nil {
-			dirs = append(dirs, d)
+	for _, d := range []string{"artwork", "artist-images", "narrator-avatars"} {
+		full := filepath.Join(dataDir, d)
+		if _, err := os.Stat(full); err == nil {
+			dirs = append(dirs, full)
 		}
 	}
+	log.Info(ctx, "Backup: image dirs found", "dirs", dirs, "dataDir", dataDir)
 	libs, _ := ds.Library(ctx).GetAll()
 	coverNames := map[string]bool{"cover.jpg": true, "cover.jpeg": true, "cover.png": true, "folder.jpg": true, "folder.jpeg": true, "folder.png": true}
 	var coverFiles []string
@@ -711,14 +715,17 @@ func ExportImages(ctx context.Context, ds model.DataStore, outputPath string) (i
 		})
 	}
 	if len(dirs) == 0 && len(coverFiles) == 0 {
+		log.Info(ctx, "Backup: no image dirs or cover files found, skipping image backup")
 		return 0, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
 		return 0, err
 	}
-	args := []string{"-czf", outputPath, "-C", "/"}
+	// Use absolute paths with --absolute-names to preserve full paths in archive
+	args := []string{"-czf", outputPath, "--absolute-names"}
 	args = append(args, dirs...)
 	args = append(args, coverFiles...)
+	log.Info(ctx, "Backup: creating image tar", "output", outputPath)
 	cmd := exec.CommandContext(ctx, "tar", args...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
@@ -739,7 +746,7 @@ func ImportImages(ctx context.Context, imagesPath string) error {
 		return err
 	}
 	defer f.Close()
-	cmd := exec.CommandContext(ctx, "tar", "-xzf", "-", "-C", "/")
+	cmd := exec.CommandContext(ctx, "tar", "-xzf", "-", "--absolute-names")
 	cmd.Stdin = f
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
