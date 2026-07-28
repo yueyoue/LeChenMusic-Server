@@ -25,6 +25,7 @@ func (api *Router) addAppManageRoute(r chi.Router) {
 		r.Get("/apk/download", h.downloadApk)
 		r.Get("/apk/info", h.getApkInfo)
 		r.Get("/version/check", h.checkAppVersion)
+		r.Post("/update/toggle", h.toggleUpdate)
 		r.Post("/splash", h.uploadSplash)
 		r.Post("/slide", h.addSlide)                        // Legacy: adds to music slides
 		r.Post("/slide/music", h.addMusicSlide)              // Music homepage slide
@@ -48,6 +49,7 @@ type AppConfig struct {
 	ApkUploadTime  string        `json:"apkUploadTime"`
 	UpdateLog      string        `json:"updateLog"`
 	ForceUpdate    bool          `json:"forceUpdate"`
+	UpdateEnabled  bool          `json:"updateEnabled"` // 是否启用APP更新推送
 	SplashImageURL string        `json:"splashImageUrl"`
 	SplashDuration int           `json:"splashDuration"` // seconds
 	Slides         []SlideConfig `json:"slides"`         // Deprecated: use MusicSlides/AudiobookSlides
@@ -136,6 +138,7 @@ func (h *appManageHandler) uploadApk(w http.ResponseWriter, r *http.Request) {
 	config.ApkUploadTime = time.Now().Format("2006-01-02 15:04:05")
 	config.UpdateLog = updateLog
 	config.ForceUpdate = forceUpdate
+	config.UpdateEnabled = true // 上传新APK自动启用更新推送
 	saveAppConfig(&config)
 
 	log.Info(r.Context(), "APK uploaded", "file", fileName, "size", written)
@@ -189,7 +192,7 @@ func (h *appManageHandler) checkAppVersion(w http.ResponseWriter, r *http.Reques
 	clientVersionCode := 0
 	fmt.Sscanf(r.URL.Query().Get("currentVersionCode"), "%d", &clientVersionCode)
 
-	hasUpdate := config.VersionCode > 0 && config.VersionCode > clientVersionCode
+	hasUpdate := config.UpdateEnabled && config.VersionCode > 0 && config.VersionCode > clientVersionCode
 
 	apkDir := getAppUploadDir()
 	apkExists := false
@@ -217,6 +220,22 @@ func (h *appManageHandler) checkAppVersion(w http.ResponseWriter, r *http.Reques
 			"uploadTime":     config.ApkUploadTime,
 		},
 	})
+}
+
+// toggleUpdate enables or disables APP update push
+func (h *appManageHandler) toggleUpdate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", 400)
+		return
+	}
+	config := loadAppConfig()
+	config.UpdateEnabled = req.Enabled
+	saveAppConfig(&config)
+	log.Info(r.Context(), "APP update toggled", "enabled", req.Enabled)
+	writeJSON(w, map[string]any{"status": "ok", "updateEnabled": config.UpdateEnabled})
 }
 
 // uploadSplash handles splash screen image upload

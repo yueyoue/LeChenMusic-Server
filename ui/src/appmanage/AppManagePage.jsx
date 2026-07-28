@@ -46,6 +46,7 @@ const AppManagePage = () => {
   const [versionCode, setVersionCode] = useState('')
   const [updateLog, setUpdateLog] = useState('')
   const [forceUpdate, setForceUpdate] = useState(false)
+  const [updateEnabled, setUpdateEnabled] = useState(true)
   const [splashDuration, setSplashDuration] = useState(3)
   const [musicSlideTitle, setMusicSlideTitle] = useState('')
   const [musicSlideLink, setMusicSlideLink] = useState('')
@@ -68,6 +69,7 @@ const AppManagePage = () => {
         setVersionCode(String(c.versionCode || ''))
         setUpdateLog(c.updateLog || '')
         setForceUpdate(c.forceUpdate || false)
+        setUpdateEnabled(c.updateEnabled !== false) // 默认true
         setSplashDuration(c.splashDuration || 3)
       }
     } catch (err) {
@@ -300,6 +302,18 @@ const AppManagePage = () => {
               <FormControlLabel
                 control={<Switch checked={forceUpdate} onChange={e => setForceUpdate(e.target.checked)} color="primary" />}
                 label="强制更新"
+              />
+              <FormControlLabel
+                control={<Switch checked={updateEnabled} onChange={e => {
+                  setUpdateEnabled(e.target.checked)
+                  const token = localStorage.getItem('token')
+                  fetch('/api/app/update/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-ND-Authorization': `Bearer ${token}` },
+                    body: JSON.stringify({ enabled: e.target.checked })
+                  }).then(() => showToast(e.target.checked ? '已启用更新推送' : '已停止更新推送'))
+                }} color="secondary" />}
+                label={updateEnabled ? "✅ 推送更新中" : "⛔ 已停止推送"}
               />
             </Box>
             <TextField label="更新日志" value={updateLog} onChange={e => setUpdateLog(e.target.value)}
