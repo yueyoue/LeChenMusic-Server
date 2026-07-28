@@ -287,7 +287,7 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 	if strings.HasPrefix(id, "narrator-") {
 		// Narrator avatar
 		narratorName := strings.TrimPrefix(id, "narrator-")
-		avatarDir := filepath.Join("data", "narrator-avatars")
+		avatarDir := filepath.Join(conf.Server.DataFolder.String(), "narrator-avatars")
 		if mkErr := os.MkdirAll(avatarDir, 0755); mkErr != nil {
 			log.Error(r.Context(), "Failed to create dir", mkErr)
 		}
@@ -314,7 +314,7 @@ func (h *scrapeHandler) applyArtistAvatar(w http.ResponseWriter, r *http.Request
 		imageURL = "/api/scrape/image/narrator/" + safeName
 	} else {
 		// Real artist - save to artist-images and update DB
-		imageDir := filepath.Join("data", "artist-images")
+		imageDir := filepath.Join(conf.Server.DataFolder.String(), "artist-images")
 		os.MkdirAll(imageDir, 0755)
 
 		// Remove old files
@@ -365,9 +365,9 @@ func (h *scrapeHandler) serveImage(w http.ResponseWriter, r *http.Request) {
 	var dir string
 	switch imgType {
 	case "narrator":
-		dir = filepath.Join("data", "narrator-avatars")
+		dir = filepath.Join(conf.Server.DataFolder.String(), "narrator-avatars")
 	case "artist":
-		dir = filepath.Join("data", "artist-images")
+		dir = filepath.Join(conf.Server.DataFolder.String(), "artist-images")
 	default:
 		http.Error(w, "Invalid image type", 400)
 		return

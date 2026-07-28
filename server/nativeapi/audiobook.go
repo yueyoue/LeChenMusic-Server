@@ -828,7 +828,7 @@ func (h *audiobookHandler) uploadNarratorAvatar(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	avatarDir := filepath.Join("data", "narrator-avatars")
+	avatarDir := filepath.Join(conf.Server.DataFolder.String(), "narrator-avatars")
 	os.MkdirAll(avatarDir, 0755)
 
 	// Sanitize filename
@@ -896,7 +896,7 @@ func (h *audiobookHandler) getNarratorAvatar(w http.ResponseWriter, r *http.Requ
 	safeName := strings.ReplaceAll(name, "/", "_")
 	safeName = strings.ReplaceAll(safeName, "\\", "_")
 
-	avatarDir := filepath.Join("data", "narrator-avatars")
+	avatarDir := filepath.Join(conf.Server.DataFolder.String(), "narrator-avatars")
 	for _, ext := range []string{".jpg", ".jpeg", ".png", ".webp"} {
 		path := filepath.Join(avatarDir, safeName+ext)
 		if _, err := os.Stat(path); err == nil {
