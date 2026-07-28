@@ -62,17 +62,44 @@ const BatchAvatarDialog = ({ open, onClose }) => {
     }
   }
 
+  // 检查艺人名字是否有效（过滤掉包含歌词、时间戳等污染数据）
+  const isValidArtistName = (name) => {
+    if (!name || name.length < 1) return false
+    // 过滤包含LRC时间戳格式 [00:00.000]
+    if (/\[\d{2}:\d{2}[.:]\d{2,3}\]/.test(name)) return false
+    // 过滤包含LRC标签 [ver:...] [ti:...] [ar:...]
+    if (/\[(ver|ti|ar|al|by):/i.test(name)) return false
+    // 过滤包含歌词制作人标记
+    if (/[词曲编制作人演唱者：]/.test(name) && name.length > 20) return false
+    // 过滤包含大量中文歌词内容（超过50个中文字符且没有分隔符）
+    const chineseChars = (name.match(/[\u4e00-\u9fff]/g) || []).length
+    if (chineseChars > 30 && !name.includes('/') && !name.includes('、')) return false
+    // 过滤包含英文歌词（连续英文单词超过10个）
+    if (/\b(\w+\s+){10,}\w+\b/.test(name)) return false
+    return true
+  }
+
   const handleBatchSave = async () => {
     if (!results || results.length === 0) return
+    
+    // 过滤掉名字无效的艺人
+    const validArtists = results.filter(a => isValidArtistName(a.name))
+    const skippedCount = results.length - validArtists.length
+    
+    if (validArtists.length === 0) {
+      notify('没有有效的艺人可以匹配', 'warning')
+      return
+    }
+    
     setSaving(true)
-    setProgress({ current: 0, total: results.length })
+    setProgress({ current: 0, total: validArtists.length })
 
     let successCount = 0
     let failCount = 0
 
-    for (let i = 0; i < results.length; i++) {
-      const artist = results[i]
-      setProgress({ current: i + 1, total: results.length })
+    for (let i = 0; i < validArtists.length; i++) {
+      const artist = validArtists[i]
+      setProgress({ current: i + 1, total: validArtists.length })
 
       try {
         // Search for avatar
@@ -107,7 +134,8 @@ const BatchAvatarDialog = ({ open, onClose }) => {
     }
 
     setSaving(false)
-    notify(`完成: ${successCount} 成功, ${failCount} 失败`, successCount > 0 ? 'info' : 'warning')
+    const skippedMsg = skippedCount > 0 ? `，跳过${skippedCount}个无效艺人` : ''
+    notify(`完成: ${successCount} 成功, ${failCount} 失败${skippedMsg}`, successCount > 0 ? 'info' : 'warning')
     // Reload page to show new avatars (with cache-busting)
     if (successCount > 0) {
       setTimeout(() => {
@@ -154,13 +182,19 @@ const BatchAvatarDialog = ({ open, onClose }) => {
           <div>
             <p style={{ fontWeight: 600 }}>共 {results.length} 位艺人</p>
             <div style={{ maxHeight: 300, overflow: 'auto', marginBottom: 16 }}>
-              {results.map((artist, idx) => (
-                <div key={artist.id} style={{
-                  padding: '6px 12px', borderBottom: '1px solid #eee', fontSize: 13,
-                }}>
-                  {idx + 1}. {artist.name}
-                </div>
-              ))}
+              {results.map((artist, idx) => {
+                const valid = isValidArtistName(artist.name)
+                return (
+                  <div key={artist.id} style={{
+                    padding: '6px 12px', borderBottom: '1px solid #eee', fontSize: 13,
+                    color: valid ? '#333' : '#999',
+                    textDecoration: valid ? 'none' : 'line-through',
+                  }}>
+                    {idx + 1}. {artist.name.substring(0, 60)}{artist.name.length > 60 ? '...' : ''}
+                    {!valid && <span style={{ fontSize: 11, color: '#f44336', marginLeft: 8 }}>(将跳过)</span>}
+                  </div>
+                )
+              })}
             </div>
             <button onClick={handleBatchSave} style={{
               backgroundColor: '#4caf50', color: '#fff', border: 'none', borderRadius: 4,
