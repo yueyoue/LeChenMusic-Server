@@ -477,29 +477,55 @@ func cleanArtistName(name string) string {
 		return ""
 	}
 
+	// 替换换行符为空格便于处理
+	normalized := strings.ReplaceAll(name, "\n", " ")
+
+	// 包含LRC标签 [ar:] - 提取[ar:]中的名字
+	if strings.Contains(normalized, "[ar:") {
+		re := regexp.MustCompile(`\[ar:([^\]]+)\]`)
+		if matches := re.FindStringSubmatch(normalized); len(matches) > 1 {
+			extracted := strings.TrimSpace(matches[1])
+			if extracted != "" && extracted != "," {
+				return extracted
+			}
+		}
+	}
+
 	// 包含LRC时间戳 [00:00.000] - 提取时间戳前的名字
-	if idx := strings.Index(name, "["); idx > 0 {
-		prefix := strings.TrimSpace(name[:idx])
-		// 检查前缀是否像一个正常的名字（不超过20个字符，不包含歌词特征）
+	if idx := strings.Index(normalized, "["); idx > 0 {
+		prefix := strings.TrimSpace(normalized[:idx])
+		// 检查前缀是否像一个正常的名字
 		if len(prefix) <= 20 && !strings.Contains(prefix, "词：") && !strings.Contains(prefix, "曲：") {
 			return prefix
 		}
 	}
 
-	// 包含LRC标签 [ver:] [ti:] [ar:] - 提取[ar:]中的名字
-	if strings.Contains(name, "[ar:") {
-		re := regexp.MustCompile(`\[ar:([^\]]+)\]`)
-		if matches := re.FindStringSubmatch(name); len(matches) > 1 {
+	// 以时间戳开头 [00:00.00] - 没有艺人名
+	if strings.HasPrefix(strings.TrimSpace(name), "[") && regexp.MustCompile(`^\[\d{2}:`).MatchString(strings.TrimSpace(name)) {
+		return ""
+	}
+
+	// 包含@符号（如"葛麒麟@KMS Shanghai"）- 提取@前的名字
+	if idx := strings.Index(normalized, "@"); idx > 0 {
+		prefix := strings.TrimSpace(normalized[:idx])
+		if len(prefix) <= 15 && !strings.Contains(prefix, " ") {
+			return prefix
+		}
+	}
+
+	// 包含"X手："或"X员："格式（如"贝斯手：章谋圣"）- 提取冒号后的名字
+	if regexp.MustCompile(`[手员师]:`).MatchString(normalized) {
+		re := regexp.MustCompile(`[：:]\s*(\S+)`)
+		if matches := re.FindStringSubmatch(normalized); len(matches) > 1 {
 			return strings.TrimSpace(matches[1])
 		}
 	}
 
 	// 包含歌词制作人标记
-	if strings.Contains(name, "词：") || strings.Contains(name, "曲：") {
-		// 尝试提取第一个空格或特殊字符前的名字
+	if strings.Contains(normalized, "词：") || strings.Contains(normalized, "曲：") {
 		for _, sep := range []string{" ", "\t", "词：", "曲：", "编曲："} {
-			if idx := strings.Index(name, sep); idx > 0 {
-				candidate := strings.TrimSpace(name[:idx])
+			if idx := strings.Index(normalized, sep); idx > 0 {
+				candidate := strings.TrimSpace(normalized[:idx])
 				if len(candidate) <= 20 {
 					return candidate
 				}
@@ -508,7 +534,7 @@ func cleanArtistName(name string) string {
 	}
 
 	// 包含大量歌词内容（超过50个字符且包含时间戳特征）
-	if len(name) > 50 && regexp.MustCompile(`\d{2}:\d{2}`).MatchString(name) {
+	if len(normalized) > 50 && regexp.MustCompile(`\d{2}:\d{2}`).MatchString(normalized) {
 		return ""
 	}
 
