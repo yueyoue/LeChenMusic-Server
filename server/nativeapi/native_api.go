@@ -81,6 +81,10 @@ func (api *Router) routes() http.Handler {
 		h.serveImage(w, req)
 	})
 
+	// Public (no auth required)
+	api.addVersionRoute(r)   // [LeChenMusic] version check (public for app update check)
+	api.addAppManageRoute(r) // [LeChenMusic] app management (version/splash/slides)
+
 	// Protected
 	r.Group(func(r chi.Router) {
 		r.Use(server.Authenticator(api.ds))
@@ -100,8 +104,6 @@ func (api *Router) routes() http.Handler {
 		api.addAIPlaylistRoute(r)     // [LeChenMusic] AI playlist routes
 		api.addErrorLogRoute(r)  // [LeChenMusic] error log route
 		api.addBackupRoute(r)    // [LeChenMusic] backup & restore routes
-		api.addVersionRoute(r)   // [LeChenMusic] version check
-		api.addAppManageRoute(r) // [LeChenMusic] app management (version/splash/slides)
 
 		// Serve uploaded app files (splash images, slide images)
 		r.Get("/app/splash/*", func(w http.ResponseWriter, r *http.Request) {
