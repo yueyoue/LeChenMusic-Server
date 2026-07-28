@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -28,6 +29,7 @@ func (api *Router) addScrapeRoute(r chi.Router) {
 		r.Get("/artist", h.searchArtists)
 		r.Post("/artist/{id}/avatar", h.applyArtistAvatar)
 		r.Post("/batch", h.batchScrape)
+		r.Post("/artist/cleanup", h.cleanupArtistNames)
 		// Serve saved images (narrator avatars, etc.)
 		r.Get("/image/{type}/{id}", h.serveImage)
 	})
@@ -415,6 +417,100 @@ func (h *scrapeHandler) batchScrape(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{"data": results})
+}
+
+// cleanupArtistNames 清理数据库中被污染的艺人名字（包含歌词、时间戳等）
+func (h *scrapeHandler) cleanupArtistNames(w http.ResponseWriter, r *http.Request) {
+	repo := h.ds.Artist(r.Context())
+	artists, err := repo.GetAll(model.QueryOptions{})
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	type cleanupResult struct {
+		ID      string `json:"id"`
+		OldName string `json:"oldName"`
+		NewName string `json:"newName"`
+		Action  string `json:"action"` // "cleaned" or "skipped"
+	}
+
+	var results []cleanupResult
+	cleanedCount := 0
+
+	for _, artist := range artists {
+		originalName := artist.Name
+		cleanedName := cleanArtistName(originalName)
+
+		if cleanedName != originalName && cleanedName != "" {
+			artist.Name = cleanedName
+			if err := repo.Put(&artist, "name"); err != nil {
+				log.Warn(r.Context(), "Cleanup: failed to update artist name", "id", artist.ID, "error", err)
+				continue
+			}
+			results = append(results, cleanupResult{
+				ID: artist.ID, OldName: originalName, NewName: cleanedName, Action: "cleaned",
+			})
+			cleanedCount++
+		} else if cleanedName == "" {
+			results = append(results, cleanupResult{
+				ID: artist.ID, OldName: originalName, Action: "skipped",
+			})
+		}
+	}
+
+	log.Info(r.Context(), "Artist name cleanup completed", "total", len(artists), "cleaned", cleanedCount)
+	writeJSON(w, map[string]any{
+		"data": map[string]any{
+			"total":   len(artists),
+			"cleaned": cleanedCount,
+			"details": results,
+		},
+	})
+}
+
+// cleanArtistName 清理单个艺人名字，返回清理后的名字
+func cleanArtistName(name string) string {
+	if name == "" {
+		return ""
+	}
+
+	// 包含LRC时间戳 [00:00.000] - 提取时间戳前的名字
+	if idx := strings.Index(name, "["); idx > 0 {
+		prefix := strings.TrimSpace(name[:idx])
+		// 检查前缀是否像一个正常的名字（不超过20个字符，不包含歌词特征）
+		if len(prefix) <= 20 && !strings.Contains(prefix, "词：") && !strings.Contains(prefix, "曲：") {
+			return prefix
+		}
+	}
+
+	// 包含LRC标签 [ver:] [ti:] [ar:] - 提取[ar:]中的名字
+	if strings.Contains(name, "[ar:") {
+		re := regexp.MustCompile(`\[ar:([^\]]+)\]`)
+		if matches := re.FindStringSubmatch(name); len(matches) > 1 {
+			return strings.TrimSpace(matches[1])
+		}
+	}
+
+	// 包含歌词制作人标记
+	if strings.Contains(name, "词：") || strings.Contains(name, "曲：") {
+		// 尝试提取第一个空格或特殊字符前的名字
+		for _, sep := range []string{" ", "\t", "词：", "曲：", "编曲："} {
+			if idx := strings.Index(name, sep); idx > 0 {
+				candidate := strings.TrimSpace(name[:idx])
+				if len(candidate) <= 20 {
+					return candidate
+				}
+			}
+		}
+	}
+
+	// 包含大量歌词内容（超过50个字符且包含时间戳特征）
+	if len(name) > 50 && regexp.MustCompile(`\d{2}:\d{2}`).MatchString(name) {
+		return ""
+	}
+
+	return name
 }
 
 // validateURL 验证URL是否可访问（HEAD请求）
