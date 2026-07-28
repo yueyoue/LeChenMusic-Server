@@ -444,7 +444,9 @@ func (h *scrapeHandler) cleanupArtistNames(w http.ResponseWriter, r *http.Reques
 
 		if cleanedName != originalName && cleanedName != "" {
 			artist.Name = cleanedName
-			if err := repo.Put(&artist, "name"); err != nil {
+			artist.OrderArtistName = cleanedName
+			artist.SortArtistName = cleanedName
+			if err := repo.Put(&artist, "name", "order_artist_name", "sort_artist_name"); err != nil {
 				log.Warn(r.Context(), "Cleanup: failed to update artist name", "id", artist.ID, "error", err)
 				continue
 			}
