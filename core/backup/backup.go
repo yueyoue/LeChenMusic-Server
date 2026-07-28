@@ -134,12 +134,23 @@ func Export(ctx context.Context, ds model.DataStore, outputPath string, serverVe
 		})
 	}
 
+	// Create admin context for operations that require permission checks (Playlist, Radio)
+	adminCtx := ctx
+	for _, u := range users {
+		if u.IsAdmin {
+			adminCtx = request.WithUser(ctx, model.User{
+				ID: u.ID, UserName: u.UserName, IsAdmin: true,
+			})
+			break
+		}
+	}
+
 	// Playlists with track IDs
 	if opts.IncludePlaylists {
-		playlists, _ := ds.Playlist(ctx).GetAll()
+		playlists, _ := ds.Playlist(adminCtx).GetAll()
 		for _, pl := range playlists {
 			pb := PlaylistBackup{Playlist: pl}
-			tracks, err := ds.Playlist(ctx).Tracks(pl.ID, false).GetAll()
+			tracks, err := ds.Playlist(adminCtx).Tracks(pl.ID, false).GetAll()
 			if err == nil {
 				for _, t := range tracks {
 					pb.TrackIDs = append(pb.TrackIDs, t.MediaFileID)
@@ -216,7 +227,7 @@ func Export(ctx context.Context, ds model.DataStore, outputPath string, serverVe
 	}
 
 	// Radio stations (always included)
-	allRadios, _ := ds.Radio(ctx).GetAll()
+	allRadios, _ := ds.Radio(adminCtx).GetAll()
 	backup.Radios = allRadios
 	log.Info(ctx, "Backup: exported radios", "count", len(allRadios))
 
