@@ -406,22 +406,105 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 
 	// 3. Import audiobook metadata (books → chapters)
 	if opts.ImportAudiobookMeta {
-		bookOK, bookFail := 0, 0
-		for i := range backup.Audiobooks {
-			if err := ds.Audiobook(ctx).Put(&backup.Audiobooks[i]); err != nil {
-				bookFail++
-				if bookFail <= 5 {
-					collectError("有声书 '%s' 导入失败: %v", backup.Audiobooks[i].Title, err)
-				}
-			} else {
-				bookOK++
+		// Build map of existing audiobooks by path to avoid duplicates
+		existingByPath := make(map[string]*model.Audiobook)
+		if existingBooks, err := ds.Audiobook(ctx).GetAll(); err == nil {
+			for i := range existingBooks {
+				existingByPath[existingBooks[i].Path] = &existingBooks[i]
 			}
 		}
-		result.AudiobooksImported = bookOK
-		if bookFail > 5 {
-			collectError("有声书还有 %d 条导入失败（已省略详细信息）", bookFail-5)
+		log.Info(ctx, "Restore: found existing audiobooks", "count", len(existingByPath))
+
+		bookOK, bookFail, bookUpdated := 0, 0, 0
+		for i := range backup.Audiobooks {
+			bak := &backup.Audiobooks[i]
+			// If an audiobook with the same path already exists, update it with scraped data
+			if existing, found := existingByPath[bak.Path]; found {
+				changed := false
+				if bak.Description != "" && existing.Description == "" {
+					existing.Description = bak.Description; changed = true
+				}
+				if bak.CoverUrl != "" && existing.CoverUrl == "" {
+					existing.CoverUrl = bak.CoverUrl; changed = true
+				}
+				if bak.Author != "" && existing.Author == "" {
+					existing.Author = bak.Author; changed = true
+				}
+				if bak.Narrator != "" && existing.Narrator == "" {
+					existing.Narrator = bak.Narrator; changed = true
+				}
+				if bak.CoverPath != "" && existing.CoverPath == "" {
+					existing.CoverPath = bak.CoverPath; changed = true
+				}
+				if bak.Genre != "" && bak.Genre != "有声读物" && existing.Genre == "有声读物" {
+					existing.Genre = bak.Genre; changed = true
+				}
+				if bak.Year > 0 && existing.Year == 0 {
+					existing.Year = bak.Year; changed = true
+				}
+				if bak.Series != "" && existing.Series == "" {
+					existing.Series = bak.Series; changed = true
+				}
+				if changed {
+					if err := ds.Audiobook(ctx).Put(existing); err != nil {
+						bookFail++
+					} else {
+						bookUpdated++
+					}
+				}
+			} else {
+				// No existing record, insert new
+				if err := ds.Audiobook(ctx).Put(bak); err != nil {
+					bookFail++
+				} else {
+					bookOK++
+				}
+			}
 		}
-		log.Info(ctx, "Restore: audiobooks done", "ok", bookOK, "fail", bookFail, "total_in_backup", len(backup.Audiobooks))
+		result.AudiobooksImported = bookOK + bookUpdated
+		if bookFail > 5 {
+			collectError("有声书还有 %d 条导入失败", bookFail-5)
+		}
+		log.Info(ctx, "Restore: audiobooks done", "new", bookOK, "updated", bookUpdated, "fail", bookFail)
+
+		// Clean up duplicate records (same path, different ID)
+		if allBooks, err := ds.Audiobook(ctx).GetAll(); err == nil {
+			pathBooks := make(map[string][]model.Audiobook)
+			for _, b := range allBooks {
+				pathBooks[b.Path] = append(pathBooks[b.Path], b)
+			}
+			dupCount := 0
+			for _, books := range pathBooks {
+				if len(books) <= 1 {
+					continue
+				}
+				// Keep the one with scraped data (or the first one)
+				keepIdx := 0
+				for j := 1; j < len(books); j++ {
+					if books[j].Description != "" || books[j].CoverUrl != "" {
+						keepIdx = j
+						break
+					}
+				}
+				for j, b := range books {
+					if j == keepIdx {
+						continue
+					}
+					// Move chapters to kept record
+					if chs, chErr := ds.Audiobook(ctx).GetChapters(b.ID); chErr == nil {
+						for _, ch := range chs {
+							ch.AudiobookID = books[keepIdx].ID
+							ds.Audiobook(ctx).PutChapter(&ch)
+						}
+					}
+					ds.Audiobook(ctx).Delete(b.ID)
+					dupCount++
+				}
+			}
+			if dupCount > 0 {
+				log.Info(ctx, "Restore: cleaned up duplicate audiobooks", "deleted", dupCount)
+			}
+		}
 
 		chOK, chFail := 0, 0
 		for i := range backup.AudiobookChapters {

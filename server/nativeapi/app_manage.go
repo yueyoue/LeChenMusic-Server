@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -83,7 +84,7 @@ func (h *appManageHandler) updateConfig(w http.ResponseWriter, r *http.Request) 
 // uploadApk handles APK file upload
 func (h *appManageHandler) uploadApk(w http.ResponseWriter, r *http.Request) {
 	r.ParseMultipartForm(200 << 20) // 200MB max
-	file, _, err := r.FormFile("apk")
+	file, fileHeader, err := r.FormFile("apk")
 	if err != nil {
 		http.Error(w, "No file uploaded", 400)
 		return
@@ -104,7 +105,11 @@ func (h *appManageHandler) uploadApk(w http.ResponseWriter, r *http.Request) {
 	uploadDir := getAppUploadDir()
 	os.MkdirAll(uploadDir, 0755)
 
-	fileName := fmt.Sprintf("lechenmusic-v%s.apk", versionName)
+	// Use original filename if it ends with .apk, otherwise generate one
+	fileName := fileHeader.Filename
+	if fileName == "" || !strings.HasSuffix(strings.ToLower(fileName), ".apk") {
+		fileName = fmt.Sprintf("lechenmusic-v%s.apk", versionName)
+	}
 	filePath := filepath.Join(uploadDir, fileName)
 
 	dst, err := os.Create(filePath)
