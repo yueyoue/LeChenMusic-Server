@@ -277,30 +277,26 @@ const ArtistActions = ({ className, record, ...rest }) => {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [nextArtistId, setNextArtistId] = useState(null)
 
-  // 获取下一个艺人ID
+  // 获取下一个艺人ID（获取排序后的列表，找到当前艺人位置，取下一个）
   React.useEffect(() => {
     if (!record?.id) return
     dataProvider.getList('artist', {
-      pagination: { page: 1, perPage: 1 },
+      pagination: { page: 1, perPage: 10000 },
       sort: { field: 'name', order: 'ASC' },
-      filter: { name_gt: record.name },
+      filter: {},
     }).then(({ data }) => {
-      if (data.length > 0) {
+      if (!data || data.length === 0) return
+      const idx = data.findIndex(a => a.id === record.id)
+      if (idx === -1) {
         setNextArtistId(data[0].id)
+      } else if (idx < data.length - 1) {
+        setNextArtistId(data[idx + 1].id)
       } else {
-        // 如果没有更大的名字，回到第一个
-        dataProvider.getList('artist', {
-          pagination: { page: 1, perPage: 1 },
-          sort: { field: 'name', order: 'ASC' },
-          filter: {},
-        }).then(({ data: first }) => {
-          if (first.length > 0 && first[0].id !== record.id) {
-            setNextArtistId(first[0].id)
-          }
-        })
+        // 最后一个艺人，回到第一个
+        setNextArtistId(data[0].id)
       }
     }).catch(() => {})
-  }, [record?.id, record?.name, dataProvider])
+  }, [record?.id, dataProvider])
 
   const handleNextArtist = React.useCallback(() => {
     if (nextArtistId) {

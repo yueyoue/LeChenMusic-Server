@@ -187,10 +187,16 @@ func (h *appManageHandler) checkAppVersion(w http.ResponseWriter, r *http.Reques
 	hasUpdate := config.VersionCode > 0 && config.VersionCode > clientVersionCode
 
 	apkDir := getAppUploadDir()
-	apkPath := filepath.Join(apkDir, "app-release.apk")
 	apkExists := false
-	if info, err := os.Stat(apkPath); err == nil && info.Size() > 0 {
-		apkExists = true
+	// Check both the configured filename and the default name
+	for _, name := range []string{config.ApkFileName, "app-release.apk"} {
+		if name == "" {
+			continue
+		}
+		if info, err := os.Stat(filepath.Join(apkDir, name)); err == nil && info.Size() > 0 {
+			apkExists = true
+			break
+		}
 	}
 
 	writeJSON(w, map[string]any{

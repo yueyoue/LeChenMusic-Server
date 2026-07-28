@@ -441,9 +441,33 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 
 	// 4. Import playlists (depends on songs existing)
 	if opts.ImportPlaylists {
+		// Build set of valid user IDs
+		validUserIDs := make(map[string]bool)
+		for _, u := range backup.Users {
+			validUserIDs[u.ID] = true
+		}
+		if existingUsers, err := ds.User(ctx).GetAll(); err == nil {
+			for _, u := range existingUsers {
+				validUserIDs[u.ID] = true
+			}
+		}
+		// Get first admin user ID as fallback
+		adminUserID := ""
+		for _, u := range backup.Users {
+			if u.IsAdmin {
+				adminUserID = u.ID
+				break
+			}
+		}
+
 		plOK, plFail := 0, 0
 		for _, pb := range backup.Playlists {
 			pl := pb.Playlist
+			// Fix owner_id if it references a non-existent user
+			if pl.OwnerID != "" && !validUserIDs[pl.OwnerID] && adminUserID != "" {
+				log.Info(ctx, "Restore: playlist owner not found, using admin", "playlist", pl.Name, "old_owner", pl.OwnerID)
+				pl.OwnerID = adminUserID
+			}
 			if err := ds.Playlist(adminCtx).Put(&pl); err != nil {
 				plFail++
 				collectError("歌单 '%s' 导入失败: %v", pl.Name, err)
