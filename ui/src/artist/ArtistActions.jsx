@@ -304,7 +304,7 @@ const ArtistActions = ({ className, record, ...rest }) => {
 
   const handleNextArtist = React.useCallback(() => {
     if (nextArtistId) {
-      window.location.hash = `#/artist/${nextArtistId}`
+      window.location.hash = `#/artist/${nextArtistId}/show`
     }
   }, [nextArtistId])
 
