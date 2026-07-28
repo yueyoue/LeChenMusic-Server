@@ -292,7 +292,9 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 	if len(backup.Images) > 0 {
 		log.Info(ctx, "Restore: importing embedded images...", "count", len(backup.Images))
 		restored := restoreEmbeddedImages(ctx, backup.Images)
-		result.ImagesRestored = restored > 0
+		log.Info(ctx, "Restore: images done", "restored", restored, "total", len(backup.Images))
+		// Backup contains images = report as restored (even if files already existed)
+		result.ImagesRestored = true
 	} else {
 		// Fallback: try legacy tar.gz image file
 		imagesPath := ImagesTarPath(opts.FilePath)
