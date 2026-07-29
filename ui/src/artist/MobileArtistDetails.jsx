@@ -94,7 +94,8 @@ const MobileArtistDetails = ({ artistInfo, biography, record }) => {
   // 直接使用本地头像URL（如果不存在则自动fallback）
   const token = localStorage.getItem('token')
   const tokenParam = token ? `?token=${token}` : ''
-  const [useLocalAvatar, setUseLocalAvatar] = useState(true)
+  // 只有当艺人有上传的头像时才尝试本地头像，避免404导致加载慢
+  const [useLocalAvatar, setUseLocalAvatar] = useState(!!record.uploadedImage)
   const localAvatarUrl = `/api/scrape/image/artist/${record.id}${tokenParam}`
 
   const img = useLocalAvatar ? localAvatarUrl : subsonic.getCoverArtUrl(record, 800)

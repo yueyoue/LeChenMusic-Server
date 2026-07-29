@@ -105,7 +105,8 @@ const DesktopArtistDetails = ({ artistInfo, record, biography }) => {
   const token = localStorage.getItem('token')
   const tokenParam = token ? `?token=${token}` : ''
   const localAvatarUrl = `/api/scrape/image/artist/${record.id}${tokenParam}`
-  const [useLocalAvatar, setUseLocalAvatar] = useState(true)
+  // 只有当艺人有上传的头像时才尝试本地头像，避免404导致加载慢
+  const [useLocalAvatar, setUseLocalAvatar] = useState(!!record.uploadedImage)
 
   const imageUrl = useLocalAvatar ? localAvatarUrl : subsonic.getCoverArtUrl(record, config.uiCoverArtSize)
   const fullImageUrl = useLocalAvatar ? localAvatarUrl : subsonic.getCoverArtUrl(record)
