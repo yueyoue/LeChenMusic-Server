@@ -99,6 +99,7 @@ func (api *Router) routes() http.Handler {
 		api.R(r, "/transcoding", model.Transcoding{}, conf.Server.EnableTranscodingConfig)
 		api.addRadioRoute(r)
 		api.addAudiobookRoute(r)      // [LeChenMusic] audiobook routes
+		api.addUserStatsRoute(r)     // [LeChenMusic] user stats & device tracking
 		api.addScrapeRoute(r)         // [LeChenMusic] scraper routes
 		api.addDuplicateSongsRoute(r) // [LeChenMusic] duplicate songs detection
 		api.addAIPlaylistRoute(r)     // [LeChenMusic] AI playlist routes

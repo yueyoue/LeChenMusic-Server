@@ -11,6 +11,7 @@ import FavoritesPage from './favorites/FavoritesPage'
 import AIPlaylistPage from './ai-playlist/AIPlaylistPage'
 import ErrorLogPage from './error-log/ErrorLogPage'
 import BackupPage from './backup/BackupList'
+import UserStatsPage from './stats/UserStatsPage'
 
 const routes = [
   <Route exact path="/personal" render={() => <Personal />} key={'personal'} />,
@@ -25,6 +26,7 @@ const routes = [
   <Route exact path="/settings/version" render={() => <VersionPage />} key={'version'} />,
   <Route exact path="/settings/app" render={() => <AppManagePage />} key={'app-manage'} />,
   <Route exact path="/settings/backup" render={() => <BackupPage />} key={'backup'} />,
+  <Route exact path="/stats" render={() => <UserStatsPage />} key={'user-stats'} />,
 ]
 
 export default routes

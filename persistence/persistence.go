@@ -93,6 +93,14 @@ func (s *SQLStore) Audiobook(ctx context.Context) model.AudiobookRepository {
 	return NewAudiobookRepository(ctx, s.getDBXBuilder())
 }
 
+func (s *SQLStore) PlayLog(ctx context.Context) model.PlayLogRepository {
+	return NewPlayLogRepository(ctx, s.getDBXBuilder())
+}
+
+func (s *SQLStore) UserDevice(ctx context.Context) model.UserDeviceRepository {
+	return NewUserDeviceRepository(ctx, s.getDBXBuilder())
+}
+
 func (s *SQLStore) Scrobble(ctx context.Context) model.ScrobbleRepository {
 	return NewScrobbleRepository(ctx, s.getDBXBuilder())
 }
