@@ -255,6 +255,62 @@ const AIPlaylistPage = () => {
         </Box>
       </Card>
 
+      {/* TXT File Import Section */}
+      <Card className={classes.searchCard} elevation={1}>
+        <Typography style={{ fontWeight: 600, marginBottom: 8 }}>📄 TXT文件导入</Typography>
+        <Box className={classes.searchRow}>
+          <input
+            type="file"
+            accept=".txt"
+            id="txt-file-input"
+            style={{ display: 'none' }}
+            onChange={async (e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              setLoading(true)
+              setResults(null)
+              setCreated(null)
+              setImportedCoverUrl('')
+              try {
+                const formData = new FormData()
+                formData.append('file', file)
+                const res = await fetch('/api/ai-playlist/import-txt', {
+                  method: 'POST',
+                  headers: { 'X-ND-Authorization': `Bearer ${getToken()}` },
+                  body: formData,
+                })
+                if (res.ok) {
+                  const data = await res.json()
+                  setResults(data)
+                  setSelectedSongs(new Set(data.matched.map((_, i) => i)))
+                  setPlaylistName(data.playlistName || 'TXT导入歌单')
+                } else {
+                  const errText = await res.text()
+                  alert('导入失败: ' + errText)
+                }
+              } catch (err) {
+                alert('导入失败: ' + err.message)
+              } finally {
+                setLoading(false)
+                e.target.value = ''
+              }
+            }}
+          />
+          <Button
+            variant="outlined"
+            component="span"
+            style={{ borderRadius: 8, textTransform: 'none', fontWeight: 600 }}
+          >
+            选择TXT文件
+          </Button>
+          <Typography style={{ fontSize: 12, color: 'text.secondary', alignSelf: 'center' }}>
+            支持格式：每行一首，如 "歌名 - 歌手" 或 "歌名"
+          </Typography>
+        </Box>
+      </Card>
+
+
+
       {/* Loading */}
       {loading && (
         <Box textAlign="center" py={4}>
@@ -415,9 +471,9 @@ const AIPlaylistPage = () => {
       {!results && !loading && (
         <Box className={classes.empty}>
           <MusicNoteIcon style={{ fontSize: 64, opacity: 0.2 }} />
-          <Typography style={{ marginTop: 16, fontSize: 16 }}>输入歌单主题或粘贴歌单链接开始</Typography>
+          <Typography style={{ marginTop: 16, fontSize: 16 }}>输入歌单主题、粘贴歌单链接或上传TXT文件开始</Typography>
           <Typography style={{ marginTop: 8, fontSize: 13, color: 'text.secondary' }}>
-            支持酷我、网易云、QQ音乐、酷狗、汽水音乐平台搜索
+            支持酷我、网易云、QQ音乐、酷狗、汽水音乐平台搜索 | 支持TXT文件导入
           </Typography>
         </Box>
       )}
