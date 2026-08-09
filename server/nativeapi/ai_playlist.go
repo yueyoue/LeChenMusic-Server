@@ -568,7 +568,7 @@ func fetchKugouGcidPlaylist(gcid string) (string, string, []externalSong, error)
 	html := string(body)
 
 	// Extract window.$output JSON from the page
-	marker := "window.\$output = "
+	marker := "window.$output = "
 	idx := strings.Index(html, marker)
 	if idx < 0 {
 		return "", "", nil, fmt.Errorf("kugou gcid: no $output data found")
