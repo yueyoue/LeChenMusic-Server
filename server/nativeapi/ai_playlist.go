@@ -647,40 +647,10 @@ func fetchQishuiPlaylist(pid string) (string, string, []externalSong, error) {
 	}
 
 	// 方式2: SSR渲染的HTML格式
-	// 实际结构: <div>序号</div><div><div><p>歌名</p></div><div><p>歌手 • 专辑</p></div></div>
+	// 汽水音乐页面是SSR渲染，歌曲数据在HTML中格式为:
+	// <div>序号</div><div><div><p>歌名</p></div><div><p>歌手 • 专辑</p></div></div>
 	if len(songs) == 0 {
-		// 匹配带<p>标签的SSR格式
 		ssrRe := regexp.MustCompile(`>(\d{1,4})</div><div[^>]*><div[^>]*><p[^>]*>([^<]{1,200})</p></div><div[^>]*><p[^>]*>([^<]{1,300})</p></div>`)
-		for _, m := range ssrRe.FindAllStringSubmatch(text, -1) {
-			title := strings.TrimSpace(m[2])
-			artistLine := strings.TrimSpace(m[3])
-			artist := artistLine
-			album := ""
-			if idx := strings.Index(artistLine, " • "); idx > 0 {
-				artist = strings.TrimSpace(artistLine[:idx])
-				album = strings.TrimSpace(artistLine[idx+len(" • "):])
-			}
-			if title != "" && artist != "" && title != name {
-				songs = append(songs, externalSong{Title: title, Artist: artist, Album: album, Source: "汽水音乐"})
-			}
-		}
-		// 备用: 更宽泛的匹配（不带<p>标签的情况）
-		if len(songs) == 0 {
-			ssrRe2 := regexp.MustCompile(`>(\d{1,4})</[^>]*>[^<]*<[^>]*>([^<]{1,200})</[^>]*>[^<]*<[^>]*>([^<]{1,300})</[^>]*>`)
-			for _, m := range ssrRe2.FindAllStringSubmatch(text, -1) {
-				title := strings.TrimSpace(m[2])
-				artistLine := strings.TrimSpace(m[3])
-				artist := artistLine
-				album := ""
-				if idx := strings.Index(artistLine, " • "); idx > 0 {
-					artist = strings.TrimSpace(artistLine[:idx])
-					album = strings.TrimSpace(artistLine[idx+len(" • "):])
-				}
-				if title != "" && artist != "" && title != name {
-					songs = append(songs, externalSong{Title: title, Artist: artist, Album: album, Source: "汽水音乐"})
-				}
-			}
-		}
 		for _, m := range ssrRe.FindAllStringSubmatch(text, -1) {
 			title := strings.TrimSpace(m[2])
 			artistLine := strings.TrimSpace(m[3])
