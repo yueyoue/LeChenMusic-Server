@@ -2,11 +2,25 @@ import React, { useState } from 'react'
 import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   Button, TextField, Typography, Box, CircularProgress,
-  Card, CardContent, Radio
+  Card, CardContent, Radio, Chip, Tooltip
 } from '@material-ui/core'
 import SearchIcon from '@material-ui/icons/Search'
 import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
+
+// Platform display config with quality indicators
+const PLATFORM_CONFIG = {
+  netease:  { name: '网易云', color: '#e74c3c', quality: '★★★', order: 1 },
+  qqmusic:  { name: 'QQ音乐', color: '#3498db', quality: '★★★', order: 2 },
+  spotify:  { name: 'Spotify', color: '#1db954', quality: '★★★', order: 3 },
+  kugou:    { name: '酷狗',   color: '#2ecc71', quality: '★★☆', order: 4 },
+  kuwo:     { name: '酷我',   color: '#e67e22', quality: '★★☆', order: 5 },
+  lastfm:   { name: 'Last.fm', color: '#c0392b', quality: '★★☆', order: 6 },
+  ximalaya: { name: '喜马拉雅', color: '#e74c3c', quality: '★☆☆', order: 7 },
+  qingting: { name: '蜻蜓FM', color: '#27ae60', quality: '★☆☆', order: 8 },
+}
+
+const getPlatformConfig = (source) => PLATFORM_CONFIG[source] || { name: source, color: '#95a5a6', quality: '★☆☆', order: 99 }
 
 const ArtistAvatarDialog = ({ open, onClose, artist, onApply, searchType }) => {
   const [query, setQuery] = useState(artist?.name || '')
@@ -25,7 +39,14 @@ const ArtistAvatarDialog = ({ open, onClose, artist, onApply, searchType }) => {
     try {
       const typeParam = searchType ? `&type=${searchType}` : ''
       const res = await httpClient(`${REST_URL}/scrape/artist?q=${encodeURIComponent(query)}${typeParam}`)
-      setResults(res.json?.data || [])
+      const data = res.json?.data || []
+      // Sort by platform quality order as fallback
+      data.sort((a, b) => {
+        const aOrder = getPlatformConfig(a.source).order
+        const bOrder = getPlatformConfig(b.source).order
+        return aOrder - bOrder
+      })
+      setResults(data)
     } catch (e) {
       console.error('Artist search failed:', e)
     } finally {
@@ -104,20 +125,30 @@ const ArtistAvatarDialog = ({ open, onClose, artist, onApply, searchType }) => {
                 输入艺人名称搜索头像
               </Typography>
             )}
-            {results.map((item, idx) => (
-              <Card key={idx} style={{ marginBottom: 4, cursor: 'pointer',
-                border: selected?.imageUrl === item.imageUrl ? '2px solid #1976d2' : '1px solid #e0e0e0'
-              }} onClick={() => setSelected(item)}>
-                <CardContent style={{ padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center' }}>
-                  <Radio checked={selected?.imageUrl === item.imageUrl} />
-                  <img src={item.imageUrl} alt="" style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }} />
-                  <Box>
-                    <Typography style={{ fontSize: 14, fontWeight: 600 }}>{item.name}</Typography>
-                    <Typography style={{ fontSize: 11, color: '#666' }}>来源: {item.platform}</Typography>
-                  </Box>
-                </CardContent>
-              </Card>
-            ))}
+            {results.map((item, idx) => {
+              const platformCfg = getPlatformConfig(item.source)
+              return (
+                <Card key={idx} style={{ marginBottom: 4, cursor: 'pointer',
+                  border: selected?.imageUrl === item.imageUrl ? '2px solid #1976d2' : '1px solid #e0e0e0'
+                }} onClick={() => setSelected(item)}>
+                  <CardContent style={{ padding: '8px 12px', display: 'flex', gap: 12, alignItems: 'center' }}>
+                    <Radio checked={selected?.imageUrl === item.imageUrl} />
+                    <img src={item.imageUrl} alt="" style={{ width: 48, height: 48, borderRadius: '50%', objectFit: 'cover' }}
+                      onError={(e) => { e.target.style.opacity = 0.3 }} />
+                    <Box flex={1}>
+                      <Typography style={{ fontSize: 14, fontWeight: 600 }}>{item.name}</Typography>
+                      <Box display="flex" alignItems="center" gap={1} mt={0.5}>
+                        <Chip size="small" label={platformCfg.name}
+                          style={{ backgroundColor: platformCfg.color, color: '#fff', fontSize: 10, height: 20 }} />
+                        <Tooltip title="图片质量评分">
+                          <Typography style={{ fontSize: 10, color: '#f39c12' }}>{platformCfg.quality}</Typography>
+                        </Tooltip>
+                      </Box>
+                    </Box>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </Box>
         )}
       </DialogContent>
