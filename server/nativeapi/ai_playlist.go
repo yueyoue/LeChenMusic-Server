@@ -253,6 +253,7 @@ var playlistURLPatterns = []struct {
 	{"netease", regexp.MustCompile(`music\.163\.com/playlist/(\d+)`)},
 	{"qq", regexp.MustCompile(`y\.qq\.com.*?playlist/(\d+)`)},
 	{"qq", regexp.MustCompile(`y\.qq\.com.*?id=(\d+)`)},
+	{"qq", regexp.MustCompile(`c\d*\.y\.qq\.com/base/fcgi-bin/u\?__=(\w+)`)},
 	{"kuwo", regexp.MustCompile(`kuwo\.cn/playlist(?:_detail)?/(\d+)`)},
 	{"kuwo", regexp.MustCompile(`kuwo\.cn.*?pid=(\d+)`)},
 	{"kugou", regexp.MustCompile(`kugou\.com.*?special/(\d+)`)},
@@ -344,43 +345,84 @@ func fetchNeteasePlaylist(pid string) (string, string, []externalSong, error) {
 	return name, coverURL, songs, nil
 }
 
+// isNumericID checks if a string is a pure numeric ID
+func isNumericID(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+// resolveQQShareAndFetch resolves a QQ Music share link token to a real playlist ID
+func resolveQQShareAndFetch(token string) (string, string, []externalSong, error) {
+	// Try to resolve the share link
+	shareURL := fmt.Sprintf("https://c6.y.qq.com/base/fcgi-bin/u?__=%s", token)
+	client := &http.Client{
+		Timeout: 15 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Get(shareURL)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("resolve QQ share link failed: %w", err)
+	}
+	defer resp.Body.Close()
+	location := resp.Header.Get("Location")
+	if location == "" {
+		return "", "", nil, fmt.Errorf("QQ share link returned no redirect")
+	}
+	// Extract playlist ID from the redirect URL
+	re := regexp.MustCompile(`playlist/(\d+)`)
+	m := re.FindStringSubmatch(location)
+	if len(m) < 2 {
+		return "", "", nil, fmt.Errorf("could not extract playlist ID from QQ share link: %s", location)
+	}
+	realPID := m[1]
+	return fetchQQPlaylist(realPID)
+}
+
 func fetchQQPlaylist(pid string) (string, string, []externalSong, error) {
-	url := fmt.Sprintf("https://c.y.qq.com/v8/fcg-bin/fcg_v8_playlist_cp.fcg?disstid=%s&type=1&json=1&utf8=1&onlysong=0&new_format=1&loginUin=0&hostUin=0&format=json&inCharset=utf-8&outCharset=utf-8&notice=0&platform=yqq.json&needNewCode=0", pid)
+	// First check if pid looks like a share link token (not a numeric ID)
+	if !isNumericID(pid) {
+		return resolveQQShareAndFetch(pid)
+	}
+	url := fmt.Sprintf("https://c6.y.qq.com/qzone/fcg-bin/fcg_ucc_getcdinfo_byids_cp.fcg?type=1&json=1&utf8=1&onlysong=0&new_format=1&disstid=%s&platform=yqq.json&needNewCode=0", pid)
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Referer", "https://y.qq.com/")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return "", "", nil, err
 	}
 	defer resp.Body.Close()
 	var result struct {
-		Data struct {
-			Cdlist []struct {
-				Dissname string `json:"dissname"`
-				Logo     string `json:"logo"`
-				Songlist []struct {
-					Name      string `json:"name"`
-					SongName  string `json:"songname"`
-					Singer    []struct {
-						Name string `json:"name"`
-					} `json:"singer"`
-					SingerName string `json:"singername"`
-					Album      struct {
-						Name string `json:"name"`
-					} `json:"album"`
-					AlbumName string `json:"albumname"`
-				} `json:"songlist"`
-			} `json:"cdlist"`
-		} `json:"data"`
+		Cdlist []struct {
+			Dissname string `json:"dissname"`
+			Logo     string `json:"logo"`
+			Songlist []struct {
+				Name      string `json:"name"`
+				SongName  string `json:"songname"`
+				Singer    []struct {
+					Name string `json:"name"`
+				} `json:"singer"`
+				SingerName string `json:"singername"`
+				Album      struct {
+					Name string `json:"name"`
+				} `json:"album"`
+				AlbumName string `json:"albumname"`
+			} `json:"songlist"`
+		} `json:"cdlist"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", "", nil, err
 	}
-	if len(result.Data.Cdlist) == 0 {
+	if len(result.Cdlist) == 0 {
 		return "QQ音乐歌单", "", nil, nil
 	}
-	cd := result.Data.Cdlist[0]
+	cd := result.Cdlist[0]
 	name := cd.Dissname
 	if name == "" {
 		name = "QQ音乐歌单"

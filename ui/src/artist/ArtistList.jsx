@@ -174,6 +174,7 @@ const ArtistListView = ({ hasShow, hasEdit, hasList, width, ...rest }) => {
       {...rest}
     />
   ) : (
+    <>
     <ArtistDatagrid rowClick={handleArtistLink} classes={{ row: classes.row }}>
       <CoverArtAvatar source="id" />
       <TextField source="name" />
@@ -215,6 +216,15 @@ const ArtistListView = ({ hasShow, hasEdit, hasList, width, ...rest }) => {
         }
       />
     </ArtistDatagrid>
+    {avatarDialogArtist && (
+      <ArtistAvatarDialog
+        open={!!avatarDialogArtist}
+        onClose={() => setAvatarDialogArtist(null)}
+        artist={avatarDialogArtist}
+        onApply={() => window.location.reload()}
+      />
+    )}
+    </>
   )
 }
 
