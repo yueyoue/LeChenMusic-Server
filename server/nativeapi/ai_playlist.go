@@ -72,10 +72,10 @@ type createPlaylistRequest struct {
 var httpClient = &http.Client{Timeout: 15 * time.Second}
 
 func cleanMatchStr(s string) string {
-	re := regexp.MustCompile(`[\s\-\(\)（）\[\]【】「」《》]`)
+	re := regexp.MustCompile(`[\s\-\(\)()\[\]【】「」《》]`)
 	s = re.ReplaceAllString(s, "")
 	s = strings.ToLower(s)
-	re2 := regexp.MustCompile(`(?i)(feat\.?|ft\.?|合唱|对唱|live|remix|cover|翻唱|伴奏|dj.*版|完整版|&|、|，)`)
+	re2 := regexp.MustCompile(`(?i)(feat\.?|ft\.?|合唱|对唱|live|remix|cover|翻唱|伴奏|dj.*版|完整版|&|、|,)`)
 	s = re2.ReplaceAllString(s, "")
 	return s
 }
@@ -258,6 +258,7 @@ var playlistURLPatterns = []struct {
 	{"kuwo", regexp.MustCompile(`kuwo\.cn.*?pid=(\d+)`)},
 	{"kugou", regexp.MustCompile(`kugou\.com.*?special/(\d+)`)},
 	{"kugou", regexp.MustCompile(`kugou\.com.*?code=(\w+)`)},
+	{"kugou", regexp.MustCompile(`kugou\.com/songlist/(gcid_\w+)`)},
 	{"qishui", regexp.MustCompile(`music\.douyin\.com/qishui/share/playlist\?.*?playlist_id=(\d+)`)},
 	{"qishui", regexp.MustCompile(`qishui\.douyin\.com/s/(\w+)`)},
 }
@@ -281,7 +282,7 @@ func fetchPlaylistFromURL(url string) (string, string, []externalSong, error) {
 	}
 	platform, pid := parsePlaylistURL(url)
 	if platform == "" || pid == "" {
-		return "", "", nil, fmt.Errorf("无法识别此链接格式，支持：网易云/QQ音乐/酷我/酷狗/汽水音乐歌单链接")
+		return "", "", nil, fmt.Errorf("无法识别此链接格式,支持:网易云/QQ音乐/酷我/酷狗/汽水音乐歌单链接")
 	}
 	switch platform {
 	case "netease":
@@ -516,6 +517,10 @@ func fetchKuwoPlaylist(pid string) (string, string, []externalSong, error) {
 }
 
 func fetchKugouPlaylist(pid string) (string, string, []externalSong, error) {
+	// Check if pid starts with gcid_ prefix (new format)
+	if strings.HasPrefix(pid, "gcid_") {
+		return fetchKugouGcidPlaylist(pid)
+	}
 	url := fmt.Sprintf("http://mobilecdn.kugou.com/api/v3/special/song?specialid=%s&page=1&pagesize=100&plat=2&version=8970", pid)
 	resp, err := httpClient.Get(url)
 	if err != nil {
@@ -546,6 +551,86 @@ func fetchKugouPlaylist(pid string) (string, string, []externalSong, error) {
 	return "酷狗歌单", "", songs, nil
 }
 
+// fetchKugouGcidPlaylist fetches kugou playlist from mobile page using gcid format
+func fetchKugouGcidPlaylist(gcid string) (string, string, []externalSong, error) {
+	mobileURL := fmt.Sprintf("https://m.kugou.com/songlist/%s/", gcid)
+	req, _ := http.NewRequest("GET", mobileURL, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("fetch kugou gcid page: %w", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", nil, fmt.Errorf("read kugou gcid page: %w", err)
+	}
+	html := string(body)
+
+	// Extract window.$output JSON from the page
+	marker := "window.\$output = "
+	idx := strings.Index(html, marker)
+	if idx < 0 {
+		return "", "", nil, fmt.Errorf("kugou gcid: no $output data found")
+	}
+	jsonStart := idx + len(marker)
+	braceCount := 0
+	jsonEnd := jsonStart
+	for i := jsonStart; i < len(html); i++ {
+		if html[i] == '{' {
+			braceCount++
+		} else if html[i] == '}' {
+			braceCount--
+			if braceCount == 0 {
+				jsonEnd = i + 1
+				break
+			}
+		}
+	}
+
+	var output struct {
+		Info struct {
+			Listinfo struct {
+				Name  string `json:"name"`
+				Count int    `json:"count"`
+			} `json:"listinfo"`
+			Songs []struct {
+				Name       string `json:"name"`
+				Singerinfo []struct {
+					Name string `json:"name"`
+				} `json:"singerinfo"`
+			} `json:"songs"`
+		} `json:"info"`
+	}
+	if err := json.Unmarshal([]byte(html[jsonStart:jsonEnd]), &output); err != nil {
+		return "", "", nil, fmt.Errorf("kugou gcid parse: %w", err)
+	}
+
+	name := output.Info.Listinfo.Name
+	if name == "" {
+		name = "酷狗歌单"
+	}
+
+	var songs []externalSong
+	for _, s := range output.Info.Songs {
+		songName := s.Name
+		var artist string
+		if len(s.Singerinfo) > 0 {
+			artist = s.Singerinfo[0].Name
+		}
+		// If name contains " - ", split as artist - song
+		if artist == "" && strings.Contains(songName, " - ") {
+			parts := strings.SplitN(songName, " - ", 2)
+			artist = strings.TrimSpace(parts[0])
+			songName = strings.TrimSpace(parts[1])
+		}
+		if songName != "" && artist != "" {
+			songs = append(songs, externalSong{Title: songName, Artist: artist, Source: "酷狗"})
+		}
+	}
+	return name, "", songs, nil
+}
+
 // ==================== 汽水音乐 ====================
 
 func searchQishui(keyword string, limit int) []externalSong {
@@ -572,7 +657,7 @@ func searchQishui(keyword string, limit int) []externalSong {
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		// 尝试备用解析：从HTML提取
+		// 尝试备用解析:从HTML提取
 		text := string(body)
 		titleRe := regexp.MustCompile(`"title":"([^"]+)"`)
 		artistRe := regexp.MustCompile(`"author":"([^"]+)"`)
@@ -615,7 +700,7 @@ func resolveQishuiShortURL(shortURL string) (string, error) {
 	if location != "" {
 		return location, nil
 	}
-	// 如果没有重定向，从页面中提取
+	// 如果没有重定向,从页面中提取
 	body, _ := io.ReadAll(resp.Body)
 	text := string(body)
 	re := regexp.MustCompile(`https?://music\.douyin\.com/qishui/share/playlist\?playlist_id=(\d+)`)
@@ -689,7 +774,7 @@ func fetchQishuiPlaylist(pid string) (string, string, []externalSong, error) {
 	}
 
 	// 方式2: SSR渲染的HTML格式
-	// 汽水音乐页面是SSR渲染，歌曲数据在HTML中格式为:
+	// 汽水音乐页面是SSR渲染,歌曲数据在HTML中格式为:
 	// <div>序号</div><div><div><p>歌名</p></div><div><p>歌手 • 专辑</p></div></div>
 	if len(songs) == 0 {
 		ssrRe := regexp.MustCompile(`>(\d{1,4})</div><div[^>]*><div[^>]*><p[^>]*>([^<]{1,200})</p></div><div[^>]*><p[^>]*>([^<]{1,300})</p></div>`)
@@ -995,7 +1080,7 @@ func (api *Router) aiPlaylistFromURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(urlSongs) == 0 {
-		http.Error(w, "未能从该链接获取到歌曲。汽水音乐链接可能需要浏览器环境解析，建议使用TXT文件导入方式：先在浏览器打开歌单页面，将歌曲列表复制到TXT文件后导入", 400)
+		http.Error(w, "未能从该链接获取到歌曲。汽水音乐链接可能需要浏览器环境解析,建议使用TXT文件导入方式:先在浏览器打开歌单页面,将歌曲列表复制到TXT文件后导入", 400)
 		return
 	}
 
