@@ -627,10 +627,10 @@ func fetchQishuiPlaylist(pid string) (string, string, []externalSong, error) {
 
 	// 提取歌曲列表
 	var songs []externalSong
-	// 方式1: JSON数据
+
+	// 方式1: JSON数据 (song_list格式)
 	songListRe := regexp.MustCompile(`"song_list":\[\{(.*?)\}\]`)
 	if m := songListRe.FindStringSubmatch(text); len(m) > 0 {
-		// 解析JSON数组
 		arrText := "[{" + m[1] + "}]"
 		var items []struct {
 			Title  string `json:"title"`
@@ -645,10 +645,33 @@ func fetchQishuiPlaylist(pid string) (string, string, []externalSong, error) {
 			}
 		}
 	}
-	// 方式2: 正则提取
+
+	// 方式2: SSR渲染的HTML格式 - 序号\n歌名\n歌手 • 专辑
 	if len(songs) == 0 {
-		titles := regexp.MustCompile(`"title":"([^"]{2,80})"`).FindAllStringSubmatch(text, -1)
-		artists := regexp.MustCompile(`"author":"([^"]{1,60})"`).FindAllStringSubmatch(text, -1)
+		// 匹配模式: 数字\n歌名\n歌手(•专辑)
+		// HTML中歌曲数据通常在特定标签内，格式为:
+		// <div>序号</div><div>歌名</div><div>歌手 • 专辑</div>
+		// 或纯文本中: 序号\n歌名\n歌手 • 专辑
+		ssrRe := regexp.MustCompile(`(?s)>(\d{1,4})</[^>]*>\s*<[^>]*>([^<]{1,200})</[^>]*>\s*<[^>]*>([^<]{1,300})</[^>]*>`)
+		for _, m := range ssrRe.FindAllStringSubmatch(text, -1) {
+			title := strings.TrimSpace(m[2])
+			artistLine := strings.TrimSpace(m[3])
+			artist := artistLine
+			album := ""
+			if idx := strings.Index(artistLine, " • "); idx > 0 {
+				artist = strings.TrimSpace(artistLine[:idx])
+				album = strings.TrimSpace(artistLine[idx+len(" • "):])
+			}
+			if title != "" && artist != "" && title != name {
+				songs = append(songs, externalSong{Title: title, Artist: artist, Album: album, Source: "汽水音乐"})
+			}
+		}
+	}
+
+	// 方式3: 更宽泛的正则 - 匹配 "title":"xxx" 和 "author":"xxx" 模式
+	if len(songs) == 0 {
+		titles := regexp.MustCompile(`"title":"([^"]{2,200})"`).FindAllStringSubmatch(text, -1)
+		artists := regexp.MustCompile(`"author":"([^"]{1,200})"`).FindAllStringSubmatch(text, -1)
 		for i := 0; i < len(titles); i++ {
 			title := titles[i][1]
 			artist := ""
