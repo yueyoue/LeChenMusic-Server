@@ -133,7 +133,21 @@ func titleMatchScore(title, queryLower string) int {
 	return 0
 }
 
-// SearchArtistsAll searches all platforms for artist images
+// SourceQualityWeights defines reliability scores for each source when searching artist images.
+// Higher weight = more reliable/accurate artist photos.
+// Music platforms generally have better artist photos than audiobook platforms.
+var SourceQualityWeights = map[string]int{
+	"netease":  95,  // 网易云音乐 - 艺人图片最全、质量最高
+	"qqmusic":  90,  // QQ音乐 - 官方高清头像
+	"kugou":    80,  // 酷狗音乐 - 艺人图片较全
+	"kuwo":     75,  // 酷我音乐 - 艺人图片质量不错
+	"spotify":  85,  // Spotify - 国际艺人图片质量高
+	"lastfm":   70,  // Last.fm - 社区贡献，质量参差不齐
+	"ximalaya": 30,  // 喜马拉雅 - 有声书平台，音乐艺人图片少
+	"qingting": 25,  // 蜻蜓FM - 有声书平台，音乐艺人图片少
+}
+
+// SearchArtistsAll searches all platforms for artist images, sorted by quality + match score
 func SearchArtistsAll(query string) []ArtistResult {
 	var results []ArtistResult
 	for _, s := range scrapers {
@@ -141,10 +155,54 @@ func SearchArtistsAll(query string) []ArtistResult {
 		if err != nil {
 			continue
 		}
-		results = append(results, res...)
+		// Filter out results without images
+		var filtered []ArtistResult
+		for _, r := range res {
+			if r.ImageURL != "" {
+				filtered = append(filtered, r)
+			}
+		}
+		results = append(results, filtered...)
 	}
 
-	// Sort by name match relevance
+	// Sort by composite score: name match * 0.6 + source quality * 0.4
+	queryLower := strings.ToLower(query)
+	sort.Slice(results, func(i, j int) bool {
+		iNameScore := nameMatchScore(results[i].Name, queryLower)
+		jNameScore := nameMatchScore(results[j].Name, queryLower)
+		iQuality := SourceQualityWeights[results[i].Source]
+		jQuality := SourceQualityWeights[results[j].Source]
+		if iQuality == 0 { iQuality = 50 }
+		if jQuality == 0 { jQuality = 50 }
+		iTotal := iNameScore*60 + iQuality*40
+		jTotal := jNameScore*60 + jQuality*40
+		return iTotal > jTotal
+	})
+
+	return results
+}
+
+// SearchNarratorsAll searches audiobook platforms only for narrator/anchor avatars
+func SearchNarratorsAll(query string) []ArtistResult {
+	var results []ArtistResult
+	audiobookSources := map[string]bool{"ximalaya": true, "qingting": true}
+	for _, s := range scrapers {
+		if !audiobookSources[s.Name()] {
+			continue
+		}
+		res, err := s.SearchArtists(query)
+		if err != nil {
+			continue
+		}
+		var filtered []ArtistResult
+		for _, r := range res {
+			if r.ImageURL != "" {
+				filtered = append(filtered, r)
+			}
+		}
+		results = append(results, filtered...)
+	}
+
 	queryLower := strings.ToLower(query)
 	sort.Slice(results, func(i, j int) bool {
 		return nameMatchScore(results[i].Name, queryLower) > nameMatchScore(results[j].Name, queryLower)
