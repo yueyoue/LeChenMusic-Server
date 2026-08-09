@@ -86,7 +86,8 @@ func getBackupDir() string {
 	if path, err := conf.Server.Backup.Path.Path(); err == nil {
 		return path
 	}
-	return filepath.Join(conf.Server.DataFolder, "backups")
+	path, _ := conf.Server.DataFolder.Path()
+	return filepath.Join(path, "backups")
 }
 
 func getDbPath() string {
@@ -98,7 +99,8 @@ func getDbPath() string {
 }
 
 func getCacheDir() string {
-	return filepath.Join(conf.Server.DataFolder, "cache")
+	path, _ := conf.Server.DataFolder.Path()
+	return filepath.Join(path, "cache")
 }
 
 func backupFileName(t time.Time, ext string) string {
