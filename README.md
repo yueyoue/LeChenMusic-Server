@@ -133,6 +133,75 @@ docker run -d \
 | `ND_MUSICFOLDER` | `/music` | 默认音乐目录 |
 | `ND_DATAFOLDER` | `/data` | 数据目录（数据库、缓存） |
 
+## 💾 备份与恢复
+
+### 必须备份的内容
+
+| 目录 | 内容 | 必须备份？ |
+|------|------|-----------|
+| `./data/*.db` | 数据库（歌曲列表、用户、歌单、播放记录） | ✅ 必须 |
+| `./data/cache/` | 封面缩略图缓存 | ✅ 强烈建议 |
+| `./data/backups/` | 自动备份文件 | 可选 |
+| 音乐/有声书目录 | 原始音频文件 | 单独管理 |
+
+> ⚠️ **重要**：只备份数据库不备份 `cache` 目录，恢复后封面图片会全部丢失！
+>
+> 推荐直接备份整个 `./data` 目录。
+
+### 完整备份（推荐）
+
+```bash
+# 方式一：用内置命令（打包数据库+封面缓存为 tar.gz）
+docker exec lechen-music ./navidrome backup create
+
+# 方式二：直接备份整个 data 目录
+tar czf lechen-music-backup-$(date +%Y%m%d).tar.gz ./data/
+```
+
+### 只备份数据库（不含封面缓存）
+
+```bash
+docker exec lechen-music ./navidrome backup create --cache=false
+```
+
+### 恢复
+
+```bash
+# 停止服务
+docker stop lechen-music
+
+# 方式一：从 tar.gz 恢复（包含数据库+封面）
+docker run --rm -v ./data:/data ghcr.io/yueyoue/lechenmusic-server:latest \
+  ./navidrome backup restore -b /data/backups/navidrome_backup_2026.08.09_xxx.tar.gz -f
+
+# 方式二：从纯数据库备份恢复（封面需要重新扫描）
+docker run --rm -v ./data:/data ghcr.io/yueyoue/lechenmusic-server:latest \
+  ./navidrome backup restore -b /data/backups/navidrome_backup_2026.08.09_xxx.db -f
+
+# 方式三：直接解压整个 data 目录
+tar xzf lechen-music-backup-20260809.tar.gz ./data/
+
+# 启动服务
+docker start lechen-music
+```
+
+### 去重（备份恢复后出现重复歌曲时使用）
+
+```bash
+# 进入容器
+docker exec -it lechen-music bash
+
+# 先预览（不删除）
+./navidrome dedupe --dry-run
+
+# 确认无误后执行
+./navidrome dedupe
+
+# 退出容器，重启
+exit
+docker restart lechen-music
+```
+
 ## 🔄 更新版本
 
 ### Docker Compose
