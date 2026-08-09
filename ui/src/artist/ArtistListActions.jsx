@@ -111,8 +111,26 @@ const BatchAvatarDialog = ({ open, onClose }) => {
           continue
         }
 
-        // Use the first result
-        const avatar = searchResults[0]
+        // Find best match: prefer exact name match, then highest quality source
+        const artistNameLower = artist.name.toLowerCase().trim()
+        let avatar = searchResults[0] // default to first result
+        for (const r of searchResults) {
+          const rNameLower = (r.name || '').toLowerCase().trim()
+          if (rNameLower === artistNameLower) {
+            avatar = r
+            break
+          }
+        }
+        // Skip if top result name is completely unrelated (no common substring > 1 char)
+        const topName = (avatar.name || '').toLowerCase().trim()
+        const hasCommon = topName.includes(artistNameLower) || artistNameLower.includes(topName) ||
+          (topName.length > 1 && artistNameLower.length > 1 && (
+            topName.substring(0, 2) === artistNameLower.substring(0, 2)
+          ))
+        if (!hasCommon && topName !== artistNameLower) {
+          failCount++
+          continue
+        }
         const saveRes = await httpClient(`${REST_URL}/scrape/artist/${encodeURIComponent(artist.id)}/avatar`, {
           method: 'POST',
           headers: new Headers({ 'Content-Type': 'application/json' }),
