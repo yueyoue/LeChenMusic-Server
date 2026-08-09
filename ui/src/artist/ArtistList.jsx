@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useHistory } from 'react-router-dom'
 import {
   Datagrid,
@@ -32,6 +32,7 @@ import {
 import config from '../config'
 import ArtistListActions from './ArtistListActions'
 import ArtistSimpleList from './ArtistSimpleList'
+import ArtistAvatarDialog from '../scraper/ArtistAvatarDialog'
 import { DraggableTypes } from '../consts'
 import en from '../i18n/en.json'
 import { formatBytes } from '../utils/index.js'
@@ -127,6 +128,7 @@ const ArtistDatagrid = (props) => (
 )
 
 const ArtistListView = ({ hasShow, hasEdit, hasList, width, ...rest }) => {
+  const [avatarDialogArtist, setAvatarDialogArtist] = useState(null)
   const { filterValues } = rest
   const classes = useStyles()
   const handleArtistLink = useGetHandleArtistClick(width)
@@ -187,6 +189,17 @@ const ArtistListView = ({ hasShow, hasEdit, hasList, width, ...rest }) => {
       />
       <FunctionField source="size" sortByOrder={'DESC'} render={getSize} />
       {columns}
+      <FunctionField
+        label="头像"
+        render={(record) => (
+          <span
+            style={{ cursor: 'pointer', fontSize: 13, color: '#1976d2' }}
+            onClick={(e) => { e.stopPropagation(); setAvatarDialogArtist(record) }}
+          >
+            🖼️ 匹配
+          </span>
+        )}
+      />
       <ArtistContextMenu
         source={'starred_at'}
         sortByOrder={'DESC'}
