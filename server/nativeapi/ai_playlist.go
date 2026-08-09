@@ -321,7 +321,7 @@ func fetchNeteasePlaylist(pid string) (string, string, []externalSong, error) {
 					Name string `json:"name"`
 				} `json:"album"`
 			} `json:"tracks"`
-		} `json:"playlist"`
+		} `json:"result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return "", "", nil, err
