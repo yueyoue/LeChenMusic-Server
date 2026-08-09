@@ -280,7 +280,7 @@ func fetchPlaylistFromURL(url string) (string, string, []externalSong, error) {
 	}
 	platform, pid := parsePlaylistURL(url)
 	if platform == "" || pid == "" {
-		return "", "", nil, fmt.Errorf("无法识别此链接格式，请确认是网易云/QQ音乐/酷我/酷狗/汽水音乐的歌单链接")
+		return "", "", nil, fmt.Errorf("无法识别此链接格式，支持：网易云/QQ音乐/酷我/酷狗/汽水音乐歌单链接")
 	}
 	switch platform {
 	case "netease":
@@ -766,6 +766,7 @@ func (api *Router) addAIPlaylistRoute(r chi.Router) {
 		r.Post("/from-url", api.aiPlaylistFromURL)
 		r.Post("/create", api.aiPlaylistCreate)
 		r.Post("/cover/preview", api.aiPlaylistCoverPreview)
+		r.Post("/import-txt", api.aiPlaylistImportTXT)
 		r.Get("/cover/themes", api.aiPlaylistCoverThemes)
 	})
 }
@@ -931,7 +932,7 @@ func (api *Router) aiPlaylistFromURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(urlSongs) == 0 {
-		http.Error(w, "未能从该链接获取到歌曲", 400)
+		http.Error(w, "未能从该链接获取到歌曲。汽水音乐链接可能需要浏览器环境解析，建议使用TXT文件导入方式：先在浏览器打开歌单页面，将歌曲列表复制到TXT文件后导入", 400)
 		return
 	}
 
@@ -1061,6 +1062,107 @@ func (api *Router) aiPlaylistCoverPreview(w http.ResponseWriter, r *http.Request
 func (api *Router) aiPlaylistCoverThemes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"themes": getAvailableThemes(),
+	})
+}
+
+
+// ==================== TXT文件导入 ====================
+
+func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
+	r.ParseMultipartForm(10 << 20) // 10MB max
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, "请上传TXT文件", 400)
+		return
+	}
+	defer file.Close()
+
+	// Validate file extension
+	filename := header.Filename
+	if !strings.HasSuffix(strings.ToLower(filename), ".txt") {
+		http.Error(w, "只支持 .txt 格式的文件", 400)
+		return
+	}
+
+	content, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, "读取文件失败", 500)
+		return
+	}
+
+	text := string(content)
+	lines := strings.Split(text, "\n")
+	var parsed []externalSong
+
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "//") {
+			continue
+		}
+
+		// Try multiple formats:
+		// 1. "歌名 - 歌手"
+		// 2. "歌名	歌手"
+		// 3. "歌名|歌手"
+		// 4. "歌手 - 歌名" (some exports use this)
+		// 5. Just the song name (no artist)
+		var title, artist string
+
+		if strings.Contains(line, " - ") {
+			parts := strings.SplitN(line, " - ", 2)
+			title = strings.TrimSpace(parts[0])
+			artist = strings.TrimSpace(parts[1])
+		} else if strings.Contains(line, "\t") {
+			parts := strings.SplitN(line, "\t", 2)
+			title = strings.TrimSpace(parts[0])
+			artist = strings.TrimSpace(parts[1])
+		} else if strings.Contains(line, "|") {
+			parts := strings.SplitN(line, "|", 2)
+			title = strings.TrimSpace(parts[0])
+			artist = strings.TrimSpace(parts[1])
+		} else {
+			title = line
+		}
+
+		// Remove leading numbers like "1. " or "1、"
+		re := regexp.MustCompile(`^\d+[.、\)\]]\s*`)
+		title = re.ReplaceAllString(title, "")
+
+		if title != "" {
+			parsed = append(parsed, externalSong{Title: title, Artist: artist, Source: "TXT导入"})
+		}
+	}
+
+	if len(parsed) == 0 {
+		http.Error(w, "未能从文件中解析出任何歌曲", 400)
+		return
+	}
+
+	// Match with library
+	mediaRepo := api.ds.MediaFile(r.Context())
+	library, err := mediaRepo.GetAll(model.QueryOptions{})
+	if err != nil {
+		http.Error(w, "获取曲库失败", 500)
+		return
+	}
+
+	matched, unmatched := matchWithLibrary(parsed, library)
+	if len(unmatched) > 50 {
+		unmatched = unmatched[:50]
+	}
+
+	// Derive playlist name from filename
+	playlistName := strings.TrimSuffix(filename, ".txt")
+	playlistName = strings.TrimSpace(playlistName)
+
+	writeJSON(w, map[string]any{
+		"playlistName":    playlistName,
+		"source":          "TXT导入",
+		"searchTotal":     len(parsed),
+		"matched":         matched,
+		"matchedCount":    len(matched),
+		"unmatched":       unmatched,
+		"unmatchedCount":  len(unmatched),
 	})
 }
 
