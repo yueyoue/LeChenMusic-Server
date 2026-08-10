@@ -253,7 +253,9 @@ var playlistURLPatterns = []struct {
 	{"netease", regexp.MustCompile(`music\.163\.com/playlist/(\d+)`)},
 	{"qq", regexp.MustCompile(`y\.qq\.com.*?playlist/(\d+)`)},
 	{"qq", regexp.MustCompile(`y\.qq\.com.*?id=(\d+)`)},
-	{"qq", regexp.MustCompile(`c\d*\.y\.qq\.com/base/fcgi-bin/u\?__=(\w+)`)},
+	// QQ音乐短链/分享链接 (c.y.qq.com, c6.y.qq.com 等)
+	{"qq_short", regexp.MustCompile(`c\d*\.y\.qq\.com/base/fcgi-bin/u\?__=(\w+)`)},
+	{"qq_short", regexp.MustCompile(`c\d*\.y\.qq\.com.*?__=(\w+)`)},
 	{"kuwo", regexp.MustCompile(`kuwo\.cn/playlist(?:_detail)?/(\d+)`)},
 	{"kuwo", regexp.MustCompile(`kuwo\.cn.*?pid=(\d+)`)},
 	{"kugou", regexp.MustCompile(`kugou\.com.*?special/(\d+)`)},
@@ -283,6 +285,24 @@ func fetchPlaylistFromURL(url string) (string, string, []externalSong, error) {
 	platform, pid := parsePlaylistURL(url)
 	if platform == "" || pid == "" {
 		return "", "", nil, fmt.Errorf("无法识别此链接格式,支持:网易云/QQ音乐/酷我/酷狗/汽水音乐歌单链接")
+	}
+	// QQ音乐短链需要先解析重定向获取真实URL
+	if platform == "qq_short" {
+		realURL, err := resolveQQShortURL(url)
+		if err != nil {
+			return "", "", nil, fmt.Errorf("QQ音乐短链解析失败: %v", err)
+		}
+		// 从重定向URL中提取歌单ID
+		re := regexp.MustCompile(`playlist/(\d+)`)
+		if m := re.FindStringSubmatch(realURL); len(m) > 1 {
+			return fetchQQPlaylist(m[1])
+		}
+		// 尝试从URL参数中提取
+		re2 := regexp.MustCompile(`id=(\d+)`)
+		if m := re2.FindStringSubmatch(realURL); len(m) > 1 {
+			return fetchQQPlaylist(m[1])
+		}
+		return "", "", nil, fmt.Errorf("QQ音乐短链解析后未找到歌单ID，原始URL: %s", realURL)
 	}
 	switch platform {
 	case "netease":
@@ -708,6 +728,40 @@ func resolveQishuiShortURL(shortURL string) (string, error) {
 		return m[0], nil
 	}
 	return "", fmt.Errorf("无法解析短链接")
+}
+
+// resolveQQShortURL 解析QQ音乐短链/分享链接获取真实URL
+func resolveQQShortURL(shortURL string) (string, error) {
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // 不自动跟随重定向
+		},
+	}
+	resp, err := client.Get(shortURL)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	// 检查重定向Location
+	location := resp.Header.Get("Location")
+	if location != "" {
+		return location, nil
+	}
+	// 如果没有重定向，从页面内容中提取歌单链接
+	body, _ := io.ReadAll(resp.Body)
+	text := string(body)
+	// 尝试从页面中提取playlist链接
+	re := regexp.MustCompile(`https?://[a-z0-9]*\.?y\.qq\.com[^"']*playlist[^"']*`)
+	if m := re.FindStringSubmatch(text); len(m) > 0 {
+		return m[0], nil
+	}
+	// 尝试提取包含playlist_id的链接
+	re2 := regexp.MustCompile(`https?://[^"']*playlist_id=(\d+)[^"']*`)
+	if m := re2.FindStringSubmatch(text); len(m) > 0 {
+		return m[0], nil
+	}
+	return "", fmt.Errorf("无法解析QQ音乐短链")
 }
 
 func fetchQishuiPlaylist(pid string) (string, string, []externalSong, error) {

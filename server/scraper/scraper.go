@@ -179,7 +179,25 @@ func SearchArtistsAll(query string) []ArtistResult {
 		return iTotal > jTotal
 	})
 
-	return results
+	// Filter out results with low relevance scores to avoid showing irrelevant artists
+	var filtered []ArtistResult
+	for _, r := range results {
+		score := nameMatchScore(r.Name, queryLower)
+		if score >= 30 { // Only include results with meaningful matches
+			filtered = append(filtered, r)
+		}
+	}
+
+	// If no good matches found, return top results but limit count
+	if len(filtered) == 0 && len(results) > 0 {
+		limit := 5
+		if len(results) < limit {
+			limit = len(results)
+		}
+		return results[:limit]
+	}
+
+	return filtered
 }
 
 // SearchNarratorsAll searches audiobook platforms only for narrator/anchor avatars
@@ -228,17 +246,39 @@ func nameMatchScore(name, queryLower string) int {
 		return 40 // Contains query
 	}
 	// Check if query contains name (for short names)
-	if strings.Contains(queryLower, nameLower) {
+	if strings.Contains(queryLower, nameLower) && len(nameLower) >= 2 {
 		return 30
 	}
-	// Check character overlap
-	overlap := 0
-	for _, c := range queryLower {
-		if strings.ContainsRune(nameLower, c) {
-			overlap++
+	// For Chinese characters, require at least 2 consecutive characters match
+	// to avoid false positives from single character overlap
+	if len(queryLower) >= 2 {
+		// Check for consecutive character match
+		maxConsecutive := 0
+		currentConsecutive := 0
+		queryIdx := 0
+		for _, c := range nameLower {
+			if queryIdx < len(queryLower) && c == rune(queryLower[queryIdx]) {
+				currentConsecutive++
+				queryIdx++
+				if currentConsecutive > maxConsecutive {
+					maxConsecutive = currentConsecutive
+				}
+			} else {
+				currentConsecutive = 0
+				queryIdx = 0
+				// Check if current char starts a new match
+				if c == rune(queryLower[0]) {
+					currentConsecutive = 1
+					queryIdx = 1
+				}
+			}
+		}
+		// Require at least 2 consecutive characters for a meaningful match
+		if maxConsecutive >= 2 {
+			return maxConsecutive * 15 // Score based on consecutive match length
 		}
 	}
-	return overlap * 10 / len(queryLower)
+	return 0 // No meaningful match
 }
 
 // httpClient is a shared HTTP client with reasonable timeouts
