@@ -299,6 +299,7 @@ const AIPlaylistPage = () => {
           <Button
             variant="outlined"
             component="span"
+            onClick={() => document.getElementById('txt-file-input').click()}
             style={{ borderRadius: 8, textTransform: 'none', fontWeight: 600 }}
           >
             选择TXT文件

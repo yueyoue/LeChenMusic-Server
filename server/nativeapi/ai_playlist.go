@@ -419,6 +419,16 @@ func fetchQQPlaylist(pid string) (string, string, []externalSong, error) {
 		return "", "", nil, err
 	}
 	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", "", nil, err
+	}
+	bodyStr := string(body)
+	// Strip JSONP callback wrapper if present (e.g. jsonCallback(...))
+	if strings.HasPrefix(bodyStr, "jsonCallback(") {
+		bodyStr = strings.TrimPrefix(bodyStr, "jsonCallback(")
+		bodyStr = strings.TrimSuffix(bodyStr, ")")
+	}
 	var result struct {
 		Cdlist []struct {
 			Dissname string `json:"dissname"`
@@ -437,7 +447,7 @@ func fetchQQPlaylist(pid string) (string, string, []externalSong, error) {
 			} `json:"songlist"`
 		} `json:"cdlist"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal([]byte(bodyStr), &result); err != nil {
 		return "", "", nil, err
 	}
 	if len(result.Cdlist) == 0 {
