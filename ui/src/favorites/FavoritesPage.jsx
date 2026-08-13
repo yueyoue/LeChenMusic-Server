@@ -15,6 +15,7 @@ import AlbumIcon from '@material-ui/icons/Album'
 import MusicNoteIcon from '@material-ui/icons/MusicNote'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
 import QueueMusicIcon from '@material-ui/icons/QueueMusic'
+import RadioIcon from '@material-ui/icons/Radio'
 import { useDataProvider, useNotify } from 'react-admin'
 import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
@@ -158,6 +159,7 @@ const FavoritesPage = () => {
   const [starredSongs, setStarredSongs] = useState([])
   const [starredPlaylists, setStarredPlaylists] = useState([])
   const [starredAudiobooks, setStarredAudiobooks] = useState([])
+  const [starredRadios, setStarredRadios] = useState([])
 
   useEffect(() => {
     const fetchFavorites = async () => {
@@ -206,6 +208,18 @@ const FavoritesPage = () => {
           setStarredAudiobooks(data?.data || [])
         } catch (e) {
           console.error('Failed to fetch starred audiobooks:', e)
+        }
+
+        // Fetch starred radios via REST API
+        try {
+          const radiosResult = await dataProvider.getList('radio', {
+            pagination: { page: 1, perPage: 100 },
+            sort: { field: 'name', order: 'ASC' },
+            filter: { starred: true },
+          })
+          setStarredRadios(radiosResult.data || [])
+        } catch (e) {
+          console.error('Failed to fetch starred radios:', e)
         }
       } catch (err) {
         console.error('Failed to fetch favorites:', err)
@@ -259,6 +273,11 @@ const FavoritesPage = () => {
         <Tab
           label={`有声书 (${starredAudiobooks.length})`}
           icon={<MenuBookIcon />}
+          className={classes.tab}
+        />
+        <Tab
+          label={`电台 (${starredRadios.length})`}
+          icon={<RadioIcon />}
           className={classes.tab}
         />
       </Tabs>
@@ -443,6 +462,54 @@ const FavoritesPage = () => {
                     <Typography className={classes.audiobookSub}>
                       {book.author} · {book.chapterCount}章
                     </Typography>
+                  </CardContent>
+                </Card>
+              ))}
+            </Box>
+          )}
+        </Box>
+      )}
+
+      {/* Radio Tab */}
+      {tab === 4 && (
+        <Box>
+          {starredRadios.length === 0 ? (
+            <Box className={classes.empty}>
+              <RadioIcon style={{ fontSize: 48, opacity: 0.3 }} />
+              <Typography style={{ marginTop: 8 }}>暂无收藏的电台</Typography>
+              <Typography style={{ marginTop: 4, fontSize: 12, color: 'text.secondary' }}>
+                在电台列表中点击 ❤️ 即可收藏
+              </Typography>
+            </Box>
+          ) : (
+            <Box className={classes.audiobookGrid}>
+              {starredRadios.map((radio) => (
+                <Card
+                  key={radio.id}
+                  className={classes.audiobookCard}
+                  elevation={2}
+                  onClick={() => {
+                    // Play radio station
+                    window.dispatchEvent(new CustomEvent('playRadio', { detail: radio }))
+                  }}
+                >
+                  <Box className={classes.coverWrap}>
+                    {radio.coverArt ? (
+                      <img
+                        src={`/rest/getCoverArt?u=${encodeURIComponent(localStorage.getItem('username') || '')}&p=enc:${encodeURIComponent(localStorage.getItem('subsonic-token') || '')}&v=1.8.0&c=LeChenMusic&id=${radio.coverArt}`}
+                        alt={radio.name}
+                        className={classes.cover}
+                        onError={(e) => { e.target.style.display = 'none' }}
+                      />
+                    ) : (
+                      <Box className={classes.cover} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%)' }}>
+                        <RadioIcon style={{ fontSize: 32, color: 'white', opacity: 0.8 }} />
+                      </Box>
+                    )}
+                  </Box>
+                  <CardContent className={classes.audiobookContent}>
+                    <Typography className={classes.audiobookTitle}>{radio.name}</Typography>
+                    <Typography className={classes.audiobookSub}>电台</Typography>
                   </CardContent>
                 </Card>
               ))}

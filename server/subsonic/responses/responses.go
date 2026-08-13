@@ -375,6 +375,7 @@ type Starred2 struct {
 	Album    []AlbumID3    `xml:"album"                                  json:"album,omitempty"`
 	Song     []Child       `xml:"song"                                   json:"song,omitempty"`
 	Playlist []PlaylistID3 `xml:"playlist"                               json:"playlist,omitempty"`
+	Radio    []Child       `xml:"radio"                                  json:"radio,omitempty"`
 }
 
 type NowPlayingEntry struct {

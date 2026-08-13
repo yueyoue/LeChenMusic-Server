@@ -14,6 +14,7 @@ type Radio struct {
 	UploadedImage string    `structs:"uploaded_image"   json:"uploadedImage,omitempty"`
 	CreatedAt     time.Time `structs:"created_at"      json:"createdAt"`
 	UpdatedAt     time.Time `structs:"updated_at"      json:"updatedAt"`
+	Annotations   `structs:"-" hash:"ignore"`
 }
 
 func (r Radio) CoverArtID() ArtworkID {

@@ -33,6 +33,9 @@ func (r *radioRepository) isPermitted() bool {
 
 func (r *radioRepository) CountAll(options ...model.QueryOptions) (int64, error) {
 	sql := r.newSelect()
+	if filtersNeedAnnotation(r.applyFilters(sql, options...)) {
+		sql = r.withAnnotation(sql, "radio.id")
+	}
 	return r.count(sql, options...)
 }
 
@@ -45,14 +48,16 @@ func (r *radioRepository) Delete(id string) error {
 }
 
 func (r *radioRepository) Get(id string) (*model.Radio, error) {
-	sel := r.newSelect().Where(Eq{"id": id}).Columns("*")
+	sel := r.newSelect().Where(Eq{"id": id}).Columns("radio.*")
+	sel = r.withAnnotation(sel, "radio.id")
 	res := model.Radio{}
 	err := r.queryOne(sel, &res)
 	return &res, err
 }
 
 func (r *radioRepository) GetAll(options ...model.QueryOptions) (model.Radios, error) {
-	sel := r.newSelect(options...).Columns("*")
+	sel := r.newSelect(options...).Columns("radio.*")
+	sel = r.withAnnotation(sel, "radio.id")
 	res := model.Radios{}
 	err := r.queryAll(sel, &res)
 	return res, err
@@ -77,6 +82,10 @@ func (r *radioRepository) Put(radio *model.Radio, colsToUpdate ...string) error 
 
 func (r *radioRepository) Count(options ...rest.QueryOptions) (int64, error) {
 	return r.CountAll(r.parseRestOptions(r.ctx, options...))
+}
+
+func (r *radioRepository) Exists(id string) (bool, error) {
+	return r.exists(Eq{"id": id})
 }
 
 func (r *radioRepository) EntityName() string {

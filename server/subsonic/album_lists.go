@@ -117,19 +117,20 @@ func (api *Router) GetAlbumList2(w http.ResponseWriter, r *http.Request) (*respo
 	return response, nil
 }
 
-func (api *Router) getStarredItems(r *http.Request) (model.Artists, model.Albums, model.MediaFiles, model.Playlists, error) {
+func (api *Router) getStarredItems(r *http.Request) (model.Artists, model.Albums, model.MediaFiles, model.Playlists, model.Radios, error) {
 	ctx := r.Context()
 
 	// Get optional library IDs from musicFolderId parameter
 	musicFolderIds, err := selectedMusicFolderIds(r, false)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	var artists model.Artists
 	var albums model.Albums
 	var mediaFiles model.MediaFiles
 	var playlists model.Playlists
+	var radios model.Radios
 
 	err = run.Parallel(
 		func() error {
@@ -168,17 +169,26 @@ func (api *Router) getStarredItems(r *http.Request) (model.Artists, model.Albums
 			}
 			return err
 		},
+		func() error {
+			// Get starred radios
+			var err error
+			radios, err = api.ds.Radio(ctx).GetAll(filter.ByStarred())
+			if err != nil {
+				log.Error(r, "Error retrieving starred radios", err)
+			}
+			return err
+		},
 	)()
 
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
-	return artists, albums, mediaFiles, playlists, nil
+	return artists, albums, mediaFiles, playlists, radios, nil
 }
 
 func (api *Router) GetStarred(r *http.Request) (*responses.Subsonic, error) {
-	artists, albums, mediaFiles, _, err := api.getStarredItems(r)
+	artists, albums, mediaFiles, _, _, err := api.getStarredItems(r)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +202,7 @@ func (api *Router) GetStarred(r *http.Request) (*responses.Subsonic, error) {
 }
 
 func (api *Router) GetStarred2(r *http.Request) (*responses.Subsonic, error) {
-	artists, albums, mediaFiles, playlists, err := api.getStarredItems(r)
+	artists, albums, mediaFiles, playlists, radios, err := api.getStarredItems(r)
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +227,23 @@ func (api *Router) GetStarred2(r *http.Request) (*responses.Subsonic, error) {
 			plResp.Starred = pl.StarredAt
 		}
 		response.Starred2.Playlist = append(response.Starred2.Playlist, plResp)
+	}
+	// Add starred radios
+	for _, rd := range radios {
+		child := responses.Child{
+			Id:   rd.ID,
+			Name: rd.Name,
+			Title: rd.Name,
+			IsDir: false,
+			Type: "radio",
+		}
+		if rd.StarredAt != nil {
+			child.Starred = rd.StarredAt
+		}
+		if rd.UploadedImage != "" {
+			child.CoverArt = rd.CoverArtID().String()
+		}
+		response.Starred2.Radio = append(response.Starred2.Radio, child)
 	}
 	return response, nil
 }
