@@ -29,8 +29,10 @@ type Radios []Radio
 
 type RadioRepository interface {
 	ResourceRepository
+	AnnotatedRepository
 	CountAll(options ...QueryOptions) (int64, error)
 	Delete(id string) error
+	Exists(id string) (bool, error)
 	Get(id string) (*Radio, error)
 	GetAll(options ...QueryOptions) (Radios, error)
 	Put(u *Radio, colsToUpdate ...string) error
