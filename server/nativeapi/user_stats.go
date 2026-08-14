@@ -19,6 +19,9 @@ func (api *Router) addUserStatsRoute(r chi.Router) {
 		r.Post("/play-log", h.reportPlayLog)
 		r.Post("/device", h.reportDevice)
 
+		// Any authenticated user can get their own stats
+		r.Get("/me", h.getMyStats)
+
 		// Admin-only queries
 		r.Get("/users", h.listUserStats)
 		r.Get("/versions", h.listVersionStats)
@@ -137,6 +140,22 @@ func (h *userStatsHandler) reportDevice(w http.ResponseWriter, r *http.Request) 
 	}
 
 	statsWriteJSON(w, map[string]any{"status": "ok"})
+}
+
+// GET /api/stats/me
+func (h *userStatsHandler) getMyStats(w http.ResponseWriter, r *http.Request) {
+	usr, ok := request.UserFrom(r.Context())
+	if !ok {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	stats, err := h.ds.PlayLog(r.Context()).GetUserStats(usr.ID)
+	if err != nil {
+		log.Error(r.Context(), "Failed to get user stats", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	statsWriteJSON(w, map[string]any{"data": stats})
 }
 
 // GET /api/stats/users  (admin only)

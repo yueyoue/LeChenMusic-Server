@@ -160,6 +160,7 @@ const FavoritesPage = () => {
   const [starredPlaylists, setStarredPlaylists] = useState([])
   const [starredAudiobooks, setStarredAudiobooks] = useState([])
   const [starredRadios, setStarredRadios] = useState([])
+  const [playStats, setPlayStats] = useState(null)
 
   useEffect(() => {
     const fetchFavorites = async () => {
@@ -221,6 +222,14 @@ const FavoritesPage = () => {
         } catch (e) {
           console.error('Failed to fetch starred radios:', e)
         }
+
+        // Fetch play stats
+        try {
+          const res = await httpClient(`${REST_URL}/stats/me`)
+          setPlayStats(res.json?.data || null)
+        } catch (e) {
+          console.error('Failed to fetch play stats:', e)
+        }
       } catch (err) {
         console.error('Failed to fetch favorites:', err)
         notify('加载收藏失败', 'warning')
@@ -246,6 +255,15 @@ const FavoritesPage = () => {
         <Typography variant="h6" style={{ fontWeight: 700 }}>
           我的收藏
         </Typography>
+        {playStats && (
+          <Typography variant="body2" style={{ marginLeft: 'auto', color: 'text.secondary', fontSize: 13 }}>
+            累计在线 {playStats.totalDuration > 3600
+              ? `${Math.floor(playStats.totalDuration / 3600)}小时${Math.floor((playStats.totalDuration % 3600) / 60)}分钟`
+              : playStats.totalDuration > 60
+                ? `${Math.floor(playStats.totalDuration / 60)}分钟`
+                : `${playStats.totalDuration}秒`}
+          </Typography>
+        )}
       </Box>
 
       <Tabs
