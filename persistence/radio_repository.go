@@ -21,7 +21,11 @@ func NewRadioRepository(ctx context.Context, db dbx.Builder) model.RadioReposito
 	r.ctx = ctx
 	r.db = db
 	r.registerModel(&model.Radio{}, map[string]filterFunc{
-		"name": containsFilter("name"),
+		"name":     containsFilter("name"),
+		"starred":  annotationBoolFilter("starred"),
+	})
+	r.setSortMappings(map[string]string{
+		"starred_at": "starred, starred_at",
 	})
 	return r
 }
