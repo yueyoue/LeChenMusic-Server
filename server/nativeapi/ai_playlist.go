@@ -1344,11 +1344,12 @@ func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Try multiple formats:
-		// 1. "歌名 - 歌手"
-		// 2. "歌名	歌手"
-		// 3. "歌名|歌手"
-		// 4. "歌名 歌手" (space-separated, last token(s) as artist)
-		// 5. Just the song name (no artist)
+		// 1. "歌名 - 歌手" (dash with spaces)
+		// 2. "歌名-歌手" (bare dash, no spaces)
+		// 3. "歌名\t歌手" (tab-separated)
+		// 4. "歌名|歌手" (pipe-separated)
+		// 5. "歌名 歌手" (space-separated)
+		// 6. Just the song name (no artist)
 		var title, artist string
 
 		if strings.Contains(line, " - ") {
@@ -1363,9 +1364,19 @@ func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
 			parts := strings.SplitN(line, "|", 2)
 			title = strings.TrimSpace(parts[0])
 			artist = strings.TrimSpace(parts[1])
+		} else if strings.Contains(line, "-") && !strings.Contains(line, " ") {
+			// "歌名-歌手" (bare dash, no spaces in line)
+			lastDash := strings.LastIndex(line, "-")
+			candidateTitle := strings.TrimSpace(line[:lastDash])
+			candidateArtist := strings.TrimSpace(line[lastDash+1:])
+			if candidateTitle != "" && candidateArtist != "" && utf8.RuneCountInString(candidateArtist) <= 20 {
+				title = candidateTitle
+				artist = candidateArtist
+			} else {
+				title = line
+			}
 		} else if strings.Count(line, " ") >= 1 {
 			// Space-separated: "歌名 歌手" or "歌名 歌手1 歌手2"
-			// The last space-separated token is treated as artist.
 			lastSpace := strings.LastIndex(line, " ")
 			candidateTitle := strings.TrimSpace(line[:lastSpace])
 			candidateArtist := strings.TrimSpace(line[lastSpace+1:])
