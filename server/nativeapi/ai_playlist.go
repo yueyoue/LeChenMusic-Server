@@ -937,22 +937,53 @@ func matchWithLibrary(externalSongs []externalSong, library []model.MediaFile) (
 			if utf8.RuneCountInString(titleClean) < 2 {
 				continue
 			}
+			artistClean := cleanMatchStr(us.Artist)
 			found := false
-			for _, entry := range libEntries {
+			var bestEntry *libEntry
+			bestTitleSim := 0.0
+			for idx := range libEntries {
+				entry := &libEntries[idx]
 				libTitle := cleanMatchStr(entry.song.Title)
-				if titleClean != "" && libTitle != "" &&
-					(strings.Contains(titleClean, libTitle) || strings.Contains(libTitle, titleClean)) {
-					matched = append(matched, matchResult{
-						Title:     entry.song.Title,
-						Artist:    entry.song.Artist,
-						Album:     entry.song.Album,
-						ID:        entry.song.ID,
-						Source:    us.Source + "(模糊)",
-						MatchType: "fuzzy",
-					})
-					found = true
-					break
+				libArtist := cleanMatchStr(entry.song.Artist)
+				if titleClean == "" || libTitle == "" {
+					continue
 				}
+				// Check title containment
+				titleMatch := strings.Contains(titleClean, libTitle) || strings.Contains(libTitle, titleClean)
+				if !titleMatch {
+					continue
+				}
+				// If we have artist info, verify artist overlap to avoid false positives
+				if artistClean != "" && libArtist != "" {
+					artistMatch := strings.Contains(artistClean, libArtist) || strings.Contains(libArtist, artistClean)
+					if !artistMatch {
+						continue // title matches but artist doesn't — skip
+					}
+				}
+				// Score: prefer exact title > longer substring match
+				titleSim := 0.0
+				if titleClean == libTitle {
+					titleSim = 1.0
+				} else if len(titleClean) > len(libTitle) {
+					titleSim = float64(len(libTitle)) / float64(len(titleClean))
+				} else {
+					titleSim = float64(len(titleClean)) / float64(len(libTitle))
+				}
+				if titleSim > bestTitleSim {
+					bestTitleSim = titleSim
+					bestEntry = entry
+				}
+			}
+			if bestEntry != nil {
+				matched = append(matched, matchResult{
+					Title:     bestEntry.song.Title,
+					Artist:    bestEntry.song.Artist,
+					Album:     bestEntry.song.Album,
+					ID:        bestEntry.song.ID,
+					Source:    us.Source + "(模糊)",
+					MatchType: "fuzzy",
+				})
+				found = true
 			}
 			if !found {
 				fuzzyMatched = append(fuzzyMatched, us)
@@ -1316,7 +1347,7 @@ func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
 		// 1. "歌名 - 歌手"
 		// 2. "歌名	歌手"
 		// 3. "歌名|歌手"
-		// 4. "歌手 - 歌名" (some exports use this)
+		// 4. "歌名 歌手" (space-separated, last token(s) as artist)
 		// 5. Just the song name (no artist)
 		var title, artist string
 
@@ -1332,6 +1363,18 @@ func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
 			parts := strings.SplitN(line, "|", 2)
 			title = strings.TrimSpace(parts[0])
 			artist = strings.TrimSpace(parts[1])
+		} else if strings.Count(line, " ") >= 1 {
+			// Space-separated: "歌名 歌手" or "歌名 歌手1 歌手2"
+			// The last space-separated token is treated as artist.
+			lastSpace := strings.LastIndex(line, " ")
+			candidateTitle := strings.TrimSpace(line[:lastSpace])
+			candidateArtist := strings.TrimSpace(line[lastSpace+1:])
+			if candidateTitle != "" && candidateArtist != "" && utf8.RuneCountInString(candidateArtist) <= 20 {
+				title = candidateTitle
+				artist = candidateArtist
+			} else {
+				title = line
+			}
 		} else {
 			title = line
 		}
