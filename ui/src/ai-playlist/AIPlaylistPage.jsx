@@ -367,16 +367,16 @@ const AIPlaylistPage = () => {
                       color="primary"
                     />
                     <Box className={classes.songInfo}>
-                      <Typography className={classes.songTitle}>{song.title}</Typography>
+                      <Typography className={classes.songTitle}>
+                        {song.title}
+                        {song.matchType === 'fuzzy' && (
+                          <Typography component="span" style={{ fontSize: 10, color: '#ff9800', marginLeft: 6, fontWeight: 400 }}>
+                            ⚠ 模糊匹配
+                          </Typography>
+                        )}
+                      </Typography>
                       <Typography className={classes.songArtist}>{song.artist} {song.album ? `· ${song.album}` : ''}</Typography>
                     </Box>
-                    <Chip
-                      label={song.source}
-                      size="small"
-                      variant="outlined"
-                      className={classes.songSource}
-                      style={{ fontSize: 10 }}
-                    />
                   </Box>
                 ))}
               </Box>
@@ -387,13 +387,32 @@ const AIPlaylistPage = () => {
           {results.unmatched?.length > 0 && (
             <Card className={classes.resultsCard} elevation={1}>
               <CardContent>
-                <Typography className={classes.unmatchedTitle}>
-                  ❌ 未找到的歌曲 ({results.unmatchedCount})
-                </Typography>
+                <Box style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <Typography className={classes.unmatchedTitle} style={{ marginBottom: 0 }}>
+                    ❌ 未找到的歌曲 ({results.unmatchedCount})
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    style={{ borderRadius: 6, textTransform: 'none', fontSize: 12 }}
+                    onClick={() => {
+                      const lines = results.unmatched.map(s => s.artist ? `${s.title} - ${s.artist}` : s.title)
+                      const blob = new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' })
+                      const url = URL.createObjectURL(blob)
+                      const a = document.createElement('a')
+                      a.href = url
+                      a.download = `未匹配歌曲_${playlistName || '歌单'}.txt`
+                      a.click()
+                      URL.revokeObjectURL(url)
+                    }}
+                  >
+                    📥 导出TXT
+                  </Button>
+                </Box>
                 <Box>
                   {results.unmatched.map((song, idx) => (
                     <Typography key={idx} className={classes.unmatchedSong}>
-                      {song.title} - {song.artist} ({song.source})
+                      {song.title}{song.artist ? ` - ${song.artist}` : ''}
                     </Typography>
                   ))}
                 </Box>
