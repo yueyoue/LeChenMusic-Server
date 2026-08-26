@@ -61,7 +61,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ghcr.io/${{ lower(github.repository) }}
           tags: |
             type=raw,value=latest
             type=sha,prefix=
@@ -87,8 +87,8 @@ jobs:
           echo "Outcome: ${{ steps.docker-push.outcome }}"
           echo "Tags: ${{ steps.meta.outputs.tags }}"
           echo "Trying single-platform push as fallback..."
-          docker build -t ghcr.io/${{ github.repository }}:latest .
-          docker push ghcr.io/${{ github.repository }}:latest 2>&1 || echo "Single push also failed"
+          docker build -t ghcr.io/${{ lower(github.repository) }}:latest .
+          docker push ghcr.io/${{ lower(github.repository) }}:latest 2>&1 || echo "Single push also failed"
 
       - name: Fail if push failed
         if: steps.docker-push.outcome == 'failure'
