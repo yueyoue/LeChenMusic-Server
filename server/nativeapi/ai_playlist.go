@@ -1138,7 +1138,8 @@ func (api *Router) aiPlaylistMatch(w http.ResponseWriter, r *http.Request) {
 	// Match
 	matched, unmatched := matchWithLibrary(allSongs, library)
 
-	// Limit unmatched to 50
+	// Capture actual count before truncating the list for display
+	actualUnmatchedCount := len(unmatched)
 	if len(unmatched) > 50 {
 		unmatched = unmatched[:50]
 	}
@@ -1150,7 +1151,7 @@ func (api *Router) aiPlaylistMatch(w http.ResponseWriter, r *http.Request) {
 		Matched:        matched,
 		MatchedCount:   len(matched),
 		Unmatched:      unmatched,
-		UnmatchedCount: len(unmatched),
+		UnmatchedCount: actualUnmatchedCount,
 	})
 }
 
@@ -1189,19 +1190,20 @@ func (api *Router) aiPlaylistFromURL(w http.ResponseWriter, r *http.Request) {
 
 	// Match
 	matched, unmatched := matchWithLibrary(urlSongs, library)
+	actualUnmatchedCount := len(unmatched)
 	if len(unmatched) > 50 {
 		unmatched = unmatched[:50]
 	}
 
 	writeJSON(w, map[string]any{
-		"playlistName":  playlistName,
-		"coverURL":      coverURL,
-		"source":        urlSongs[0].Source,
-		"searchTotal":   len(urlSongs),
-		"matched":       matched,
-		"matchedCount":  len(matched),
-		"unmatched":     unmatched,
-		"unmatchedCount": len(unmatched),
+		"playlistName":   playlistName,
+		"coverURL":       coverURL,
+		"source":         urlSongs[0].Source,
+		"searchTotal":    len(urlSongs),
+		"matched":        matched,
+		"matchedCount":   len(matched),
+		"unmatched":      unmatched,
+		"unmatchedCount": actualUnmatchedCount,
 	})
 }
 
@@ -1413,6 +1415,7 @@ func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
 	}
 
 	matched, unmatched := matchWithLibrary(parsed, library)
+	actualUnmatchedCount := len(unmatched)
 	if len(unmatched) > 50 {
 		unmatched = unmatched[:50]
 	}
@@ -1428,7 +1431,7 @@ func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
 		"matched":         matched,
 		"matchedCount":    len(matched),
 		"unmatched":       unmatched,
-		"unmatchedCount":  len(unmatched),
+		"unmatchedCount":  actualUnmatchedCount,
 	})
 }
 
