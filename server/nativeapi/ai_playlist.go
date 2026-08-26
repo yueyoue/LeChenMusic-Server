@@ -879,24 +879,35 @@ func fetchQishuiPlaylist(pid string) (string, string, []externalSong, error) {
 // ==================== 曲库匹配 ====================
 
 func matchWithLibrary(externalSongs []externalSong, library []model.MediaFile) (matched []matchResult, unmatched []unmatchedSong) {
-	// Build library index
+	// ── Phase 1: Build library index with pre-computed cleaned fields ──
 	type libEntry struct {
-		song model.MediaFile
-		key  string
+		song        model.MediaFile
+		key         string
+		cleanTitle  string
+		cleanArtist string
 	}
 	libIndex := make(map[string]libEntry)
 	var libEntries []libEntry
 
+	// Artist -> indices into libEntries (for fast fuzzy lookup by artist)
+	artistToEntries := make(map[string][]int)
+
 	for _, s := range library {
-		key := cleanMatchStr(s.Title) + "|" + cleanMatchStr(s.Artist)
+		ct := cleanMatchStr(s.Title)
+		ca := cleanMatchStr(s.Artist)
+		key := ct + "|" + ca
 		if _, exists := libIndex[key]; !exists {
-			entry := libEntry{song: s, key: key}
+			entry := libEntry{song: s, key: key, cleanTitle: ct, cleanArtist: ca}
 			libIndex[key] = entry
+			idx := len(libEntries)
 			libEntries = append(libEntries, entry)
+			if ca != "" {
+				artistToEntries[ca] = append(artistToEntries[ca], idx)
+			}
 		}
 	}
 
-	// Deduplicate external songs
+	// ── Phase 2: Deduplicate external songs ──
 	seen := make(map[string]bool)
 	var unique []externalSong
 	for _, s := range externalSongs {
@@ -907,8 +918,7 @@ func matchWithLibrary(externalSongs []externalSong, library []model.MediaFile) (
 		}
 	}
 
-	// Exact match first
-	fuzzyCandidates := make(map[string]bool)
+	// ── Phase 3: Exact match ──
 	for _, es := range unique {
 		key := es.MatchKey()
 		if entry, ok := libIndex[key]; ok {
@@ -920,7 +930,6 @@ func matchWithLibrary(externalSongs []externalSong, library []model.MediaFile) (
 				Source: es.Source,
 			})
 		} else {
-			fuzzyCandidates[key] = true
 			unmatched = append(unmatched, unmatchedSong{
 				Title:  es.Title,
 				Artist: es.Artist,
@@ -929,52 +938,73 @@ func matchWithLibrary(externalSongs []externalSong, library []model.MediaFile) (
 		}
 	}
 
-	// Fuzzy match for unmatched songs
+	// ── Phase 4: Fuzzy match (optimized: pre-computed values + artist index) ──
 	if len(unmatched) > 0 {
 		var fuzzyMatched []unmatchedSong
 		for _, us := range unmatched {
 			titleClean := cleanMatchStr(us.Title)
 			if utf8.RuneCountInString(titleClean) < 2 {
+				fuzzyMatched = append(fuzzyMatched, us)
 				continue
 			}
 			artistClean := cleanMatchStr(us.Artist)
-			found := false
-			var bestEntry *libEntry
-			bestTitleSim := 0.0
-			for idx := range libEntries {
-				entry := &libEntries[idx]
-				libTitle := cleanMatchStr(entry.song.Title)
-				libArtist := cleanMatchStr(entry.song.Artist)
-				if titleClean == "" || libTitle == "" {
-					continue
-				}
-				// Check title containment
-				titleMatch := strings.Contains(titleClean, libTitle) || strings.Contains(libTitle, titleClean)
-				if !titleMatch {
-					continue
-				}
-				// If we have artist info, verify artist overlap to avoid false positives
-				if artistClean != "" && libArtist != "" {
-					artistMatch := strings.Contains(artistClean, libArtist) || strings.Contains(libArtist, artistClean)
-					if !artistMatch {
-						continue // title matches but artist doesn't — skip
+
+			// Build candidate set: only check songs by matching artists
+			// (reduces inner loop from ~50000 to ~10-50 entries per song)
+			var candidates []int
+			if artistClean != "" {
+				for a, indices := range artistToEntries {
+					if strings.Contains(artistClean, a) || strings.Contains(a, artistClean) {
+						candidates = append(candidates, indices...)
 					}
 				}
-				// Score: prefer exact title > longer substring match
+			}
+
+			var bestIdx int = -1
+			bestTitleSim := 0.0
+
+			processCandidate := func(idx int) {
+				entry := &libEntries[idx]
+				if titleClean == "" || entry.cleanTitle == "" {
+					return
+				}
+				titleMatch := strings.Contains(titleClean, entry.cleanTitle) || strings.Contains(entry.cleanTitle, titleClean)
+				if !titleMatch {
+					return
+				}
+				if artistClean != "" && entry.cleanArtist != "" {
+					artistMatch := strings.Contains(artistClean, entry.cleanArtist) || strings.Contains(entry.cleanArtist, artistClean)
+					if !artistMatch {
+						return
+					}
+				}
 				titleSim := 0.0
-				if titleClean == libTitle {
+				if titleClean == entry.cleanTitle {
 					titleSim = 1.0
-				} else if len(titleClean) > len(libTitle) {
-					titleSim = float64(len(libTitle)) / float64(len(titleClean))
+				} else if len(titleClean) > len(entry.cleanTitle) {
+					titleSim = float64(len(entry.cleanTitle)) / float64(len(titleClean))
 				} else {
-					titleSim = float64(len(titleClean)) / float64(len(libTitle))
+					titleSim = float64(len(titleClean)) / float64(len(entry.cleanTitle))
 				}
 				if titleSim > bestTitleSim {
 					bestTitleSim = titleSim
-					bestEntry = entry
+					bestIdx = idx
 				}
 			}
-			if bestEntry != nil {
+
+			if len(candidates) > 0 {
+				for _, idx := range candidates {
+					processCandidate(idx)
+				}
+			} else {
+				// No artist info or no artist match — full scan fallback
+				for idx := range libEntries {
+					processCandidate(idx)
+				}
+			}
+
+			if bestIdx >= 0 {
+				bestEntry := &libEntries[bestIdx]
 				matched = append(matched, matchResult{
 					Title:     bestEntry.song.Title,
 					Artist:    bestEntry.song.Artist,
@@ -983,9 +1013,7 @@ func matchWithLibrary(externalSongs []externalSong, library []model.MediaFile) (
 					Source:    us.Source + "(模糊)",
 					MatchType: "fuzzy",
 				})
-				found = true
-			}
-			if !found {
+			} else {
 				fuzzyMatched = append(fuzzyMatched, us)
 			}
 		}
