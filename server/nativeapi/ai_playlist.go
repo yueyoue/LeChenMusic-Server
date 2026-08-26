@@ -1225,7 +1225,7 @@ func (api *Router) aiPlaylistFromURL(w http.ResponseWriter, r *http.Request) {
 
 	// Match
 		matched, unmatched := matchWithLibrary(urlSongs, library, req.MatchMode)
-actualUnmatchedCount := len(unmatched)
+	actualUnmatchedCount := len(unmatched)
 	if len(unmatched) > 50 {
 		unmatched = unmatched[:50]
 	}
@@ -1455,7 +1455,7 @@ func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
 	}
 
 		matched, unmatched := matchWithLibrary(parsed, library, matchMode)
-tualUnmatchedCount := len(unmatched)
+	actualUnmatchedCount := len(unmatched)
 	if len(unmatched) > 50 {
 		unmatched = unmatched[:50]
 	}
