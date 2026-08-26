@@ -878,7 +878,7 @@ func fetchQishuiPlaylist(pid string) (string, string, []externalSong, error) {
 
 // ==================== 曲库匹配 ====================
 
-func matchWithLibrary(externalSongs []externalSong, library []model.MediaFile) (matched []matchResult, unmatched []unmatchedSong) {
+func matchWithLibrary(externalSongs []externalSong, library []model.MediaFile, matchMode string) (matched []matchResult, unmatched []unmatchedSong) {
 	// ── Phase 1: Build library index with pre-computed cleaned fields ──
 	type libEntry struct {
 		song        model.MediaFile
@@ -938,8 +938,8 @@ func matchWithLibrary(externalSongs []externalSong, library []model.MediaFile) (
 		}
 	}
 
-	// ── Phase 4: Fuzzy match (optimized: pre-computed values + artist index) ──
-	if len(unmatched) > 0 {
+	// ── Phase 4: Fuzzy match (skipped in exact mode) ──
+	if matchMode != "exact" && len(unmatched) > 0 {
 		var fuzzyMatched []unmatchedSong
 		for _, us := range unmatched {
 			titleClean := cleanMatchStr(us.Title)
@@ -1109,8 +1109,9 @@ func (api *Router) aiPlaylistSearch(w http.ResponseWriter, r *http.Request) {
 
 func (api *Router) aiPlaylistMatch(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Query   string   `json:"query"`
-		Sources []string `json:"sources"`
+		Query     string   `json:"query"`
+		Sources   []string `json:"sources"`
+		MatchMode string   `json:"matchMode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", 400)
@@ -1120,8 +1121,11 @@ func (api *Router) aiPlaylistMatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "搜索关键词不能为空", 400)
 		return
 	}
+	if req.MatchMode == "" {
+		req.MatchMode = "fuzzy"
+	}
 
-	log.Info(r.Context(), "AI Playlist: Matching", "query", req.Query)
+	log.Info(r.Context(), "AI Playlist: Matching", "query", req.Query, "mode", req.MatchMode)
 
 	// Search all platforms
 	var allSongs []externalSong
@@ -1164,8 +1168,7 @@ func (api *Router) aiPlaylistMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Match
-	matched, unmatched := matchWithLibrary(allSongs, library)
-
+		matched, unmatched := matchWithLibrary(allSongs, library, req.MatchMode)
 	// Capture actual count before truncating the list for display
 	actualUnmatchedCount := len(unmatched)
 	if len(unmatched) > 50 {
@@ -1185,7 +1188,8 @@ func (api *Router) aiPlaylistMatch(w http.ResponseWriter, r *http.Request) {
 
 func (api *Router) aiPlaylistFromURL(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		URL string `json:"url"`
+		URL       string `json:"url"`
+		MatchMode string `json:"matchMode"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", 400)
@@ -1195,8 +1199,11 @@ func (api *Router) aiPlaylistFromURL(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "链接不能为空", 400)
 		return
 	}
+	if req.MatchMode == "" {
+		req.MatchMode = "fuzzy"
+	}
 
-	log.Info(r.Context(), "AI Playlist: Importing from URL", "url", req.URL)
+	log.Info(r.Context(), "AI Playlist: Importing from URL", "url", req.URL, "mode", req.MatchMode)
 
 	playlistName, coverURL, urlSongs, err := fetchPlaylistFromURL(req.URL)
 	if err != nil {
@@ -1217,8 +1224,8 @@ func (api *Router) aiPlaylistFromURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Match
-	matched, unmatched := matchWithLibrary(urlSongs, library)
-	actualUnmatchedCount := len(unmatched)
+		matched, unmatched := matchWithLibrary(urlSongs, library, req.MatchMode)
+actualUnmatchedCount := len(unmatched)
 	if len(unmatched) > 50 {
 		unmatched = unmatched[:50]
 	}
@@ -1434,6 +1441,11 @@ func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	matchMode := r.FormValue("matchMode")
+	if matchMode == "" {
+		matchMode = "fuzzy"
+	}
+
 	// Match with library
 	mediaRepo := api.ds.MediaFile(r.Context())
 	library, err := mediaRepo.GetAll(model.QueryOptions{})
@@ -1442,8 +1454,8 @@ func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	matched, unmatched := matchWithLibrary(parsed, library)
-	actualUnmatchedCount := len(unmatched)
+		matched, unmatched := matchWithLibrary(parsed, library, matchMode)
+tualUnmatchedCount := len(unmatched)
 	if len(unmatched) > 50 {
 		unmatched = unmatched[:50]
 	}

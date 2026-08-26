@@ -71,6 +71,7 @@ const AIPlaylistPage = () => {
   const [importedCoverUrl, setImportedCoverUrl] = useState('')
   const [themes, setThemes] = useState([])
   const [sources, setSources] = useState(['酷我', '网易云', 'QQ音乐', '酷狗', '汽水音乐'])
+  const [matchMode, setMatchMode] = useState('fuzzy') // 'exact' or 'fuzzy'
 
   const getToken = () => localStorage.getItem('token')
   const getHeaders = () => ({ 'X-ND-Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' })
@@ -92,7 +93,7 @@ const AIPlaylistPage = () => {
       const res = await fetch('/api/ai-playlist/match', {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ query, sources }),
+        body: JSON.stringify({ query, sources, matchMode }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -118,7 +119,7 @@ const AIPlaylistPage = () => {
       const res = await fetch('/api/ai-playlist/from-url', {
         method: 'POST',
         headers: getHeaders(),
-        body: JSON.stringify({ url: urlInput }),
+        body: JSON.stringify({ url: urlInput, matchMode }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -225,6 +226,30 @@ const AIPlaylistPage = () => {
             />
           ))}
         </Box>
+        <Box style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center' }}>
+          <Typography style={{ fontSize: 13, color: 'text.secondary' }}>匹配模式：</Typography>
+          <Button
+            size="small"
+            variant={matchMode === 'exact' ? 'contained' : 'outlined'}
+            color={matchMode === 'exact' ? 'primary' : 'default'}
+            onClick={() => setMatchMode('exact')}
+            style={{ borderRadius: 6, textTransform: 'none', fontSize: 12 }}
+          >
+            🎯 精准匹配
+          </Button>
+          <Button
+            size="small"
+            variant={matchMode === 'fuzzy' ? 'contained' : 'outlined'}
+            color={matchMode === 'fuzzy' ? 'primary' : 'default'}
+            onClick={() => setMatchMode('fuzzy')}
+            style={{ borderRadius: 6, textTransform: 'none', fontSize: 12 }}
+          >
+            🔍 模糊匹配
+          </Button>
+          <Typography style={{ fontSize: 11, color: 'text.secondary' }}>
+            {matchMode === 'exact' ? '歌名和歌手必须完全一致' : '允许近似匹配，可能有误差'}
+          </Typography>
+        </Box>
       </Card>
 
       {/* URL Import Section */}
@@ -274,6 +299,7 @@ const AIPlaylistPage = () => {
               try {
                 const formData = new FormData()
                 formData.append('file', file)
+                formData.append('matchMode', matchMode)
                 const res = await fetch('/api/ai-playlist/import-txt', {
                   method: 'POST',
                   headers: { 'X-ND-Authorization': `Bearer ${getToken()}` },
