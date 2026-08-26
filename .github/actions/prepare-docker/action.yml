@@ -40,6 +40,10 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    - name: Set lowercase repository name
+      shell: bash
+      run: echo "REPO_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
     - name: Check Docker Hub configuration
       shell: bash
       run: |
@@ -78,7 +82,7 @@ runs:
           maintainer=deluan@navidrome.org
         images: |
           name=${{env.DOCKER_HUB_REPO}},enable=${{env.DOCKER_HUB_ENABLED}}
-          name=ghcr.io/${{ lower(github.repository) }}
+          name=ghcr.io/${{ env.REPO_LOWER }}
         tags: |
           type=ref,event=pr
           type=semver,pattern={{version}}
