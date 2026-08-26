@@ -18,6 +18,9 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set lowercase repository name
+        run: echo "REPO_LOWER=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -61,7 +64,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ lower(github.repository) }}
+          images: ghcr.io/${{ env.REPO_LOWER }}
           tags: |
             type=raw,value=latest
             type=sha,prefix=
@@ -87,8 +90,8 @@ jobs:
           echo "Outcome: ${{ steps.docker-push.outcome }}"
           echo "Tags: ${{ steps.meta.outputs.tags }}"
           echo "Trying single-platform push as fallback..."
-          docker build -t ghcr.io/${{ lower(github.repository) }}:latest .
-          docker push ghcr.io/${{ lower(github.repository) }}:latest 2>&1 || echo "Single push also failed"
+          docker build -t ghcr.io/${{ env.REPO_LOWER }}:latest .
+          docker push ghcr.io/${{ env.REPO_LOWER }}:latest 2>&1 || echo "Single push also failed"
 
       - name: Fail if push failed
         if: steps.docker-push.outcome == 'failure'
@@ -108,4 +111,3 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: navidrome
-
