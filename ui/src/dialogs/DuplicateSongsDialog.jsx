@@ -69,7 +69,6 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
     try {
       const res = await httpClient(`${REST_URL}/song/duplicates/delete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids: [songId] }),
       })
       if (res.status >= 200 && res.status < 300) {
@@ -95,7 +94,6 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
       const ids = Array.from(selectedIds)
       const res = await httpClient(`${REST_URL}/song/duplicates/delete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids }),
       })
       if (res.status >= 200 && res.status < 300) {
