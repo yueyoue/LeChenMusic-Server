@@ -155,12 +155,10 @@ func (h *duplicateSongsHandler) deleteSongs(w http.ResponseWriter, r *http.Reque
 		log.Info(r.Context(), "Duplicate delete: attempting", "id", id, "path", filePath, "libraryId", mf.LibraryID, "libraryPath", mf.LibraryPath, "relativePath", mf.Path)
 
 		// Delete the actual file from disk FIRST
-		fileDeleted := false
 		if filePath != "" && filePath != "." {
 			if err := os.Remove(filePath); err != nil {
 				if os.IsNotExist(err) {
 					log.Info(r.Context(), "Duplicate delete: file already gone", "path", filePath)
-					fileDeleted = true // file already doesn't exist, treat as success
 				} else {
 					log.Warn(r.Context(), "Duplicate delete: file delete failed", "path", filePath, "error", err)
 					errMsgs = append(errMsgs, "文件删除失败("+filePath+"): "+err.Error())
@@ -168,7 +166,6 @@ func (h *duplicateSongsHandler) deleteSongs(w http.ResponseWriter, r *http.Reque
 					continue // skip DB delete if file can't be removed
 				}
 			} else {
-				fileDeleted = true
 				log.Info(r.Context(), "Duplicate delete: file deleted", "path", filePath)
 			}
 		} else {
