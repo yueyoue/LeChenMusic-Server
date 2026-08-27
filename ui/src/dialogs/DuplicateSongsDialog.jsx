@@ -71,15 +71,18 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
         method: 'POST',
         body: JSON.stringify({ ids: [songId] }),
       })
-      if (res.status >= 200 && res.status < 300) {
-        // Remove from results
+      const data = res.json || {}
+      if (res.status >= 200 && res.status < 300 && data.deleted > 0) {
         setDuplicates(prev => prev.map(g => ({
           ...g,
           songs: g.songs.filter(s => s.id !== songId),
           count: g.songs.filter(s => s.id !== songId).length,
         })).filter(g => g.songs.length > 1))
+        if (data.errors?.length > 0) {
+          alert('部分删除失败:\n' + data.errors.join('\n'))
+        }
       } else {
-        alert('删除失败: ' + (res.json?.error || res.statusText))
+        alert('删除失败: ' + (data.errors?.join('\n') || res.statusText || '未知错误'))
       }
     } catch (e) {
       alert('删除失败: ' + e.message)
@@ -96,6 +99,7 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
         method: 'POST',
         body: JSON.stringify({ ids }),
       })
+      const data = res.json || {}
       if (res.status >= 200 && res.status < 300) {
         const deletedSet = new Set(ids)
         setDuplicates(prev => prev.map(g => ({
@@ -104,8 +108,14 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
           count: g.songs.filter(s => !deletedSet.has(s.id)).length,
         })).filter(g => g.songs.length > 1))
         setSelectedIds(new Set())
+        if (data.deleted > 0) {
+          alert(`成功删除 ${data.deleted} 个文件${data.failed > 0 ? '，' + data.failed + ' 个失败' : ''}`)
+        }
+        if (data.errors?.length > 0) {
+          alert('删除详情:\n' + data.errors.join('\n'))
+        }
       } else {
-        alert('删除失败: ' + (res.json?.error || res.statusText))
+        alert('删除失败: ' + (data.errors?.join('\n') || res.statusText || '未知错误'))
       }
     } catch (e) {
       alert('删除失败: ' + e.message)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/go-chi/chi/v5"
@@ -122,37 +123,67 @@ func (h *duplicateSongsHandler) deleteSongs(w http.ResponseWriter, r *http.Reque
 	}
 
 	repo := h.ds.MediaFile(r.Context())
+	libRepo := h.ds.Library(r.Context())
 	var deleted, failed int
-	var errors []string
+	var errMsgs []string
 
 	for _, id := range req.IDs {
-		// Get file path before deleting from DB
+		// Get file info before deleting
 		mf, err := repo.Get(id)
 		if err != nil {
 			log.Warn(r.Context(), "Duplicate delete: song not found", "id", id, "error", err)
 			failed++
-			errors = append(errors, "song not found: "+id)
+			errMsgs = append(errMsgs, "歌曲未找到: "+id)
 			continue
 		}
 
-		// Delete from DB first
+		// Resolve absolute path: prefer AbsolutePath(), fallback to library lookup
+		filePath := mf.AbsolutePath()
+		if filePath == "" || filePath == "." {
+			// Fallback: look up library path manually
+			libs, libErr := libRepo.GetAll()
+			if libErr == nil {
+				for _, lib := range libs {
+					if lib.ID == mf.LibraryID {
+						filePath = filepath.Join(lib.Path, mf.Path)
+						break
+					}
+				}
+			}
+		}
+
+		log.Info(r.Context(), "Duplicate delete: attempting", "id", id, "path", filePath, "libraryId", mf.LibraryID, "libraryPath", mf.LibraryPath, "relativePath", mf.Path)
+
+		// Delete the actual file from disk FIRST
+		fileDeleted := false
+		if filePath != "" && filePath != "." {
+			if err := os.Remove(filePath); err != nil {
+				if os.IsNotExist(err) {
+					log.Info(r.Context(), "Duplicate delete: file already gone", "path", filePath)
+					fileDeleted = true // file already doesn't exist, treat as success
+				} else {
+					log.Warn(r.Context(), "Duplicate delete: file delete failed", "path", filePath, "error", err)
+					errMsgs = append(errMsgs, "文件删除失败("+filePath+"): "+err.Error())
+					failed++
+					continue // skip DB delete if file can't be removed
+				}
+			} else {
+				fileDeleted = true
+				log.Info(r.Context(), "Duplicate delete: file deleted", "path", filePath)
+			}
+		} else {
+			log.Warn(r.Context(), "Duplicate delete: could not resolve file path", "id", id)
+			errMsgs = append(errMsgs, "无法解析文件路径: "+id)
+			failed++
+			continue
+		}
+
+		// Delete from DB
 		if err := repo.Delete(id); err != nil {
 			log.Warn(r.Context(), "Duplicate delete: DB delete failed", "id", id, "error", err)
 			failed++
-			errors = append(errors, "DB delete failed: "+id)
+			errMsgs = append(errMsgs, "数据库删除失败: "+id)
 			continue
-		}
-
-		// Delete the actual file from disk
-		filePath := mf.AbsolutePath()
-		if filePath != "" {
-			if err := os.Remove(filePath); err != nil {
-				log.Warn(r.Context(), "Duplicate delete: file delete failed", "path", filePath, "error", err)
-				// DB already deleted, just log the file error
-				errors = append(errors, "file delete failed: "+filePath)
-			} else {
-				log.Info(r.Context(), "Duplicate delete: file deleted", "path", filePath)
-			}
 		}
 
 		deleted++
@@ -163,7 +194,7 @@ func (h *duplicateSongsHandler) deleteSongs(w http.ResponseWriter, r *http.Reque
 		"success": true,
 		"deleted": deleted,
 		"failed":  failed,
-		"errors":  errors,
+		"errors":  errMsgs,
 	})
 }
 
