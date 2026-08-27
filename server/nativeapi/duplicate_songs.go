@@ -1,10 +1,13 @@
 package nativeapi
 
 import (
+	"encoding/json"
 	"net/http"
+	"os"
 	"sort"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 )
 
@@ -12,6 +15,10 @@ func (api *Router) addDuplicateSongsRoute(r chi.Router) {
 	r.Get("/song/duplicates", func(w http.ResponseWriter, r *http.Request) {
 		h := &duplicateSongsHandler{ds: api.ds}
 		h.findDuplicates(w, r)
+	})
+	r.Post("/song/duplicates/delete", func(w http.ResponseWriter, r *http.Request) {
+		h := &duplicateSongsHandler{ds: api.ds}
+		h.deleteSongs(w, r)
 	})
 }
 
@@ -99,6 +106,65 @@ func (h *duplicateSongsHandler) findDuplicates(w http.ResponseWriter, r *http.Re
 	})
 
 	writeJSON(w, map[string]any{"data": duplicates})
+}
+
+func (h *duplicateSongsHandler) deleteSongs(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request", 400)
+		return
+	}
+	if len(req.IDs) == 0 {
+		http.Error(w, "no IDs provided", 400)
+		return
+	}
+
+	repo := h.ds.MediaFile(r.Context())
+	var deleted, failed int
+	var errors []string
+
+	for _, id := range req.IDs {
+		// Get file path before deleting from DB
+		mf, err := repo.Get(id)
+		if err != nil {
+			log.Warn(r.Context(), "Duplicate delete: song not found", "id", id, "error", err)
+			failed++
+			errors = append(errors, "song not found: "+id)
+			continue
+		}
+
+		// Delete from DB first
+		if err := repo.Delete(id); err != nil {
+			log.Warn(r.Context(), "Duplicate delete: DB delete failed", "id", id, "error", err)
+			failed++
+			errors = append(errors, "DB delete failed: "+id)
+			continue
+		}
+
+		// Delete the actual file from disk
+		filePath := mf.AbsolutePath()
+		if filePath != "" {
+			if err := os.Remove(filePath); err != nil {
+				log.Warn(r.Context(), "Duplicate delete: file delete failed", "path", filePath, "error", err)
+				// DB already deleted, just log the file error
+				errors = append(errors, "file delete failed: "+filePath)
+			} else {
+				log.Info(r.Context(), "Duplicate delete: file deleted", "path", filePath)
+			}
+		}
+
+		deleted++
+	}
+
+	log.Info(r.Context(), "Duplicate delete completed", "deleted", deleted, "failed", failed)
+	writeJSON(w, map[string]any{
+		"success": true,
+		"deleted": deleted,
+		"failed":  failed,
+		"errors":  errors,
+	})
 }
 
 // normalizeForDuplicate 用于重复检测的字符串规范化

@@ -15,6 +15,8 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
   const [loading, setLoading] = useState(false)
   const [duplicates, setDuplicates] = useState(null)
   const [error, setError] = useState(null)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [deleting, setDeleting] = useState(false)
 
   const handleScan = useCallback(async () => {
     setLoading(true)
@@ -38,6 +40,81 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
       }).catch(() => {})
     }
   }, [])
+
+  const toggleSelect = useCallback((id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const selectAllDuplicates = useCallback(() => {
+    if (!duplicates) return
+    const ids = new Set()
+    duplicates.forEach(group => {
+      // Select all except the first (original) in each group
+      group.songs.slice(1).forEach(s => ids.add(s.id))
+    })
+    setSelectedIds(ids)
+  }, [duplicates])
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+  }, [])
+
+  const handleDeleteSingle = useCallback(async (songId, songPath) => {
+    if (!confirm(`确定要删除此文件吗？\n${songPath}\n\n此操作不可撤销！`)) return
+    try {
+      const res = await httpClient(`${REST_URL}/song/duplicates/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: [songId] }),
+      })
+      if (res.status >= 200 && res.status < 300) {
+        // Remove from results
+        setDuplicates(prev => prev.map(g => ({
+          ...g,
+          songs: g.songs.filter(s => s.id !== songId),
+          count: g.songs.filter(s => s.id !== songId).length,
+        })).filter(g => g.songs.length > 1))
+      } else {
+        alert('删除失败: ' + (res.json?.error || res.statusText))
+      }
+    } catch (e) {
+      alert('删除失败: ' + e.message)
+    }
+  }, [])
+
+  const handleDeleteSelected = useCallback(async () => {
+    if (selectedIds.size === 0) return
+    if (!confirm(`确定要删除选中的 ${selectedIds.size} 个文件吗？\n\n此操作不可撤销！`)) return
+    setDeleting(true)
+    try {
+      const ids = Array.from(selectedIds)
+      const res = await httpClient(`${REST_URL}/song/duplicates/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      })
+      if (res.status >= 200 && res.status < 300) {
+        const deletedSet = new Set(ids)
+        setDuplicates(prev => prev.map(g => ({
+          ...g,
+          songs: g.songs.filter(s => !deletedSet.has(s.id)),
+          count: g.songs.filter(s => !deletedSet.has(s.id)).length,
+        })).filter(g => g.songs.length > 1))
+        setSelectedIds(new Set())
+      } else {
+        alert('删除失败: ' + (res.json?.error || res.statusText))
+      }
+    } catch (e) {
+      alert('删除失败: ' + e.message)
+    } finally {
+      setDeleting(false)
+    }
+  }, [selectedIds])
 
   const totalDuplicates = duplicates ? duplicates.reduce((sum, g) => sum + g.count, 0) : 0
   const wastedSize = duplicates ? duplicates.reduce((sum, g) => {
@@ -72,16 +149,37 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
           <Typography variant="body2" color="textSecondary" gutterBottom>
             扫描歌曲库，按 标题+艺术家 筛选重复的歌曲。结果中会显示每个文件的路径，方便你手动删除重复文件。
           </Typography>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleScan}
-            disabled={loading}
-            startIcon={loading ? <CircularProgress size={16} /> : <FileCopyIcon />}
-            style={{ marginTop: 8 }}
-          >
-            {loading ? '扫描中...' : '开始扫描'}
-          </Button>
+          <Box style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <Button
+              variant="contained"
+              color="primary"
+              onClick={handleScan}
+              disabled={loading}
+              startIcon={loading ? <CircularProgress size={16} /> : <FileCopyIcon />}
+            >
+              {loading ? '扫描中...' : '开始扫描'}
+            </Button>
+            {duplicates && duplicates.length > 0 && (
+              <>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={selectAllDuplicates}
+                  style={{ textTransform: 'none' }}
+                >
+                  ☑ 全选重复项
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={clearSelection}
+                  style={{ textTransform: 'none' }}
+                >
+                  取消全选
+                </Button>
+              </>
+            )}
+          </Box>
         </Box>
 
         {error && (
@@ -93,16 +191,29 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
         {duplicates && (
           <Box>
             {/* 统计信息 */}
-            <Box mb={2} p={2} style={{ backgroundColor: '#f5f5f5', borderRadius: 8, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
-              <Typography variant="body2">
-                <strong>重复组数：</strong>{duplicates.length}
+            <Box mb={2} p={2} style={{ backgroundColor: '#e3f2fd', borderRadius: 8, display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+              <Typography variant="body2" style={{ color: '#1565c0', fontWeight: 600 }}>
+                重复组数：{duplicates.length}
               </Typography>
-              <Typography variant="body2">
-                <strong>涉及歌曲：</strong>{totalDuplicates} 首
+              <Typography variant="body2" style={{ color: '#1565c0', fontWeight: 600 }}>
+                涉及歌曲：{totalDuplicates} 首
               </Typography>
-              <Typography variant="body2">
-                <strong>估算冗余空间：</strong>{formatSize(wastedSize)}
+              <Typography variant="body2" style={{ color: '#1565c0', fontWeight: 600 }}>
+                估算冗余空间：{formatSize(wastedSize)}
               </Typography>
+              {selectedIds.size > 0 && (
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="secondary"
+                  startIcon={<DeleteIcon />}
+                  onClick={handleDeleteSelected}
+                  disabled={deleting}
+                  style={{ marginLeft: 'auto', textTransform: 'none' }}
+                >
+                  {deleting ? '删除中...' : `删除选中 (${selectedIds.size})`}
+                </Button>
+              )}
             </Box>
 
             {duplicates.length === 0 ? (
@@ -144,6 +255,14 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
                             }}
                           >
                             <Box display="flex" alignItems="flex-start" gap={1}>
+                              {songIdx > 0 && (
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(song.id)}
+                                  onChange={() => toggleSelect(song.id)}
+                                  style={{ marginTop: 4, cursor: 'pointer' }}
+                                />
+                              )}
                               <Box flex={1}>
                                 <Box display="flex" alignItems="center" gap={1} mb={0.5}>
                                   <Chip
@@ -190,6 +309,17 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
                                       <FileCopyIcon style={{ fontSize: 14 }} />
                                     </IconButton>
                                   </Tooltip>
+                                  {songIdx > 0 && (
+                                    <Tooltip title="删除此文件">
+                                      <IconButton
+                                        size="small"
+                                        onClick={(e) => { e.stopPropagation(); handleDeleteSingle(song.id, song.path) }}
+                                        style={{ padding: 2, color: '#f44336' }}
+                                      >
+                                        <DeleteIcon style={{ fontSize: 14 }} />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
                                 </Box>
                               </Box>
                             </Box>
