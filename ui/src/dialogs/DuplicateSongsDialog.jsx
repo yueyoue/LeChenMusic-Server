@@ -157,6 +157,11 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
           <Typography variant="body2" color="textSecondary" gutterBottom>
             扫描歌曲库，按 标题+艺术家 筛选重复的歌曲。结果中会显示每个文件的路径，方便你手动删除重复文件。
           </Typography>
+          <Box mt={1} p={1.5} style={{ backgroundColor: '#fff3e0', borderRadius: 6, border: '1px solid #ffcc80' }}>
+            <Typography style={{ fontSize: 12, color: '#e65100' }}>
+              ⚠️ <strong>删除功能须知：</strong>如果音乐目录以只读模式挂载（<code>:ro</code>），删除会失败。请在 docker-compose.yml 中将音乐卷的 <code>:ro</code> 改为 <code>:rw</code> 后重启容器。
+            </Typography>
+          </Box>
           <Box style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <Button
               variant="contained"
