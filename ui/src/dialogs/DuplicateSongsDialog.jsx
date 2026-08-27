@@ -54,8 +54,7 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
     if (!duplicates) return
     const ids = new Set()
     duplicates.forEach(group => {
-      // Select all except the first (original) in each group
-      group.songs.slice(1).forEach(s => ids.add(s.id))
+      group.songs.forEach(s => ids.add(s.id))
     })
     setSelectedIds(ids)
   }, [duplicates])
@@ -126,8 +125,7 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
 
   const totalDuplicates = duplicates ? duplicates.reduce((sum, g) => sum + g.count, 0) : 0
   const wastedSize = duplicates ? duplicates.reduce((sum, g) => {
-    // 每组中除第一个外的文件算作冗余
-    return sum + g.songs.slice(1).reduce((s, song) => s + (song.size || 0), 0)
+    return sum + g.songs.reduce((s, song) => s + (song.size || 0), 0)
   }, 0) : 0
 
   const formatSize = (bytes) => {
@@ -262,29 +260,27 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
                             p={1.5}
                             mb={0.5}
                             style={{
-                              backgroundColor: songIdx === 0 ? '#e8f5e9' : '#fff3e0',
+                              backgroundColor: '#fff3e0',
                               borderRadius: 6,
-                              border: songIdx === 0 ? '1px solid #a5d6a7' : '1px solid #ffcc80',
+                              border: '1px solid #ffcc80',
                             }}
                           >
                             <Box display="flex" alignItems="flex-start" gap={1}>
-                              {songIdx > 0 && (
-                                <input
-                                  type="checkbox"
-                                  checked={selectedIds.has(song.id)}
-                                  onChange={() => toggleSelect(song.id)}
-                                  style={{ marginTop: 4, cursor: 'pointer' }}
-                                />
-                              )}
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(song.id)}
+                                onChange={() => toggleSelect(song.id)}
+                                style={{ marginTop: 4, cursor: 'pointer' }}
+                              />
                               <Box flex={1}>
                                 <Box display="flex" alignItems="center" gap={1} mb={0.5}>
                                   <Chip
-                                    label={songIdx === 0 ? '原始' : `重复 ${songIdx}`}
+                                    label={`重复 ${songIdx + 1}`}
                                     size="small"
                                     style={{
                                       fontSize: 11,
                                       height: 20,
-                                      backgroundColor: songIdx === 0 ? '#4caf50' : '#ff9800',
+                                      backgroundColor: '#ff9800',
                                       color: 'white',
                                     }}
                                   />
@@ -322,17 +318,15 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
                                       <FileCopyIcon style={{ fontSize: 14 }} />
                                     </IconButton>
                                   </Tooltip>
-                                  {songIdx > 0 && (
-                                    <Tooltip title="删除此文件">
-                                      <IconButton
-                                        size="small"
-                                        onClick={(e) => { e.stopPropagation(); handleDeleteSingle(song.id, song.path) }}
-                                        style={{ padding: 2, color: '#f44336' }}
-                                      >
-                                        <DeleteIcon style={{ fontSize: 14 }} />
-                                      </IconButton>
-                                    </Tooltip>
-                                  )}
+                                  <Tooltip title="删除此文件">
+                                    <IconButton
+                                      size="small"
+                                      onClick={(e) => { e.stopPropagation(); handleDeleteSingle(song.id, song.path) }}
+                                      style={{ padding: 2, color: '#f44336' }}
+                                    >
+                                      <DeleteIcon style={{ fontSize: 14 }} />
+                                    </IconButton>
+                                  </Tooltip>
                                 </Box>
                               </Box>
                             </Box>

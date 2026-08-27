@@ -1169,11 +1169,6 @@ func (api *Router) aiPlaylistMatch(w http.ResponseWriter, r *http.Request) {
 
 	// Match
 		matched, unmatched := matchWithLibrary(allSongs, library, req.MatchMode)
-	// Capture actual count before truncating the list for display
-	actualUnmatchedCount := len(unmatched)
-	if len(unmatched) > 50 {
-		unmatched = unmatched[:50]
-	}
 
 	writeJSON(w, searchResponse{
 		Query:          req.Query,
@@ -1182,7 +1177,7 @@ func (api *Router) aiPlaylistMatch(w http.ResponseWriter, r *http.Request) {
 		Matched:        matched,
 		MatchedCount:   len(matched),
 		Unmatched:      unmatched,
-		UnmatchedCount: actualUnmatchedCount,
+		UnmatchedCount: len(unmatched),
 	})
 }
 
@@ -1225,10 +1220,6 @@ func (api *Router) aiPlaylistFromURL(w http.ResponseWriter, r *http.Request) {
 
 	// Match
 		matched, unmatched := matchWithLibrary(urlSongs, library, req.MatchMode)
-	actualUnmatchedCount := len(unmatched)
-	if len(unmatched) > 50 {
-		unmatched = unmatched[:50]
-	}
 
 	writeJSON(w, map[string]any{
 		"playlistName":   playlistName,
@@ -1238,7 +1229,7 @@ func (api *Router) aiPlaylistFromURL(w http.ResponseWriter, r *http.Request) {
 		"matched":        matched,
 		"matchedCount":   len(matched),
 		"unmatched":      unmatched,
-		"unmatchedCount": actualUnmatchedCount,
+		"unmatchedCount": len(unmatched),
 	})
 }
 
@@ -1455,10 +1446,6 @@ func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
 	}
 
 		matched, unmatched := matchWithLibrary(parsed, library, matchMode)
-	actualUnmatchedCount := len(unmatched)
-	if len(unmatched) > 50 {
-		unmatched = unmatched[:50]
-	}
 
 	// Derive playlist name from filename
 	playlistName := strings.TrimSuffix(filename, ".txt")
@@ -1471,7 +1458,7 @@ func (api *Router) aiPlaylistImportTXT(w http.ResponseWriter, r *http.Request) {
 		"matched":         matched,
 		"matchedCount":    len(matched),
 		"unmatched":       unmatched,
-		"unmatchedCount":  actualUnmatchedCount,
+		"unmatchedCount":  len(unmatched),
 	})
 }
 
