@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -268,7 +267,7 @@ type readSeekCloser interface {
 // isRemotePath reports whether a library path points at a remote (cloud) source rather
 // than at the local filesystem.
 func isRemotePath(libraryPath string) bool {
-	return strings.Contains(libraryPath, "://") && !strings.HasPrefix(libraryPath, storage.LocalSchemaID+"://")
+	return storage.IsRemoteURI(libraryPath)
 }
 
 // remoteStorage resolves the storage backend of mf's library when it is a cloud source.

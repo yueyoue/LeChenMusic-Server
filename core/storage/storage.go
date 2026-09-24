@@ -46,6 +46,13 @@ func LocalPathToURL(osPath string) (url.URL, error) {
 	return *u, nil
 }
 
+// IsRemoteURI reports whether a library path refers to a remote (cloud) source rather
+// than to the local filesystem. Local libraries are plain OS paths (optionally wrapped
+// in a file:// URI); every other scheme is served by a remote storage backend.
+func IsRemoteURI(libraryPath string) bool {
+	return strings.Contains(libraryPath, "://") && !strings.HasPrefix(libraryPath, LocalSchemaID+"://")
+}
+
 // For returns a Storage implementation for the given URI.
 // It uses the schema part of the URI to find the correct registered
 // Storage constructor.

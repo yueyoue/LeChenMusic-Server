@@ -387,24 +387,46 @@ func (r *libraryRepositoryWrapper) validateLibrary(library *model.Library) error
 }
 
 func (r *libraryRepositoryWrapper) validateLibraryPath(library *model.Library) error {
-	// Validate path format
-	if !filepath.IsAbs(library.Path) {
-		return fmt.Errorf("library path must be absolute")
-	}
+	// Local libraries are plain OS paths and must be absolute. Cloud libraries are
+	// storage URIs (e.g. openlist://host:port/path) and are validated through the
+	// storage backend below, so the absolute-path rule does not apply to them.
+	if storage.IsRemoteURI(library.Path) {
+		library.Path = strings.TrimSpace(library.Path)
+		if library.Path == "" {
+			return fmt.Errorf("library path must be absolute")
+		}
+	} else {
+		// Validate path format
+		if !filepath.IsAbs(library.Path) {
+			return fmt.Errorf("library path must be absolute")
+		}
 
-	// Clean the path to normalize it
-	cleanPath := filepath.Clean(library.Path)
-	library.Path = cleanPath
+		// Clean the path to normalize it
+		library.Path = filepath.Clean(library.Path)
+	}
 
 	// Check if path exists and is accessible using storage abstraction
 	fileStore, err := storage.For(library.Path)
 	if err != nil {
+		if storage.IsRemoteURI(library.Path) {
+			// For cloud libraries the message already says what to fix
+			// (e.g. "no credentials configured for OpenList endpoint ...").
+			return err
+		}
 		return fmt.Errorf("invalid storage scheme: %w", err)
 	}
 
-	fsys, err := fileStore.FS()
+	var fsys storage.MusicFS
+	if cs, ok := fileStore.(storage.ContextualStorage); ok {
+		fsys, err = cs.FSWithContext(r.ctx)
+	} else {
+		fsys, err = fileStore.FS()
+	}
 	if err != nil {
 		log.Warn(r.ctx, "Error validating library.path", "path", library.Path, err)
+		if storage.IsRemoteURI(library.Path) {
+			return err
+		}
 		return fmt.Errorf("resources.library.validation.pathInvalid")
 	}
 

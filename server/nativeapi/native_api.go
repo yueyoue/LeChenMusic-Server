@@ -105,6 +105,7 @@ func (api *Router) routes() http.Handler {
 		api.addAIPlaylistRoute(r)     // [LeChenMusic] AI playlist routes
 		api.addErrorLogRoute(r)  // [LeChenMusic] error log route
 		api.addBackupRoute(r)    // [LeChenMusic] backup & restore routes
+		api.addCloudSourceRoute(r) // [LeChenMusic] 网盘媒体源: test connection for the library wizard
 
 		// Serve uploaded app files (splash images, slide images)
 		r.Get("/app/splash/*", func(w http.ResponseWriter, r *http.Request) {
