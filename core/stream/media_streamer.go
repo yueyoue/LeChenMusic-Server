@@ -9,12 +9,14 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/consts"
 	"github.com/navidrome/navidrome/core/ffmpeg"
+	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
@@ -80,15 +82,41 @@ func (ms *mediaStreamer) NewStream(ctx context.Context, mf *model.MediaFile, req
 		format = "raw"
 		bitRate = 0
 	}
-	s := &Stream{ctx: ctx, mf: mf, format: format, bitRate: bitRate}
 	filePath := mf.AbsolutePath()
+
+	// A cloud library has no local path for ffmpeg to open: hand ffmpeg the file's direct
+	// link instead, so it pulls straight from the drive's CDN (the media bytes still never
+	// pass through this server). With no usable link, fall back to relaying the original
+	// bytes rather than failing playback entirely.
+	if format != "raw" {
+		if _, remote := ms.remoteStorage(ctx, mf); remote {
+			raw, ok := ms.directURL(ctx, mf)
+			if !ok {
+				log.Warn(ctx, "stream: cannot transcode cloud file without a direct link, serving original", "id", mf.ID)
+				format, bitRate = "raw", 0
+			} else {
+				filePath = raw
+			}
+		}
+	}
+
+	s := &Stream{ctx: ctx, mf: mf, format: format, bitRate: bitRate}
 
 	if format == "raw" {
 		log.Debug(ctx, "Streaming RAW file", "id", mf.ID, "path", filePath,
 			"requestBitrate", req.BitRate, "requestFormat", req.Format, "requestOffset", req.Offset,
 			"originalBitrate", mf.BitRate, "originalFormat", mf.Suffix,
 			"selectedBitrate", bitRate, "selectedFormat", format)
-		f, err := os.Open(filePath)
+
+		// Cloud media sources can hand the client a direct link to the origin (302), so
+		// the media bytes never pass through this server (方案 B: 索引 + 302 直链).
+		if raw, ok := ms.directURL(ctx, mf); ok {
+			s.redirectURL = raw
+			s.format = mf.Suffix
+			return s, nil
+		}
+
+		f, err := ms.openRaw(ctx, mf, filePath)
 		if err != nil {
 			return nil, err
 		}
@@ -137,11 +165,16 @@ type Stream struct {
 	mf      *model.MediaFile
 	bitRate int
 	format  string
+	// redirectURL, when set, is a signed direct link to the file's origin (a cloud
+	// drive CDN). The stream then answers HTTP 302 instead of relaying bytes, so media
+	// data never passes through this server. It is a credential: never log it.
+	redirectURL string
 	io.ReadCloser
 	io.Seeker
 }
 
 func (s *Stream) Seekable() bool      { return s.Seeker != nil }
+func (s *Stream) Redirected() bool    { return s.redirectURL != "" }
 func (s *Stream) Duration() float32   { return s.mf.Duration }
 func (s *Stream) ContentType() string { return mime.TypeByExtension("." + s.format) }
 func (s *Stream) Name() string        { return s.mf.Title + "." + s.format }
@@ -150,12 +183,30 @@ func (s *Stream) EstimatedContentLength() int {
 	return int(s.mf.Duration * float32(s.bitRate) / 8 * 1024)
 }
 
+// Close releases the underlying reader. A redirected stream has no reader at all, so
+// the embedded io.ReadCloser is nil there and must not be dereferenced.
+func (s *Stream) Close() error {
+	if s.ReadCloser == nil {
+		return nil
+	}
+	return s.ReadCloser.Close()
+}
+
 // Serve writes the stream to the HTTP response. For seekable streams it uses http.ServeContent
 // (supporting range requests). For non-seekable streams it writes directly and logs any errors.
 // Returns the number of bytes written and an error only when io.Copy fails with 0 bytes written
 // (meaning the HTTP 200 status has not been flushed yet and the caller can still send an error response).
 // Empty output (0 bytes, no error) is logged but not treated as an error.
 func (s *Stream) Serve(ctx context.Context, w http.ResponseWriter, r *http.Request) (int64, error) {
+	if s.Redirected() {
+		// 302 straight to the drive's CDN. We deliberately forward none of our own
+		// headers (especially not any auth material) to the CDN, and the signed URL is
+		// never logged. Clients follow the redirect with their normal HTTP stack.
+		log.Debug(ctx, "Streaming via 302 direct link", "id", s.mf.ID, "title", s.mf.Title)
+		http.Redirect(w, r, s.redirectURL, http.StatusFound)
+		return 0, nil
+	}
+
 	if s.Seekable() {
 		http.ServeContent(w, r, s.Name(), s.ModTime(), s)
 		return -1, nil
@@ -204,6 +255,98 @@ func NewStream(mf *model.MediaFile, format string, bitRate int, r io.ReadCloser)
 		bitRate:    bitRate,
 		ReadCloser: r,
 	}
+}
+
+// readSeekCloser is what raw streaming needs from a file handle: it is handed to
+// http.ServeContent, which seeks for range requests.
+type readSeekCloser interface {
+	io.Reader
+	io.Seeker
+	io.Closer
+}
+
+// isRemotePath reports whether a library path points at a remote (cloud) source rather
+// than at the local filesystem.
+func isRemotePath(libraryPath string) bool {
+	return strings.Contains(libraryPath, "://") && !strings.HasPrefix(libraryPath, storage.LocalSchemaID+"://")
+}
+
+// remoteStorage resolves the storage backend of mf's library when it is a cloud source.
+func (ms *mediaStreamer) remoteStorage(ctx context.Context, mf *model.MediaFile) (storage.Storage, bool) {
+	libPath := mf.LibraryPath
+	if libPath == "" {
+		lib, err := ms.ds.Library(ctx).Get(mf.LibraryID)
+		if err != nil {
+			log.Warn(ctx, "stream: cannot resolve library for media file", "id", mf.ID, "library", mf.LibraryID, err)
+			return nil, false
+		}
+		libPath = lib.Path
+	}
+	if !isRemotePath(libPath) {
+		return nil, false
+	}
+	st, err := storage.For(libPath)
+	if err != nil {
+		log.Warn(ctx, "stream: cannot resolve cloud storage for library", "library", mf.LibraryID, "path", libPath, err)
+		return nil, false
+	}
+	return st, true
+}
+
+// directURL resolves a fresh, signed direct link for cloud sources (the 302 playback
+// mode). Links expire in hours at most, so one is resolved per playback and never cached.
+// The second return value is false whenever the 302 mode cannot be used and the caller
+// must fall back to relaying the bytes through this server.
+func (ms *mediaStreamer) directURL(ctx context.Context, mf *model.MediaFile) (string, bool) {
+	st, ok := ms.remoteStorage(ctx, mf)
+	if !ok {
+		return "", false
+	}
+	dlp, ok := st.(storage.DirectLinkProvider)
+	if !ok {
+		return "", false
+	}
+	raw, _, err := dlp.DirectURL(ctx, mf.Path)
+	if err != nil {
+		// Missing/expired direct link, IP-bound link the client could not use, or the
+		// gateway refused: fall back to the server-side relay (中转流), exactly as
+		// required by the design doc §2.2. The URL itself must never be logged.
+		log.Debug(ctx, "stream: no direct link available, relaying through server", "id", mf.ID, err)
+		return "", false
+	}
+	return raw, true
+}
+
+// openRaw opens mf for raw streaming. Local libraries keep hitting the OS filesystem
+// directly (unchanged behaviour); cloud libraries go through their storage backend,
+// which yields a lazy, seekable reader — the 中转流 fallback of the design doc.
+func (ms *mediaStreamer) openRaw(ctx context.Context, mf *model.MediaFile, filePath string) (readSeekCloser, error) {
+	st, ok := ms.remoteStorage(ctx, mf)
+	if !ok {
+		return os.Open(filePath) //nolint:gosec
+	}
+
+	var fsys storage.MusicFS
+	var err error
+	if cs, ok := st.(storage.ContextualStorage); ok {
+		fsys, err = cs.FSWithContext(ctx)
+	} else {
+		fsys, err = st.FS()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("opening cloud library: %w", err)
+	}
+
+	f, err := fsys.Open(mf.Path)
+	if err != nil {
+		return nil, err
+	}
+	rsc, ok := f.(readSeekCloser)
+	if !ok {
+		_ = f.Close()
+		return nil, fmt.Errorf("stream: %s is not seekable", mf.Path)
+	}
+	return rsc, nil
 }
 
 var (

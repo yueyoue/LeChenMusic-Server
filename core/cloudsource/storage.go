@@ -2,6 +2,7 @@ package cloudsource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -9,6 +10,11 @@ import (
 
 	"github.com/navidrome/navidrome/core/storage"
 )
+
+// errRedirectDisabled is returned when the endpoint is configured with DisableRedirect,
+// i.e. the operator wants every playback relayed through this server instead of 302'ing
+// to the drive's CDN.
+var errRedirectDisabled = errors.New("cloudsource: 302 direct links disabled by configuration")
 
 // cloudStorage is the storage.Storage registered for the "openlist" scheme.
 //
@@ -56,6 +62,9 @@ func (s *cloudStorage) DirectURL(ctx context.Context, name string) (string, time
 	ep, err := EndpointFor(s.u.Host)
 	if err != nil {
 		return "", time.Time{}, err
+	}
+	if !ep.supportsRedirect() {
+		return "", time.Time{}, errRedirectDisabled
 	}
 	return ep.directURL(ctx, remotePathOf(strings.Trim(s.u.Path, "/"), name))
 }

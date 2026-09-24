@@ -76,8 +76,10 @@ func (e *ffmpeg) Transcode(ctx context.Context, opts TranscodeOptions) (io.ReadC
 	if _, err := ffmpegCmd(); err != nil {
 		return nil, err
 	}
-	if err := fileExists(opts.FilePath); err != nil {
-		return nil, err
+	if !isRemoteInput(opts.FilePath) {
+		if err := fileExists(opts.FilePath); err != nil {
+			return nil, err
+		}
 	}
 	var args []string
 	if isDefaultCommand(opts.Format, opts.Command) {
@@ -141,6 +143,13 @@ func fileExists(path string) error {
 		return fmt.Errorf("'%s' is a directory", path)
 	}
 	return nil
+}
+
+// isRemoteInput reports whether the input is a URL ffmpeg is expected to fetch itself.
+// Cloud media sources have no local path to hand to ffmpeg, so they pass the file's
+// direct link instead and ffmpeg streams it straight from the drive's CDN.
+func isRemoteInput(path string) bool {
+	return strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://")
 }
 
 func (e *ffmpeg) Probe(ctx context.Context, files []string) (string, error) {
