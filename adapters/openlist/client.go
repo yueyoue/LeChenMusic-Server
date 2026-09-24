@@ -133,17 +133,27 @@ func NewClient(cfg Config) *Client {
 
 // List returns one page of entries of the directory `path` (1-based page).
 // Pagination is caller-driven: keep bumping `page` until an empty/nil slice is
-// returned (or use listResponse.Total). On error the returned slice is nil.
+// returned (or use ListPaged to also see the reported total). On error the returned
+// slice is nil.
 func (c *Client) List(ctx context.Context, path string, page int) ([]Entry, error) {
+	entries, _, err := c.ListPaged(ctx, path, page)
+	return entries, err
+}
+
+// ListPaged is List plus the gateway-reported total, so callers can stop paginating
+// right after the last page instead of making one speculative extra request to discover
+// the end of the listing. Every request we don't make is one less upstream hit (风控).
+// A total of 0 means "unknown": fall back to stopping on the first empty page.
+func (c *Client) ListPaged(ctx context.Context, path string, page int) ([]Entry, int, error) {
 	if page < 1 {
 		page = 1
 	}
 	var data listResponse
 	err := c.do(ctx, endpointList, listRequest{Path: path, Page: page}, &data, c.listLim, true)
 	if err != nil {
-		return nil, fmt.Errorf("openlist: list %q (page %d): %w", path, page, err)
+		return nil, 0, fmt.Errorf("openlist: list %q (page %d): %w", path, page, err)
 	}
-	return data.Content, nil
+	return data.Content, data.Total, nil
 }
 
 // Get returns the detail (incl. RawURL) of the object at `path`.

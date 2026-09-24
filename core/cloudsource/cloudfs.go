@@ -146,8 +146,13 @@ func (f *cloudFS) listDir(name string) ([]openlist.Entry, error) {
 	return f.ep.listDir(f.ctx, remotePathOf(f.root, name))
 }
 
-// DirectURL implements storage.DirectLinkProvider.
+// DirectURL implements storage.DirectLinkProvider. It honours the DisableRedirect
+// switch: when set, the operator wants every playback relayed through this server and
+// callers get an error here so they fall back to the 中转流.
 func (f *cloudFS) DirectURL(ctx context.Context, name string) (string, time.Time, error) {
+	if !f.ep.supportsRedirect() {
+		return "", time.Time{}, errRedirectDisabled
+	}
 	if ctx == nil {
 		ctx = f.ctx
 	}
@@ -349,6 +354,8 @@ func (d *cloudDir) ReadDir(n int) ([]fs.DirEntry, error) {
 // ---- endpoint level helpers ----
 
 // listDir lists a remote directory, paginating and strongly caching the result.
+// Pagination stops as soon as the gateway-reported total is reached, so a listing costs
+// exactly ceil(total/pageSize) requests and never a speculative extra one.
 func (e *Endpoint) listDir(ctx context.Context, remote string) ([]openlist.Entry, error) {
 	if entries, ok := e.dirs.Get(remote); ok {
 		return entries, nil
@@ -357,7 +364,7 @@ func (e *Endpoint) listDir(ctx context.Context, remote string) ([]openlist.Entry
 	var all []openlist.Entry
 	prevFirst := ""
 	for page := 1; page <= maxListPages; page++ {
-		entries, err := e.client.List(ctx, remote, page)
+		entries, total, err := e.client.ListPaged(ctx, remote, page)
 		if err != nil {
 			return nil, err
 		}
@@ -370,6 +377,9 @@ func (e *Endpoint) listDir(ctx context.Context, remote string) ([]openlist.Entry
 		}
 		prevFirst = entries[0].Name
 		all = append(all, entries...)
+		if total > 0 && len(all) >= total {
+			break
+		}
 	}
 	e.dirs.Set(remote, all)
 	return all, nil

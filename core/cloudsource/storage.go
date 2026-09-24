@@ -80,12 +80,9 @@ func BuildURI(address, remotePath string) (string, error) {
 	remotePath = strings.Trim(remotePath, "/")
 	u := url.URL{Scheme: SchemaID, Host: host}
 	if remotePath != "" {
-		// Keep each path component escaped, exactly like storage.LocalPathToURL does.
-		parts := strings.Split(remotePath, "/")
-		for i, p := range parts {
-			parts[i] = url.PathEscape(p)
-		}
-		u.Path = "/" + strings.Join(parts, "/")
+		// Set the *unescaped* path: url.URL.String() applies the per-component escaping
+		// itself, so escaping here would double-encode non-ASCII components.
+		u.Path = "/" + remotePath
 	}
 	return u.String(), nil
 }
