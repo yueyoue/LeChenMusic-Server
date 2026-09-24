@@ -107,6 +107,7 @@ type configOptions struct {
 	HTTPHeaders                     httpHeaderOptions   `json:",omitzero"`
 	Prometheus                      prometheusOptions   `json:",omitzero"`
 	Scanner                         scannerOptions      `json:",omitzero"`
+	OpenList                        map[string]OpenListOptions `json:",omitzero"`
 	Jukebox                         jukeboxOptions      `json:",omitzero"`
 	Backup                          backupOptions       `json:",omitzero"`
 	PID                             pidOptions          `json:",omitzero"`
@@ -150,6 +151,47 @@ type configOptions struct {
 	DevOptimizeDB                     bool
 	DevPreserveUnicodeInExternalCalls bool
 	DevEnableMediaFileProbe           bool
+}
+
+// openListOptions configures one OpenList gateway (https://github.com/OpenListTeam/OpenList)
+// used as a cloud media source (网盘媒体源). Each entry is keyed by the endpoint name (or by
+// its host:port) and is matched against the `openlist://<host:port>/<path>` storage URI of a
+// cloud library.
+//
+// Credentials deliberately live in the server config and are NEVER persisted in the database:
+// the library only records the endpoint address + remote path (see docs/网盘媒体源方案设计.md).
+// Password/Token are `json:"-"` so they can never leak through the /api/config endpoint.
+type OpenListOptions struct {
+	URL      string // OpenList base URL, e.g. "http://192.168.1.10:5244"
+	Username string
+	Password string `json:"-"`
+	Token    string `json:"-"` // explicit API token; when set, no login call is made
+
+	// Throttling / resilience (风控规避, see docs/网盘媒体源方案设计.md §4)
+	ListInterval     time.Duration // spacing between /api/fs/list requests (default 2s)
+	ReadInterval     time.Duration // spacing between Range reads of file contents (default 500ms)
+	JitterFraction   float64       // +/- fraction of jitter (default 0.2)
+	MaxRetries       int           // retries on 429/5xx (default 3, hard cap 3)
+	RetryBaseDelay   time.Duration // exponential backoff base (default 500ms)
+	FailureThreshold int           // consecutive failures before the circuit opens (default 5)
+	CircuitOpenFor   time.Duration // circuit-open fast-fail duration (default 30m)
+
+	// Lazy tag/cover extraction (只做 Range 局部读，绝不整文件下载)
+	HeadBytes     int64 // bytes read from the head of the file for tag parsing (default 2MB)
+	TailBytes     int64 // bytes read from the tail, to find e.g. MP4 moov boxes (default 2MB)
+	WindowBytes   int64 // minimum sliding-window size for mid-file reads (default 256KB)
+	MaxTagReadBytes int64 // hard budget for a single tag extraction, prevents full downloads (default 16MB)
+
+	DirCacheTTL time.Duration // how long directory listings are cached (default 5m)
+
+	// TagMode selects how a cloud library is built:
+	//   "scan"     (default) read tags through bounded HTTP Range requests (head/tail only)
+	//   "filename" never read any file content: artist/album come from the parent folders,
+	//               the title from the file name (the 艺人/专辑/曲目 convention of the
+	//               design doc). Instant scans, but no duration/bitrate/cover info.
+	TagMode string
+
+	DisableRedirect bool // set to true to never 302 to the drive's CDN (always proxy through this server)
 }
 
 type scannerOptions struct {
