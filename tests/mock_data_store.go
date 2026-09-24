@@ -21,6 +21,8 @@ type MockDataStore struct {
 	MockedPlayer         model.PlayerRepository
 	MockedPlaylist       model.PlaylistRepository
 	MockedPlayQueue      model.PlayQueueRepository
+	MockedPlayLog        model.PlayLogRepository
+	MockedUserDevice     model.UserDeviceRepository
 	MockedShare          model.ShareRepository
 	MockedTranscoding    model.TranscodingRepository
 	MockedUserProps      model.UserPropsRepository
@@ -254,6 +256,26 @@ func (db *MockDataStore) Audiobook(ctx context.Context) model.AudiobookRepositor
 	}
 	if db.RealDS != nil {
 		return db.RealDS.Audiobook(ctx)
+	}
+	return nil
+}
+
+func (db *MockDataStore) PlayLog(ctx context.Context) model.PlayLogRepository {
+	if db.MockedPlayLog != nil {
+		return db.MockedPlayLog
+	}
+	if db.RealDS != nil {
+		return db.RealDS.PlayLog(ctx)
+	}
+	return nil
+}
+
+func (db *MockDataStore) UserDevice(ctx context.Context) model.UserDeviceRepository {
+	if db.MockedUserDevice != nil {
+		return db.MockedUserDevice
+	}
+	if db.RealDS != nil {
+		return db.RealDS.UserDevice(ctx)
 	}
 	return nil
 }
