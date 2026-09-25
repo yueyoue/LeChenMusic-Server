@@ -11,6 +11,8 @@ import {
   useRedirect,
 } from 'react-admin'
 import { Title } from '../common'
+import CloudPathFields from './CloudPathFields'
+import { toLibraryPayload } from './cloudPath'
 
 const LibraryCreate = (props) => {
   const translate = useTranslate()
@@ -24,12 +26,20 @@ const LibraryCreate = (props) => {
 
   const save = useCallback(
     async (values) => {
+      // Compose `path` from the wizard fields for a cloud library; a local library is
+      // saved exactly as before (see ./cloudPath.js — it mirrors the backend's BuildURI).
+      let payload
+      try {
+        payload = toLibraryPayload(values)
+      } catch (error) {
+        return { openlistAddress: 'ra.validation.required' }
+      }
       try {
         await mutate(
           {
             type: 'create',
             resource: 'library',
-            payload: { data: values },
+            payload: { data: payload },
           },
           { returnPromise: true },
         )
@@ -74,7 +84,9 @@ const LibraryCreate = (props) => {
     <Create title={<Title subTitle={title} />} {...props}>
       <SimpleForm save={save} variant={'outlined'}>
         <TextInput source="name" validate={[required()]} />
-        <TextInput source="path" validate={[required()]} fullWidth helperText="如果是有声书媒体库，请填写 /audiobooks" />
+        <CloudPathFields
+          helperText={translate('resources.library.helpers.path')}
+        />
         <BooleanInput source="defaultNewUsers" />
       </SimpleForm>
     </Create>

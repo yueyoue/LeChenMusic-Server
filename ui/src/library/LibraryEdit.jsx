@@ -16,6 +16,8 @@ import {
 import { Typography, Box } from '@material-ui/core'
 import { makeStyles } from '@material-ui/core/styles'
 import DeleteLibraryButton from './DeleteLibraryButton'
+import CloudPathFields from './CloudPathFields'
+import { toLibraryPayload } from './cloudPath'
 import { Title } from '../common'
 import { formatBytes, formatDuration2, formatNumber } from '../utils/index.js'
 
@@ -59,12 +61,20 @@ const LibraryEdit = (props) => {
 
   const save = useCallback(
     async (values) => {
+      // Compose `path` from the wizard fields for a cloud library; a local library is
+      // saved exactly as before (see ./cloudPath.js — it mirrors the backend's BuildURI).
+      let payload
+      try {
+        payload = toLibraryPayload(values)
+      } catch (error) {
+        return { openlistAddress: 'ra.validation.required' }
+      }
       try {
         await mutate(
           {
             type: 'update',
             resource: 'library',
-            payload: { id: values.id, data: values },
+            payload: { id: values.id, data: payload },
           },
           { returnPromise: true },
         )
@@ -102,14 +112,10 @@ const LibraryEdit = (props) => {
                     validate={[required()]}
                     variant="outlined"
                   />
-                  <TextInput
-                    source="path"
-                    label={translate('resources.library.fields.path')}
-                    validate={[required()]}
-                    fullWidth
-                    variant="outlined"
-                    InputProps={{ readOnly: !canEditPath }} // Disable editing path for library 1
-                    helperText={canEditPath ? "如果是有声书媒体库，请填写 /audiobooks" : ""}
+                  <CloudPathFields
+                    record={formProps.record}
+                    canEditPath={canEditPath}
+                    helperText={translate('resources.library.helpers.path')}
                   />
                   <BooleanInput
                     source="defaultNewUsers"

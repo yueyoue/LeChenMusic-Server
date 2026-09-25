@@ -297,7 +297,11 @@
         "totalDuration": "時長",
         "defaultNewUsers": "新使用者預設媒體庫",
         "createdAt": "建立於",
-        "updatedAt": "更新於"
+        "updatedAt": "更新於",
+        "sourceType": "來源類型",
+        "sourceLocal": "本機資料夾",
+        "sourceCloud": "雲端資料夾（OpenList）",
+        "openlistAddress": "OpenList 位址"
       },
       "sections": {
         "basic": "基本資訊",
@@ -332,6 +336,20 @@
         "deleteConfirm": "您確定要刪除此媒體庫嗎？這將刪除所有相關資料和使用者存取權限。",
         "scanInProgress": "正在掃描...",
         "noLibrariesAssigned": "沒有為該使用者指派任何媒體庫"
+      },
+      "helpers": {
+        "path": "有聲書媒體庫請指向有聲書目錄；媒體類型（音樂 / 有聲書）會依名稱與路徑自動識別。"
+      },
+      "cloud": {
+        "test": "測試連線",
+        "testing": "測試中…",
+        "ok": "✅ 連線成功，目錄下有 %{count} 個項目：%{entries}",
+        "failed": "❌ %{message}",
+        "forbidden": "無權限——僅管理員可以測試連線。",
+        "placeholderAddress": "http://192.168.1.10:5244",
+        "placeholderPath": "fnos/音樂",
+        "addressHelper": "OpenList 閘道位址，例如 http://192.168.1.10:5244",
+        "pathHelper": "雲端硬碟中的資料夾路徑，例如 fnos/音樂。儲存後會組成 openlist:// 庫路徑。"
       }
     },
     "plugin": {

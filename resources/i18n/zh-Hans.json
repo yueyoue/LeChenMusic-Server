@@ -297,7 +297,11 @@
         "totalDuration": "时长",
         "defaultNewUsers": "新用户默认",
         "createdAt": "创建于",
-        "updatedAt": "更新于"
+        "updatedAt": "更新于",
+        "sourceType": "来源类型",
+        "sourceLocal": "本地文件夹",
+        "sourceCloud": "网盘文件夹（OpenList）",
+        "openlistAddress": "OpenList 地址"
       },
       "sections": {
         "basic": "基本信息",
@@ -332,6 +336,20 @@
         "deleteConfirm": "您确定要删除此媒体库吗？这将删除所有关联数据及用户访问权限。",
         "scanInProgress": "正在扫描...",
         "noLibrariesAssigned": "未向此用户分配媒体库"
+      },
+      "helpers": {
+        "path": "有声书媒体库请指向有声书目录；媒体类型（音乐 / 有声书）会按名称和路径自动识别。"
+      },
+      "cloud": {
+        "test": "测试连接",
+        "testing": "测试中…",
+        "ok": "✅ 连接成功，目录下有 %{count} 个条目：%{entries}",
+        "failed": "❌ %{message}",
+        "forbidden": "无权限——仅管理员可以测试连接。",
+        "placeholderAddress": "http://192.168.1.10:5244",
+        "placeholderPath": "fnos/音乐",
+        "addressHelper": "OpenList 网关地址，例如 http://192.168.1.10:5244",
+        "pathHelper": "网盘中的文件夹路径，例如 fnos/音乐。保存后会拼成 openlist:// 库路径。"
       }
     },
     "plugin": {

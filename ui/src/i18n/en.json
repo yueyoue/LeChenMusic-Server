@@ -299,7 +299,11 @@
         "totalDuration": "Duration",
         "defaultNewUsers": "Default for New Users",
         "createdAt": "Created",
-        "updatedAt": "Updated"
+        "updatedAt": "Updated",
+        "sourceType": "Source",
+        "sourceLocal": "Local Folder",
+        "sourceCloud": "Cloud Folder (OpenList)",
+        "openlistAddress": "OpenList Address"
       },
       "sections": {
         "basic": "Basic Information",
@@ -334,6 +338,20 @@
         "deleteConfirm": "Are you sure you want to delete this library? This will remove all associated data and user access.",
         "scanInProgress": "Scan in progress...",
         "noLibrariesAssigned": "No libraries assigned to this user"
+      },
+      "helpers": {
+        "path": "Audiobook libraries: point this at the audiobook folder. The media type (music / audiobook) is detected automatically from the name and path."
+      },
+      "cloud": {
+        "test": "Test Connection",
+        "testing": "Testing…",
+        "ok": "✅ Connected. %{count} entries: %{entries}",
+        "failed": "❌ %{message}",
+        "forbidden": "No permission — only administrators can test the connection.",
+        "placeholderAddress": "http://192.168.1.10:5244",
+        "placeholderPath": "fnos/音乐",
+        "addressHelper": "Address of your OpenList gateway, e.g. http://192.168.1.10:5244",
+        "pathHelper": "Folder inside the cloud drive, e.g. fnos/音乐. Saved as an openlist:// library path."
       }
     },
     "plugin": {
