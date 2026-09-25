@@ -4,14 +4,20 @@ import (
 	"context"
 	"crypto/md5"
 	"fmt"
-	"os"
-	"path/filepath"
+	"io"
+	"io/fs"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	. "github.com/Masterminds/squirrel"
+	"github.com/navidrome/navidrome/core/storage"
+	// The scanner resolves library paths through core/storage; the local backend registers
+	// itself in init(). Importing it here keeps the "file" scheme available no matter which
+	// binary pulls the scanner in.
+	_ "github.com/navidrome/navidrome/core/storage/local"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/id"
@@ -31,14 +37,14 @@ var audiobookCoverNames = []string{
 }
 
 var genreKeywords = map[string]string{
-	"有声书":   "有声读物",
+	"有声书":  "有声读物",
 	"有声读物": "有声读物",
-	"小说":    "有声读物",
-	"评书":    "评书",
-	"相声":    "相声",
-	"戏曲":    "戏曲",
-	"儿童":    "儿童",
-	"教育":    "教育",
+	"小说":   "有声读物",
+	"评书":   "评书",
+	"相声":   "相声",
+	"戏曲":   "戏曲",
+	"儿童":   "儿童",
+	"教育":   "教育",
 }
 
 type AudiobookScanner struct {
@@ -49,34 +55,72 @@ func NewAudiobookScanner(ds model.DataStore) *AudiobookScanner {
 	return &AudiobookScanner{ds: ds}
 }
 
+// audiobookFS resolves the library's storage backend through the storage abstraction
+// (core/storage), so a local folder and a cloud source (openlist://...) are scanned with
+// exactly the same code. ContextualStorage (cloud) must be cancelled with the scan.
+func audiobookFS(ctx context.Context, library model.Library) (storage.MusicFS, error) {
+	st, err := storage.For(library.Path)
+	if err != nil {
+		return nil, err
+	}
+	if cs, ok := st.(storage.ContextualStorage); ok {
+		return cs.FSWithContext(ctx)
+	}
+	return st.FS()
+}
+
+// openForTag opens a file through the library FS and hands back a seekable reader for
+// taglib. On a cloud source the handle is a lazy Range reader, so tag parsing only pulls
+// the byte ranges taglib actually asks for — never the whole file (design doc §15.1).
+func openForTag(fsys storage.MusicFS, filePath string) (io.ReadSeeker, io.Closer, error) {
+	f, err := fsys.Open(filePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	rs, ok := f.(io.ReadSeeker)
+	if !ok {
+		_ = f.Close()
+		return nil, nil, fmt.Errorf("audiobook: %s is not seekable", filePath)
+	}
+	return rs, f, nil
+}
+
 func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Library) error {
 	log.Info(ctx, "Audiobook scanner: Starting scan", "library", library.Name, "path", library.Path)
+
+	fsys, err := audiobookFS(ctx, library)
+	if err != nil {
+		log.Error(ctx, "Audiobook scanner: Cannot open library storage", "path", library.Path, err)
+		return err
+	}
 
 	repo := s.ds.Audiobook(ctx)
 	var scanned, created, updated int
 
-	err := filepath.WalkDir(library.Path, func(path string, d os.DirEntry, walkErr error) error {
+	// fs.WalkDir walks the storage abstraction (io/fs), so every path below is
+	// library-relative and always uses "/" as separator — for local and cloud alike.
+	err = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil
 		}
 		if !d.IsDir() {
 			return nil
 		}
-		if strings.HasPrefix(d.Name(), ".") {
-			return filepath.SkipDir
-		}
-		if path == library.Path {
+		if p == "." {
 			return nil
+		}
+		if strings.HasPrefix(d.Name(), ".") {
+			return fs.SkipDir
 		}
 
 		// Check if this directory contains audio files
 		hasAudio := false
-		entries, readErr := os.ReadDir(path)
+		entries, readErr := fs.ReadDir(fsys, p)
 		if readErr != nil {
 			return nil
 		}
 		for _, e := range entries {
-			if !e.IsDir() && audiobookAudioExts[strings.ToLower(filepath.Ext(e.Name()))] {
+			if !e.IsDir() && audiobookAudioExts[strings.ToLower(path.Ext(e.Name()))] {
 				hasAudio = true
 				break
 			}
@@ -86,7 +130,7 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 		}
 
 		// This directory is an audiobook
-		relPath, _ := filepath.Rel(library.Path, path)
+		relPath := p
 		bookHash := audiobookHash(relPath)
 
 		// Check if already exists
@@ -99,13 +143,12 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 				book.Hash = bookHash
 				// Re-read narrator from tags if empty
 				if book.Narrator == "" {
-					path := filepath.Join(library.Path, book.Path)
-					_, _, _, _, _, tagNarr := readFirstAudioFileTags(path)
+					_, _, _, _, _, tagNarr := readFirstAudioFileTags(fsys, book.Path)
 					if tagNarr != "" {
 						book.Narrator = tagNarr
 					}
 				}
-				s.scanChapters(ctx, &book, library, repo)
+				s.scanChapters(ctx, fsys, &book, repo)
 				if err := repo.Put(&book); err != nil {
 					log.Error(ctx, "Audiobook scanner: Error updating", "book", book.Title, err)
 				} else {
@@ -113,11 +156,11 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 				}
 			}
 			scanned++
-			return filepath.SkipDir
+			return fs.SkipDir
 		}
 
 		// Create new audiobook
-		book := s.createAudiobookFromDir(ctx, library, path, relPath, bookHash)
+		book := s.createAudiobookFromDir(ctx, fsys, library, relPath, bookHash)
 		// IMPORTANT: Save the book FIRST before scanning chapters,
 		// because audiobook_chapter has a foreign key referencing audiobook(id).
 		// If the book doesn't exist in DB yet, chapter inserts will fail.
@@ -125,10 +168,16 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 			log.Error(ctx, "Audiobook scanner: Error creating", "book", book.Title, err)
 			return nil
 		}
-		s.scanChapters(ctx, &book, library, repo)
+		s.scanChapters(ctx, fsys, &book, repo)
+		// scanChapters fills ChapterCount/TotalDuration/Size in on the book struct. Persist
+		// them here, or the DB keeps the zero values: the API then reports 0 chapters and the
+		// "ChapterCount == 0" guard above re-reads every chapter tag on every single scan.
+		if err := repo.Put(&book); err != nil {
+			log.Error(ctx, "Audiobook scanner: Error saving chapter counters", "book", book.Title, err)
+		}
 		created++
 		scanned++
-		return filepath.SkipDir
+		return fs.SkipDir
 	})
 
 	if err != nil {
@@ -139,14 +188,14 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 	return nil
 }
 
-func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library model.Library, fullPath, relPath, bookHash string) model.Audiobook {
-	dirName := filepath.Base(fullPath)
+func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, fsys storage.MusicFS, library model.Library, relPath, bookHash string) model.Audiobook {
+	dirName := path.Base(relPath)
 	author, title := parseAudiobookDirName(dirName)
 	genre := detectGenreFromPath(relPath)
 
 	// [LeChenMusic-START:audiobook-id3-tags]
 	// Try to read metadata from the first audio file's ID3 tags
-	tagArtist, tagTitle, tagAlbum, tagGenre, tagYear, tagNarrator := readFirstAudioFileTags(fullPath)
+	tagArtist, tagTitle, tagAlbum, tagGenre, tagYear, tagNarrator := readFirstAudioFileTags(fsys, relPath)
 	if tagTitle != "" {
 		stripped := stripChapterSuffix(tagTitle)
 		if stripped != "" && !isNumericOnly(stripped) && len([]rune(stripped)) > 1 {
@@ -179,10 +228,9 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 
 	coverPath := ""
 	for _, coverName := range audiobookCoverNames {
-		coverFile := filepath.Join(fullPath, coverName)
-		if _, err := os.Stat(coverFile); err == nil {
-			relCover, _ := filepath.Rel(library.Path, coverFile)
-			coverPath = relCover
+		coverFile := path.Join(relPath, coverName)
+		if _, err := fs.Stat(fsys, coverFile); err == nil {
+			coverPath = coverFile
 			break
 		}
 	}
@@ -203,11 +251,11 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, library m
 	}
 }
 
-func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobook, library model.Library, repo model.AudiobookRepository) {
+func (s *AudiobookScanner) scanChapters(ctx context.Context, fsys storage.MusicFS, book *model.Audiobook, repo model.AudiobookRepository) {
 	_ = repo.DeleteChapters(book.ID)
 
-	audiobookPath := filepath.Join(library.Path, book.Path)
-	entries, err := os.ReadDir(audiobookPath)
+	audiobookPath := book.Path
+	entries, err := fs.ReadDir(fsys, audiobookPath)
 	if err != nil {
 		log.Error(ctx, "Audiobook scanner: Error reading dir", "path", audiobookPath, err)
 		return
@@ -222,7 +270,7 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 		if e.IsDir() {
 			continue
 		}
-		ext := strings.ToLower(filepath.Ext(e.Name()))
+		ext := strings.ToLower(path.Ext(e.Name()))
 		if audiobookAudioExts[ext] {
 			audioFiles = append(audioFiles, audioFile{name: e.Name(), path: e.Name()})
 		}
@@ -235,18 +283,18 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 	var totalSize int64
 	var successCount int
 	for i, af := range audioFiles {
-		chapterPath := filepath.Join(audiobookPath, af.name)
-		chapterTitle := strings.TrimSuffix(af.name, filepath.Ext(af.name))
-		format := strings.TrimPrefix(strings.ToLower(filepath.Ext(af.name)), ".")
+		chapterPath := path.Join(audiobookPath, af.name)
+		chapterTitle := strings.TrimSuffix(af.name, path.Ext(af.name))
+		format := strings.TrimPrefix(strings.ToLower(path.Ext(af.name)), ".")
 		var fileSize int64
-		if info, err := os.Stat(chapterPath); err == nil {
+		if info, err := fs.Stat(fsys, chapterPath); err == nil {
 			fileSize = info.Size()
 		}
 		// [LeChenMusic-START:audiobook-id3-tags]
 		// Try to read chapter title and duration from ID3 tags
 		var chapterDuration int
-		if file, err := os.Open(chapterPath); err == nil {
-			if f, err := taglib.OpenStream(file, taglib.WithReadStyle(taglib.ReadStyleFast), taglib.WithFilename(chapterPath)); err == nil {
+		if rs, closer, err := openForTag(fsys, chapterPath); err == nil {
+			if f, err := taglib.OpenStream(rs, taglib.WithReadStyle(taglib.ReadStyleFast), taglib.WithFilename(chapterPath)); err == nil {
 				allTags := f.AllTags()
 				props := f.Properties()
 				f.Close()
@@ -257,7 +305,7 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 					chapterDuration = int(props.Length.Seconds())
 				}
 			}
-			file.Close()
+			closer.Close()
 		}
 		// [LeChenMusic-END:audiobook-id3-tags]
 
@@ -292,7 +340,7 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 	book.Size = totalSize
 	// [LeChenMusic-END:audiobook-id3-tags]
 	if book.Title == "" {
-		book.Title = filepath.Base(audiobookPath)
+		book.Title = path.Base(audiobookPath)
 	}
 }
 
@@ -300,8 +348,8 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, book *model.Audiobo
 // readFirstAudioFileTags reads ID3/metadata tags from the first audio file in a directory.
 // Returns (artist, title, album, genre, year, narrator). Empty strings/zeros if not found.
 // Note: In audiobook files, ARTIST/ALBUMARTIST typically contains the narrator, not the book author.
-func readFirstAudioFileTags(dirPath string) (artist, title, album, genre string, year int, narrator string) {
-	entries, err := os.ReadDir(dirPath)
+func readFirstAudioFileTags(fsys storage.MusicFS, dirPath string) (artist, title, album, genre string, year int, narrator string) {
+	entries, err := fs.ReadDir(fsys, dirPath)
 	if err != nil {
 		return
 	}
@@ -309,24 +357,24 @@ func readFirstAudioFileTags(dirPath string) (artist, title, album, genre string,
 		if e.IsDir() {
 			continue
 		}
-		ext := strings.ToLower(filepath.Ext(e.Name()))
+		ext := strings.ToLower(path.Ext(e.Name()))
 		if !audiobookAudioExts[ext] {
 			continue
 		}
-		filePath := filepath.Join(dirPath, e.Name())
-		// Use taglib to read tags
-		file, err := os.Open(filePath)
+		filePath := path.Join(dirPath, e.Name())
+		// Use taglib to read tags, through the storage abstraction (lazy Range reads on cloud)
+		rs, closer, err := openForTag(fsys, filePath)
 		if err != nil {
 			continue
 		}
-		f, err := taglib.OpenStream(file, taglib.WithReadStyle(taglib.ReadStyleFast), taglib.WithFilename(filePath))
+		f, err := taglib.OpenStream(rs, taglib.WithReadStyle(taglib.ReadStyleFast), taglib.WithFilename(filePath))
 		if err != nil {
-			file.Close()
+			closer.Close()
 			continue
 		}
 		allTags := f.AllTags()
 		f.Close()
-		file.Close()
+		closer.Close()
 		// Extract common tag fields (taglib returns UPPERCASE keys)
 		tags := allTags.Tags
 		if v, ok := tags["ARTIST"]; ok && len(v) > 0 {
@@ -365,6 +413,7 @@ func readFirstAudioFileTags(dirPath string) (artist, title, album, genre string,
 	}
 	return
 }
+
 // [LeChenMusic-END:audiobook-id3-tags]
 
 func audiobookHash(path string) string {
@@ -618,7 +667,7 @@ func parseAudiobookDirName(name string) (author, title string) {
 }
 
 func detectGenreFromPath(relPath string) string {
-	parts := strings.Split(filepath.ToSlash(relPath), "/")
+	parts := strings.Split(relPath, "/")
 	for i := 0; i < len(parts)-1; i++ {
 		if genre, ok := genreKeywords[parts[i]]; ok {
 			return genre

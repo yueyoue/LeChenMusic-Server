@@ -3,8 +3,10 @@ package nativeapi
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
+	fspath "path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
@@ -322,8 +325,13 @@ func (h *audiobookHandler) stream(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Library not found", 404)
 		return
 	}
-	filePath := filepath.Join(lib.Path, book.Path, chapter.Path)
-	http.ServeFile(w, r, filePath)
+	// Served through the storage abstraction, so a cloud library (openlist://...) streams
+	// exactly like a local one: 302 direct link when available, relay otherwise.
+	relPath := fspath.Join(book.Path, chapter.Path)
+	if err := storage.ServeFile(r.Context(), w, r, lib.Path, relPath); err != nil {
+		http.Error(w, "Not found", 404)
+		return
+	}
 }
 
 func (h *audiobookHandler) getProgress(w http.ResponseWriter, r *http.Request) {
@@ -532,15 +540,25 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Library not found", 404)
 		return
 	}
-	bookPath := filepath.Join(lib.Path, book.Path)
-	for _, name := range []string{"cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.jpeg", "folder.png"} {
-		coverPath := filepath.Join(bookPath, name)
-		if _, err := os.Stat(coverPath); err == nil {
-			// Set cache headers for cover images
-			w.Header().Set("Cache-Control", "public, max-age=3600")
-			http.ServeFile(w, r, coverPath)
-			return
+	// Cover lookup goes through the storage abstraction so cloud libraries work too. On a
+	// cloud source this costs at most one cached directory listing, and the image itself is
+	// served as a 302 direct link whenever the gateway can hand one out.
+	fsys, err := storage.FSFor(r.Context(), lib.Path)
+	if err != nil {
+		http.Error(w, "Library not accessible", 500)
+		return
+	}
+	for _, name := range audiobookCoverNames {
+		relCover := fspath.Join(book.Path, name)
+		if _, err := fs.Stat(fsys, relCover); err != nil {
+			continue
 		}
+		// Set cache headers for cover images
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		if err := storage.ServeFile(r.Context(), w, r, lib.Path, relCover); err != nil {
+			http.Error(w, "No cover found", 404)
+		}
+		return
 	}
 	// [LeChenMusic-START:audiobook-cover-fallback]
 	// 本地没有封面文件时，从数据库中的cover_url代理获取

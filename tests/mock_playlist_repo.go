@@ -2,6 +2,8 @@ package tests
 
 import (
 	"errors"
+	"sort"
+	"time"
 
 	"github.com/deluan/rest"
 	"github.com/navidrome/navidrome/model"
@@ -107,5 +109,37 @@ func (m *MockPlaylistRepo) CountAll(_ ...model.QueryOptions) (int64, error) {
 	}
 	return int64(len(m.Data)), nil
 }
+
+// GetAll must be implemented explicitly: it would otherwise be promoted from the
+// embedded (nil) model.PlaylistRepository interface and panic the moment anything calls
+// it — which is exactly what the getStarredItems path did (design doc §10.2③).
+func (m *MockPlaylistRepo) GetAll(_ ...model.QueryOptions) (model.Playlists, error) {
+	if m.Err {
+		return nil, errors.New("error")
+	}
+	var out model.Playlists
+	if m.PathMap != nil {
+		for _, pls := range m.PathMap {
+			out = append(out, *pls)
+		}
+	} else {
+		for _, pls := range m.Data {
+			out = append(out, *pls)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out, nil
+}
+
+// GetPlaylists is promoted from the same nil interface as GetAll, so it gets the same
+// treatment.
+func (m *MockPlaylistRepo) GetPlaylists(_ string) (model.Playlists, error) {
+	return m.GetAll()
+}
+
+func (m *MockPlaylistRepo) IncPlayCount(_ string, _ time.Time) error { return nil }
+func (m *MockPlaylistRepo) SetStar(_ bool, _ ...string) error        { return nil }
+func (m *MockPlaylistRepo) SetRating(_ int, _ string) error          { return nil }
+func (m *MockPlaylistRepo) ReassignAnnotation(_, _ string) error     { return nil }
 
 var _ model.PlaylistRepository = (*MockPlaylistRepo)(nil)

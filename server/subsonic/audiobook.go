@@ -2,9 +2,11 @@ package subsonic
 
 import (
 	"net/http"
-	"path/filepath"
+	"path"
 	"strings"
 
+	"github.com/navidrome/navidrome/core/storage"
+	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/server/subsonic/responses"
 )
@@ -84,8 +86,13 @@ func (api *Router) StreamAudiobookChapter(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		return nil, newError(responses.ErrorDataNotFound, "library not found")
 	}
-	filePath := filepath.Join(lib.Path, book.Path, chapter.Path)
-	http.ServeFile(w, r, filePath)
+	// Served through the storage abstraction so cloud libraries (openlist://...) work:
+	// 302 direct link when available, relay through this server otherwise.
+	relPath := path.Join(book.Path, chapter.Path)
+	if err := storage.ServeFile(r.Context(), w, r, lib.Path, relPath); err != nil {
+		log.Error(r.Context(), "Error streaming audiobook chapter", "book", book.ID, "chapter", chapter.ID, err)
+		return nil, newError(responses.ErrorDataNotFound, "file not found")
+	}
 	return nil, nil
 }
 

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
 	"strconv"
 	"strings"
 
 	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/core/stream"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
@@ -60,8 +62,13 @@ func (api *Router) Stream(w http.ResponseWriter, r *http.Request) (*responses.Su
 	if err != nil {
 		return nil, newError(responses.ErrorDataNotFound, "library not found")
 	}
-	filePath := fmt.Sprintf("%s/%s/%s", lib.Path, book.Path, chapter.Path)
-	http.ServeFile(w, r, filePath)
+	// Served through the storage abstraction so cloud libraries (openlist://...) work:
+	// 302 direct link when available, relay through this server otherwise.
+	relPath := path.Join(book.Path, chapter.Path)
+	if err := storage.ServeFile(ctx, w, r, lib.Path, relPath); err != nil {
+		log.Error(ctx, "Error streaming audiobook chapter", "book", book.ID, "chapter", chapter.ID, err)
+		return nil, newError(responses.ErrorDataNotFound, "file not found")
+	}
 	return nil, nil
 }
 
