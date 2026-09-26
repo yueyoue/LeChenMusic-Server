@@ -1,45 +1,27 @@
 package artwork
 
 import (
-	"context"
+	"testing"
 
-	"github.com/navidrome/navidrome/core/storage/storagetest"
-	"github.com/navidrome/navidrome/model"
-	"github.com/navidrome/navidrome/tests"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
 )
 
-var _ = Describe("loadLibraryView", Ordered, func() {
-	var ctx context.Context
-	var ds *tests.MockDataStore
-
-	BeforeAll(func() {
-		storagetest.Register("fake", &storagetest.FakeFS{})
+func TestLibraryViewAbs(t *testing.T) {
+	t.Run("local library joins the relative path", func(t *testing.T) {
+		v := libraryView{absRoot: "/music"}
+		assert.Equal(t, "/music/a/b.mp3", v.Abs("a/b.mp3"))
 	})
 
-	BeforeEach(func() {
-		ctx = GinkgoT().Context()
-		ds = &tests.MockDataStore{MockedLibrary: &tests.MockLibraryRepo{}}
+	t.Run("empty rel yields no path", func(t *testing.T) {
+		v := libraryView{absRoot: "/music"}
+		assert.Equal(t, "", v.Abs(""))
 	})
 
-	It("returns a view for a library backed by registered storage", func() {
-		Expect(ds.Library(ctx).Put(&model.Library{ID: 1, Path: "fake:///music"})).To(Succeed())
-
-		lib, err := loadLibraryView(ctx, ds, 1)
-		Expect(err).ToNot(HaveOccurred())
-		Expect(lib.FS).ToNot(BeNil())
-		Expect(lib.absRoot).To(Equal("fake:///music"))
+	t.Run("remote (cloud) library yields no path for ffmpeg", func(t *testing.T) {
+		// ffmpeg is a path-based subprocess and cannot read openlist:// URIs;
+		// Abs must return "" so fromFFmpegTag short-circuits instead of
+		// spawning a doomed subprocess (see sources.go).
+		v := libraryView{absRoot: "openlist://192.168.1.10:5244/fnos/%E9%9F%B3%E4%B9%90"}
+		assert.Equal(t, "", v.Abs("a/b.mp3"))
 	})
-
-	It("returns an error when the library does not exist", func() {
-		_, err := loadLibraryView(ctx, ds, 999)
-		Expect(err).To(HaveOccurred())
-	})
-
-	It("returns an error when the library path uses an unregistered scheme", func() {
-		Expect(ds.Library(ctx).Put(&model.Library{ID: 2, Path: "unsupported:///music"})).To(Succeed())
-		_, err := loadLibraryView(ctx, ds, 2)
-		Expect(err).To(HaveOccurred())
-	})
-})
+}

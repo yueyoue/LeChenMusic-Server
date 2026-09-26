@@ -140,9 +140,9 @@ func findBestImageIndex(ctx context.Context, images []taglib.ImageDesc, path str
 // and cannot read from arbitrary fs.FS implementations; piping via stdin is a
 // non-trivial refactor with stream/seek implications.
 //
-// TODO(artwork-musicfs): when the storage backing the library is not local
-// (e.g. a future S3 backend, or FakeFS in tests), short-circuit this source
-// func to return (nil, "", nil) so callers fall through cleanly.
+// Remote (cloud) libraries pass an empty path here: libraryView.Abs returns ""
+// for them (see library_fs.go), so this source short-circuits to (nil, "", nil)
+// and callers fall through cleanly instead of spawning a doomed subprocess.
 func fromFFmpegTag(ctx context.Context, ffmpeg ffmpeg.FFmpeg, path string) sourceFunc {
 	return func() (io.ReadCloser, string, error) {
 		if path == "" {

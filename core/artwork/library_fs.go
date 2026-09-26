@@ -16,10 +16,13 @@ type libraryView struct {
 	absRoot string
 }
 
-// Abs returns the absolute path for a library-relative path. Returns "" for an
-// empty rel so callers (fromFFmpegTag) can treat it as "no path available".
+// Abs returns the absolute path for a library-relative path. Returns "" when
+// there is no usable local path — an empty rel, or a remote (cloud) library
+// root. ffmpeg is a path-based subprocess and cannot read openlist://… URIs, so
+// callers (fromFFmpegTag) treat "" as "no path available" and fall through to
+// the next artwork source instead of spawning a doomed subprocess.
 func (v libraryView) Abs(rel string) string {
-	if rel == "" {
+	if rel == "" || storage.IsRemoteURI(v.absRoot) {
 		return ""
 	}
 	return filepath.Join(v.absRoot, rel)
