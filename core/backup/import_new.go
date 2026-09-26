@@ -151,28 +151,36 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 				// Path exists → update scraped fields, map backup ID → existing ID
 				changed := false
 				if bak.Description != "" && existing.Description == "" {
-					existing.Description = bak.Description; changed = true
+					existing.Description = bak.Description
+					changed = true
 				}
 				if bak.CoverUrl != "" && existing.CoverUrl == "" {
-					existing.CoverUrl = bak.CoverUrl; changed = true
+					existing.CoverUrl = bak.CoverUrl
+					changed = true
 				}
 				if bak.Author != "" && existing.Author == "" {
-					existing.Author = bak.Author; changed = true
+					existing.Author = bak.Author
+					changed = true
 				}
 				if bak.Narrator != "" && existing.Narrator == "" {
-					existing.Narrator = bak.Narrator; changed = true
+					existing.Narrator = bak.Narrator
+					changed = true
 				}
 				if bak.CoverPath != "" && existing.CoverPath == "" {
-					existing.CoverPath = bak.CoverPath; changed = true
+					existing.CoverPath = bak.CoverPath
+					changed = true
 				}
 				if bak.Genre != "" && bak.Genre != "有声读物" && existing.Genre == "有声读物" {
-					existing.Genre = bak.Genre; changed = true
+					existing.Genre = bak.Genre
+					changed = true
 				}
 				if bak.Year > 0 && existing.Year == 0 {
-					existing.Year = bak.Year; changed = true
+					existing.Year = bak.Year
+					changed = true
 				}
 				if bak.Series != "" && existing.Series == "" {
-					existing.Series = bak.Series; changed = true
+					existing.Series = bak.Series
+					changed = true
 				}
 				if changed {
 					if err := ds.Audiobook(ctx).Put(existing); err != nil {
@@ -232,11 +240,14 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 				keepIdx := 0
 				for j := 1; j < len(books); j++ {
 					if books[j].Description != "" || books[j].CoverUrl != "" {
-						keepIdx = j; break
+						keepIdx = j
+						break
 					}
 				}
 				for j, b := range books {
-					if j == keepIdx { continue }
+					if j == keepIdx {
+						continue
+					}
 					if chs, chErr := ds.Audiobook(ctx).GetChapters(b.ID); chErr == nil {
 						for _, ch := range chs {
 							ch.AudiobookID = books[keepIdx].ID
@@ -260,7 +271,9 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 		for _, u := range backup.Users {
 			if u.IsAdmin {
 				adminUserID = userIDMap[u.ID]
-				if adminUserID == "" { adminUserID = u.ID }
+				if adminUserID == "" {
+					adminUserID = u.ID
+				}
 				break
 			}
 		}
@@ -313,11 +326,15 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 		actualUserID := ""
 		if len(backup.Users) > 0 {
 			actualUserID = userIDMap[backup.Users[0].ID]
-			if actualUserID == "" { actualUserID = backup.Users[0].ID }
+			if actualUserID == "" {
+				actualUserID = backup.Users[0].ID
+			}
 		}
 		for _, abID := range backup.StarredAudiobookIDs {
 			actualABID := abIDMap[abID]
-			if actualABID == "" { actualABID = abID }
+			if actualABID == "" {
+				actualABID = abID
+			}
 			if actualUserID != "" {
 				if err := ds.Audiobook(ctx).Star(actualUserID, actualABID); err != nil {
 					collectError("有声书收藏导入失败: %v", err)

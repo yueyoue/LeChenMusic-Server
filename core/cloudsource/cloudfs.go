@@ -261,9 +261,14 @@ type cloudInfo struct {
 	created time.Time
 }
 
-func (i *cloudInfo) Name() string       { return i.name }
-func (i *cloudInfo) Size() int64        { return i.size }
-func (i *cloudInfo) Mode() fs.FileMode  { if i.dir { return fs.ModeDir | 0o555 }; return 0o444 }
+func (i *cloudInfo) Name() string { return i.name }
+func (i *cloudInfo) Size() int64  { return i.size }
+func (i *cloudInfo) Mode() fs.FileMode {
+	if i.dir {
+		return fs.ModeDir | 0o555
+	}
+	return 0o444
+}
 func (i *cloudInfo) ModTime() time.Time { return i.modTime }
 func (i *cloudInfo) IsDir() bool        { return i.dir }
 func (i *cloudInfo) Sys() any           { return nil }
@@ -314,12 +319,12 @@ func (d *cloudDirEntry) Info() (fs.FileInfo, error) { return d.info, nil }
 
 // cloudDir is the fs.ReadDirFile returned for directories.
 type cloudDir struct {
-	fsys  *cloudFS
-	name  string
-	info  *cloudInfo
-	pos   int
-	read  []fs.DirEntry
-	done  bool
+	fsys *cloudFS
+	name string
+	info *cloudInfo
+	pos  int
+	read []fs.DirEntry
+	done bool
 }
 
 func (d *cloudDir) Stat() (fs.FileInfo, error) { return d.info, nil }

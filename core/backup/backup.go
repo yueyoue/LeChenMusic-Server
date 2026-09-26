@@ -28,29 +28,29 @@ const BackupVersion = "3.0"
 
 // BackupData is the complete backup export structure
 type BackupData struct {
-	Version            string                      `json:"version"`
-	CreatedAt          time.Time                   `json:"created_at"`
-	ServerVersion      string                      `json:"server_version"`
-	Libraries          []LibraryBackup             `json:"libraries"`
-	Users              []UserBackup                `json:"users"`
-	Playlists          []PlaylistBackup            `json:"playlists,omitempty"`
-	AudiobookProgress  []model.AudiobookProgress   `json:"audiobook_progress,omitempty"`
-	AudiobookBookmarks []model.AudiobookBookmark   `json:"audiobook_bookmarks,omitempty"`
-	StarredSongIDs      []string                   `json:"starred_song_ids,omitempty"`
-	StarredAlbumIDs     []string                   `json:"starred_album_ids,omitempty"`
-	StarredArtistIDs    []string                   `json:"starred_artist_ids,omitempty"`
-	StarredAudiobookIDs []string                   `json:"starred_audiobook_ids,omitempty"`
+	Version             string                    `json:"version"`
+	CreatedAt           time.Time                 `json:"created_at"`
+	ServerVersion       string                    `json:"server_version"`
+	Libraries           []LibraryBackup           `json:"libraries"`
+	Users               []UserBackup              `json:"users"`
+	Playlists           []PlaylistBackup          `json:"playlists,omitempty"`
+	AudiobookProgress   []model.AudiobookProgress `json:"audiobook_progress,omitempty"`
+	AudiobookBookmarks  []model.AudiobookBookmark `json:"audiobook_bookmarks,omitempty"`
+	StarredSongIDs      []string                  `json:"starred_song_ids,omitempty"`
+	StarredAlbumIDs     []string                  `json:"starred_album_ids,omitempty"`
+	StarredArtistIDs    []string                  `json:"starred_artist_ids,omitempty"`
+	StarredAudiobookIDs []string                  `json:"starred_audiobook_ids,omitempty"`
 	// 音乐元数据（含艺术家头像 URL）
-	Artists           []model.Artist              `json:"artists,omitempty"`
-	Albums            []model.Album               `json:"albums,omitempty"`
-	MediaFiles        []model.MediaFile           `json:"media_files,omitempty"`
+	Artists    []model.Artist    `json:"artists,omitempty"`
+	Albums     []model.Album     `json:"albums,omitempty"`
+	MediaFiles []model.MediaFile `json:"media_files,omitempty"`
 	// 有声书元数据
-	Audiobooks        []model.Audiobook           `json:"audiobooks,omitempty"`
-	AudiobookChapters []model.AudiobookChapter    `json:"audiobook_chapters,omitempty"`
+	Audiobooks        []model.Audiobook        `json:"audiobooks,omitempty"`
+	AudiobookChapters []model.AudiobookChapter `json:"audiobook_chapters,omitempty"`
 	// 电台
-	Radios            []model.Radio               `json:"radios,omitempty"`
+	Radios []model.Radio `json:"radios,omitempty"`
 	// 内嵌图片（Base64编码）
-	Images            []ImageEntry                `json:"images,omitempty"`
+	Images []ImageEntry `json:"images,omitempty"`
 }
 
 // ImageEntry represents a single image file embedded in the backup
@@ -289,31 +289,31 @@ type ExportResult struct {
 
 // ImportOptions controls restore behavior
 type ImportOptions struct {
-	FilePath           string `json:"file_path"`
-	ImportUsers        bool   `json:"import_users"`
-	OverwriteUsers     bool   `json:"overwrite_users"`
-	ImportPlaylists    bool   `json:"import_playlists"`
-	ImportStarred      bool   `json:"import_starred"`
-	ImportProgress     bool   `json:"import_progress"`
-	ImportMusicMeta    bool   `json:"import_music_meta"`
-	ImportAudiobookMeta bool  `json:"import_audiobook_meta"`
+	FilePath            string `json:"file_path"`
+	ImportUsers         bool   `json:"import_users"`
+	OverwriteUsers      bool   `json:"overwrite_users"`
+	ImportPlaylists     bool   `json:"import_playlists"`
+	ImportStarred       bool   `json:"import_starred"`
+	ImportProgress      bool   `json:"import_progress"`
+	ImportMusicMeta     bool   `json:"import_music_meta"`
+	ImportAudiobookMeta bool   `json:"import_audiobook_meta"`
 }
 
 // ImportResult contains info about the imported data
 type ImportResult struct {
-	UsersImported       int      `json:"users_imported"`
-	ArtistsImported     int      `json:"artists_imported"`
-	AlbumsImported      int      `json:"albums_imported"`
-	SongsImported       int      `json:"songs_imported"`
-	AudiobooksImported  int      `json:"audiobooks_imported"`
-	ChaptersImported    int      `json:"chapters_imported"`
-	PlaylistsImported   int      `json:"playlists_imported"`
-	StarredImported     int      `json:"starred_imported"`
-	ProgressImported    int      `json:"progress_imported"`
-	BookmarksImported   int      `json:"bookmarks_imported"`
-	RadiosImported      int      `json:"radios_imported"`
-	ImagesRestored      bool     `json:"images_restored"`
-	Errors              []string `json:"errors,omitempty"`
+	UsersImported      int      `json:"users_imported"`
+	ArtistsImported    int      `json:"artists_imported"`
+	AlbumsImported     int      `json:"albums_imported"`
+	SongsImported      int      `json:"songs_imported"`
+	AudiobooksImported int      `json:"audiobooks_imported"`
+	ChaptersImported   int      `json:"chapters_imported"`
+	PlaylistsImported  int      `json:"playlists_imported"`
+	StarredImported    int      `json:"starred_imported"`
+	ProgressImported   int      `json:"progress_imported"`
+	BookmarksImported  int      `json:"bookmarks_imported"`
+	RadiosImported     int      `json:"radios_imported"`
+	ImagesRestored     bool     `json:"images_restored"`
+	Errors             []string `json:"errors,omitempty"`
 }
 
 // BackupConfig holds scheduled backup configuration
