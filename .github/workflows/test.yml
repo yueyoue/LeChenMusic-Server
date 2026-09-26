@@ -1,0 +1,77 @@
+name: Test
+
+# Lean quality gate: run the checks every push/PR to main is supposed to pass.
+# This is deliberately separate from pipeline.yml (the upstream release pipeline, which
+# also pushes Docker images and translations) and from build.yml (which builds and
+# releases). Nothing here publishes anything.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  go-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # tests/navidrome-test.toml is gitignored (see .gitignore's `navidrome-*` rule) and
+      # the suites FATAL at startup without it, so CI has to create its own.
+      - name: Create test configuration
+        run: |
+          cat > tests/navidrome-test.toml <<'EOF'
+          # CI test configuration (not committed: .gitignore ignores navidrome-*)
+          LogLevel = "error"
+          MusicFolder = "tests/fixtures"
+          DataFolder = "tests/.data"
+          CacheFolder = "tests/.data/cache"
+
+          [Scanner]
+          Enabled = false
+          EOF
+
+      # The plugins suite shells out to `zip` to pack its test fixtures.
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - name: go vet
+        # The build tags are required: without them the buildtag-gated files fail to compile.
+        run: go vet -tags netgo,sqlite_fts5 ./...
+
+      - name: go test
+        run: go test -tags netgo,sqlite_fts5 ./...
+
+  ui-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
