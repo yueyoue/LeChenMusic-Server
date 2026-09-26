@@ -36,14 +36,16 @@ func NewAudiobookRepository(ctx context.Context, db dbx.Builder) model.Audiobook
 // ─── Audiobook CRUD ──────────────────────────────────────
 
 func (r *audiobookRepository) Get(id string) (*model.Audiobook, error) {
-	sel := r.newSelect().Where(Eq{"id": id}).Columns("*")
+	sel := r.newSelect().Where(Eq{"id": id}).Columns("audiobook.*", "library.path as library_path").
+		LeftJoin("library on audiobook.library_id = library.id")
 	res := model.Audiobook{}
 	err := r.queryOne(sel, &res)
 	return &res, err
 }
 
 func (r *audiobookRepository) GetAll(options ...model.QueryOptions) (model.Audiobooks, error) {
-	sel := r.newSelect(options...).Columns("*")
+	sel := r.newSelect(options...).Columns("audiobook.*", "library.path as library_path").
+		LeftJoin("library on audiobook.library_id = library.id")
 	res := model.Audiobooks{}
 	err := r.queryAll(sel, &res)
 	return res, err
@@ -266,10 +268,10 @@ func (r *audiobookRepository) Star(userID, audiobookID string) error {
 	}
 	favID := id.NewRandom()
 	insert := Insert("audiobook_favorite").SetMap(map[string]any{
-		"id":          favID,
-		"user_id":     userID,
+		"id":           favID,
+		"user_id":      userID,
 		"audiobook_id": audiobookID,
-		"created_at":  time.Now(),
+		"created_at":   time.Now(),
 	})
 	_, err := r.executeSQL(insert)
 	return err
@@ -338,4 +340,3 @@ func AudiobookCoverExists(path string) bool {
 }
 
 // [LeChenMusic-END:audiobook]
-

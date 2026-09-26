@@ -10,6 +10,7 @@ import SearchIcon from '@material-ui/icons/Search'
 import ScrapeDialog from '../scraper/ScrapeDialog'
 import { useLocation } from 'react-router-dom'
 import { OverflowTooltip } from '../common'
+import { isCloudPath } from '../library/cloudPath'
 
 const useStyles = makeStyles((theme) => ({
   root: { padding: 12 },
@@ -138,7 +139,9 @@ const AudiobookCover = ({ book }) => {
 
 const AudiobookGridTile = ({ book }) => {
   const classes = useStyles()
+  const translate = useTranslate()
   const isDesktop = useMediaQuery((theme) => theme.breakpoints.up('md'), { noSsr: true })
+  const isCloud = isCloudPath(book?.libraryPath)
 
   return (
     <div className={classes.albumContainer}>
@@ -157,6 +160,20 @@ const AudiobookGridTile = ({ book }) => {
         <Typography className={classes.albumSubtitle}>
           {book.narrator || book.author || ''}
         </Typography>
+        <Chip
+          size="small"
+          variant="outlined"
+          label={
+            isCloud
+              ? translate('resources.library.cloud.tagCloud')
+              : translate('resources.library.cloud.tagLocal')
+          }
+          style={
+            isCloud
+              ? { borderColor: '#1976d2', color: '#1976d2', marginTop: 4 }
+              : { borderColor: '#9e9e9e', color: '#616161', marginTop: 4 }
+          }
+        />
       </div>
     </div>
   )

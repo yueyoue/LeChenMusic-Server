@@ -20,6 +20,7 @@ type Audiobook struct {
 	ChapterCount  int       `structs:"chapter_count" json:"chapterCount"  db:"chapter_count"`
 	Series        string    `structs:"series"        json:"series"        db:"series"`
 	LibraryID     int       `structs:"library_id"    json:"libraryId"     db:"library_id"`
+	LibraryPath   string    `structs:"-"            json:"libraryPath"` // enriched via JOIN with library (网盘/本地 判定), never persisted here
 	Path          string    `structs:"path"          json:"path"          db:"path"`
 	Hash          string    `structs:"hash"          json:"hash"          db:"hash"`
 	Size          int64     `structs:"size"          json:"size"          db:"size"`
@@ -29,14 +30,14 @@ type Audiobook struct {
 }
 
 type AudiobookChapter struct {
-	ID            string `structs:"id"             json:"id"            db:"id"`
-	AudiobookID   string `structs:"audiobook_id"   json:"audiobookId"   db:"audiobook_id"`
-	Title         string `structs:"title"          json:"title"         db:"title"`
-	ChapterNumber int    `structs:"chapter_number" json:"chapterNumber" db:"chapter_number"`
-	Duration      int    `structs:"duration"       json:"duration"      db:"duration"`
-	Format        string `structs:"format"         json:"format"        db:"format"`
-	FileSize      int64  `structs:"file_size"      json:"fileSize"      db:"file_size"`
-	Path          string `structs:"path"           json:"path"          db:"path"`
+	ID            string    `structs:"id"             json:"id"            db:"id"`
+	AudiobookID   string    `structs:"audiobook_id"   json:"audiobookId"   db:"audiobook_id"`
+	Title         string    `structs:"title"          json:"title"         db:"title"`
+	ChapterNumber int       `structs:"chapter_number" json:"chapterNumber" db:"chapter_number"`
+	Duration      int       `structs:"duration"       json:"duration"      db:"duration"`
+	Format        string    `structs:"format"         json:"format"        db:"format"`
+	FileSize      int64     `structs:"file_size"      json:"fileSize"      db:"file_size"`
+	Path          string    `structs:"path"           json:"path"          db:"path"`
 	CreatedAt     time.Time `structs:"created_at"  json:"createdAt"     db:"created_at"`
 }
 
