@@ -348,8 +348,8 @@
         "forbidden": "无权限——仅管理员可以测试连接。",
         "placeholderAddress": "http://192.168.1.10:5244",
         "placeholderPath": "fnos/音乐",
-        "addressHelper": "OpenList 网关地址，例如 http://192.168.1.10:5244",
-        "pathHelper": "网盘中的文件夹路径，例如 fnos/音乐。保存后会拼成 openlist:// 库路径。"
+        "addressHelper": "OpenList 网关的访问地址（http/https + 端口）。⚠️ 写服务端能访问到的局域网 IP，不要写 127.0.0.1。",
+        "pathHelper": "网盘里作为媒体库根目录的文件夹，例：fnos/音乐。目录约定：音乐=艺人/专辑/曲目 两级，有声书=书名/章节 两级。保存后拼成 openlist://<host:port>/<路径>。"
       }
     },
     "plugin": {

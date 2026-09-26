@@ -91,11 +91,16 @@ export const sourceTypeOf = (path) =>
 /**
  * Turn wizard form values into the library resource payload: composes `path` for a cloud
  * library and drops the wizard-only fields so they never reach the API.
+ *
+ * ⚠️ The wizard fields are deliberately prefixed `cloud*`: the library model itself has a
+ * legacy `remotePath` column (`model.Library.RemotePath`), and a form field named
+ * `remotePath` would be initialised from it (empty string), silently clobbering the
+ * edit-form echo. Keep the names distinct.
  */
 export const toLibraryPayload = (values) => {
-  const { sourceType, openlistAddress, remotePath, ...rest } = values || {}
+  const { sourceType, cloudAddress, cloudRemotePath, ...rest } = values || {}
   if (sourceType === SOURCE_CLOUD) {
-    return { ...rest, path: buildCloudPath(openlistAddress, remotePath) }
+    return { ...rest, path: buildCloudPath(cloudAddress, cloudRemotePath) }
   }
   // Local folder: `path` is used exactly as typed — nothing else changes.
   return rest

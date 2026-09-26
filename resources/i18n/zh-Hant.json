@@ -348,8 +348,8 @@
         "forbidden": "無權限——僅管理員可以測試連線。",
         "placeholderAddress": "http://192.168.1.10:5244",
         "placeholderPath": "fnos/音樂",
-        "addressHelper": "OpenList 閘道位址，例如 http://192.168.1.10:5244",
-        "pathHelper": "雲端硬碟中的資料夾路徑，例如 fnos/音樂。儲存後會組成 openlist:// 庫路徑。"
+        "addressHelper": "OpenList 閘道的存取位址（http/https + 埠號）。⚠️ 填伺服器能存取的區域網路 IP，不要填 127.0.0.1。",
+        "pathHelper": "雲端硬碟中作為媒體庫根目錄的資料夾，例：fnos/音樂。目錄約定：音樂=藝人/專輯/曲目 兩級，有聲書=書名/章節 兩級。儲存後組成 openlist://<host:port>/<路徑>。"
       }
     },
     "plugin": {

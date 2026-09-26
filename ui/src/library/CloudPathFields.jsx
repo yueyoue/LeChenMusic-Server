@@ -78,8 +78,8 @@ const CloudPathFields = ({ record, canEditPath = true, helperText }) => {
           formData.sourceType ||
           (isCloudPath(formData.path) ? SOURCE_TYPES.cloud : SOURCE_TYPES.local)
         const isCloud = sourceType === SOURCE_TYPES.cloud
-        const address = formData.openlistAddress || defaults.address
-        const remotePath = formData.remotePath || defaults.remotePath
+        const address = formData.cloudAddress || defaults.address
+        const remotePath = formData.cloudRemotePath || defaults.remotePath
 
         return (
           <>
@@ -115,7 +115,7 @@ const CloudPathFields = ({ record, canEditPath = true, helperText }) => {
             {isCloud && (
               <>
                 <TextInput
-                  source="openlistAddress"
+                  source="cloudAddress"
                   label={translate('resources.library.fields.openlistAddress')}
                   validate={[required()]}
                   fullWidth
@@ -129,7 +129,7 @@ const CloudPathFields = ({ record, canEditPath = true, helperText }) => {
                   helperText={translate('resources.library.cloud.addressHelper')}
                 />
                 <TextInput
-                  source="remotePath"
+                  source="cloudRemotePath"
                   label={translate('resources.library.fields.remotePath')}
                   validate={[required()]}
                   fullWidth

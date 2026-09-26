@@ -32,7 +32,7 @@ const LibraryCreate = (props) => {
       try {
         payload = toLibraryPayload(values)
       } catch (error) {
-        return { openlistAddress: 'ra.validation.required' }
+        return { cloudAddress: 'ra.validation.required' }
       }
       try {
         await mutate(

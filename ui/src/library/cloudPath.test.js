@@ -114,8 +114,8 @@ describe('toLibraryPayload', () => {
       toLibraryPayload({
         name: '网盘音乐',
         sourceType: 'cloud',
-        openlistAddress: 'http://192.168.1.10:5244',
-        remotePath: 'fnos/音乐',
+        cloudAddress: 'http://192.168.1.10:5244',
+        cloudRemotePath: 'fnos/音乐',
         defaultNewUsers: true,
       }),
     ).toEqual({
@@ -131,14 +131,34 @@ describe('toLibraryPayload', () => {
       name: '本地音乐',
       path: '/mnt/music',
       sourceType: 'local',
-      openlistAddress: 'ignored',
-      remotePath: 'ignored',
+      cloudAddress: 'ignored',
+      cloudRemotePath: 'ignored',
       defaultNewUsers: false,
     }
     expect(toLibraryPayload(values)).toEqual({
       name: '本地音乐',
       path: '/mnt/music',
       defaultNewUsers: false,
+    })
+  })
+
+  it('keeps the model-owned `remotePath` field in the payload', () => {
+    // Regression guard for the edit-form echo bug: model.Library has a legacy
+    // `remotePath` column that must NOT be confused with (or stripped alongside)
+    // the wizard's `cloudRemotePath` field.
+    expect(
+      toLibraryPayload({
+        name: 'x',
+        path: 'openlist://h:1/a',
+        remotePath: '',
+        sourceType: 'cloud',
+        cloudAddress: 'h:1',
+        cloudRemotePath: 'a',
+      }),
+    ).toEqual({
+      name: 'x',
+      path: 'openlist://h:1/a',
+      remotePath: '',
     })
   })
 
