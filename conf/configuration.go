@@ -104,19 +104,19 @@ type configOptions struct {
 	PasswordEncryptionKey           string
 	ExtAuth                         extAuthOptions
 	Plugins                         pluginsOptions
-	HTTPHeaders                     httpHeaderOptions   `json:",omitzero"`
-	Prometheus                      prometheusOptions   `json:",omitzero"`
-	Scanner                         scannerOptions      `json:",omitzero"`
+	HTTPHeaders                     httpHeaderOptions          `json:",omitzero"`
+	Prometheus                      prometheusOptions          `json:",omitzero"`
+	Scanner                         scannerOptions             `json:",omitzero"`
 	OpenList                        map[string]OpenListOptions `json:",omitzero"`
-	Jukebox                         jukeboxOptions      `json:",omitzero"`
-	Backup                          backupOptions       `json:",omitzero"`
-	PID                             pidOptions          `json:",omitzero"`
-	Inspect                         inspectOptions      `json:",omitzero"`
-	Subsonic                        subsonicOptions     `json:",omitzero"`
-	Transcoding                     transcodingOptions  `json:",omitzero"`
-	LastFM                          lastfmOptions       `json:",omitzero"`
-	Deezer                          deezerOptions       `json:",omitzero"`
-	ListenBrainz                    listenBrainzOptions `json:",omitzero"`
+	Jukebox                         jukeboxOptions             `json:",omitzero"`
+	Backup                          backupOptions              `json:",omitzero"`
+	PID                             pidOptions                 `json:",omitzero"`
+	Inspect                         inspectOptions             `json:",omitzero"`
+	Subsonic                        subsonicOptions            `json:",omitzero"`
+	Transcoding                     transcodingOptions         `json:",omitzero"`
+	LastFM                          lastfmOptions              `json:",omitzero"`
+	Deezer                          deezerOptions              `json:",omitzero"`
+	ListenBrainz                    listenBrainzOptions        `json:",omitzero"`
 	EnableScrobbleHistory           bool
 	Tags                            map[string]TagConf `json:",omitempty"`
 	Agents                          string
@@ -177,9 +177,9 @@ type OpenListOptions struct {
 	CircuitOpenFor   time.Duration // circuit-open fast-fail duration (default 30m)
 
 	// Lazy tag/cover extraction (只做 Range 局部读，绝不整文件下载)
-	HeadBytes     int64 // bytes read from the head of the file for tag parsing (default 2MB)
-	TailBytes     int64 // bytes read from the tail, to find e.g. MP4 moov boxes (default 2MB)
-	WindowBytes   int64 // minimum sliding-window size for mid-file reads (default 256KB)
+	HeadBytes       int64 // bytes read from the head of the file for tag parsing (default 2MB)
+	TailBytes       int64 // bytes read from the tail, to find e.g. MP4 moov boxes (default 2MB)
+	WindowBytes     int64 // minimum sliding-window size for mid-file reads (default 256KB)
 	MaxTagReadBytes int64 // hard budget for a single tag extraction, prevents full downloads (default 16MB)
 
 	DirCacheTTL time.Duration // how long directory listings are cached (default 5m)
@@ -386,6 +386,9 @@ func Load(noConfigDump bool) {
 	if err != nil {
 		logFatal("Error parsing config:", err)
 	}
+
+	// Let ops configure OpenList gateways via ND_OPENLIST_* env vars (no config file needed)
+	applyOpenListEnv(os.Environ())
 
 	// Validate non-root user early, before any filesystem operations
 	if err := validateEnforceNonRootUser(); err != nil {

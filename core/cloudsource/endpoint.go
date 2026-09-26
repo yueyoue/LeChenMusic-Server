@@ -130,7 +130,7 @@ func EndpointFor(hostport string) (*Endpoint, error) {
 func buildEndpoint(hostport, key string) (*Endpoint, error) {
 	cfg := conf.Server.OpenList
 	if len(cfg) == 0 {
-		return nil, fmt.Errorf("cloudsource: no OpenList gateway configured (add [OpenList.<name>] to the server config)")
+		return nil, fmt.Errorf("cloudsource: no OpenList gateway configured. Fix: add [OpenList.<name>] with URL/Username/Password to %s (then restart), or set ND_OPENLIST_<NAME>_URL / ND_OPENLIST_<NAME>_USERNAME / ND_OPENLIST_<NAME>_PASSWORD environment variables", configHint())
 	}
 
 	var match *conf.OpenListOptions
@@ -147,7 +147,6 @@ func buildEndpoint(hostport, key string) (*Endpoint, error) {
 			break
 		}
 	}
-
 	if match == nil {
 		if len(cfg) == 1 {
 			for name, opts := range cfg {
@@ -208,6 +207,15 @@ func buildEndpoint(hostport, key string) (*Endpoint, error) {
 	log.Debug("cloudsource: OpenList endpoint ready", "name", matchName, "url", ep.BaseURL,
 		"head", ep.headBytes, "tail", ep.tailBytes, "maxTagRead", ep.maxTagReadBytes, "redirect", ep.enableRedirect)
 	return ep, nil
+}
+
+// configHint names the config file to point users at, falling back to the
+// conventional Docker path when the effective file is unknown.
+func configHint() string {
+	if conf.Server.ConfigFile != "" {
+		return conf.Server.ConfigFile
+	}
+	return "the navidrome.toml config file (Docker: /data/navidrome.toml)"
 }
 
 // canonicalHost normalises a host, host:port or full URL into a lookup key.
