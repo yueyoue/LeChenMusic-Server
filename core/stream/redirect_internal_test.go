@@ -38,6 +38,11 @@ func TestServeRedirectsToTheDirectLink(t *testing.T) {
 	if got := rec.Header().Get("Location"); got != direct {
 		t.Errorf("Location = %q, want the direct link", got)
 	}
+	// The signed link must never leak into the response body (design doc §15.1): a plain
+	// http.Redirect would write `<a href="<signed>">Found</a>.` here.
+	if body := rec.Body.String(); body != "" {
+		t.Errorf("redirect must not write a response body, got %q", body)
+	}
 }
 
 func TestServeRedirectDoesNotForwardHeaders(t *testing.T) {

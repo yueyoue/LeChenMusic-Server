@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -69,9 +70,13 @@ func TestServeFileRedirectsToDirectLink(t *testing.T) {
 	if got := res.Header.Get("Location"); got != signed {
 		t.Errorf("Location = %q, want the signed direct link", got)
 	}
-	// The signed link must never leak into the response body (design doc §15.1).
-	if body := w.Body.String(); body != "" && body == signed {
-		t.Errorf("signed link written to the response body: %q", body)
+	// The signed link must never leak into the response body (design doc §15.1). A plain
+	// http.Redirect would write `<a href="<signed>">Found</a>.` here — that is a leak.
+	if body := w.Body.String(); body != "" {
+		t.Errorf("redirect must not write a response body, got %q", body)
+	}
+	if strings.Contains(w.Body.String(), "SECRET") {
+		t.Errorf("signed link written to the response body: %q", w.Body.String())
 	}
 }
 

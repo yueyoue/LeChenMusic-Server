@@ -199,10 +199,12 @@ func (s *Stream) Close() error {
 func (s *Stream) Serve(ctx context.Context, w http.ResponseWriter, r *http.Request) (int64, error) {
 	if s.Redirected() {
 		// 302 straight to the drive's CDN. We deliberately forward none of our own
-		// headers (especially not any auth material) to the CDN, and the signed URL is
-		// never logged. Clients follow the redirect with their normal HTTP stack.
+		// headers (especially not any auth material) to the CDN, the signed URL is
+		// never logged, and the response carries only the Location header (no body:
+		// http.Redirect would embed the signed URL in an HTML anchor — design doc §15.1).
+		// Clients follow the redirect with their normal HTTP stack.
 		log.Debug(ctx, "Streaming via 302 direct link", "id", s.mf.ID, "title", s.mf.Title)
-		http.Redirect(w, r, s.redirectURL, http.StatusFound)
+		storage.RedirectDirect(w, s.redirectURL)
 		return 0, nil
 	}
 

@@ -51,7 +51,23 @@ func TestBuildURI(t *testing.T) {
 			remotePath: "",
 			want:       "openlist://192.168.1.10:5244",
 		},
+		{
+			// Contract with the admin UI (ui/src/library/cloudPath.test.js): whitespace and
+			// slashes around the remote path are trimmed before escaping.
+			name:       "whitespace and slashes around the remote path are trimmed",
+			address:    "http://h:1",
+			remotePath: "  /fnos/  ",
+			want:       "openlist://h:1/fnos",
+		},
+		{
+			name:       "whitespace around the address is trimmed",
+			address:    "  nas.local:5244  ",
+			remotePath: "fnos",
+			want:       "openlist://nas.local:5244/fnos",
+		},
 		{name: "empty address", address: "", remotePath: "music", wantErr: true},
+		{name: "blank address", address: "   ", remotePath: "music", wantErr: true},
+		{name: "scheme with no host", address: "http://", remotePath: "music", wantErr: true},
 	}
 
 	for _, c := range cases {
@@ -98,6 +114,9 @@ func TestCanonicalHost(t *testing.T) {
 		{"HTTPS://OpenList.Example.com", "openlist.example.com"},
 		{"  nas  ", "nas"},
 		{"", ""},
+		{"http://", ""}, // scheme with no host must not become the host "http:"
+		{"https://", ""},
+		{"http:///", ""},
 	}
 	for _, c := range cases {
 		if got := canonicalHost(c.in); got != c.want {

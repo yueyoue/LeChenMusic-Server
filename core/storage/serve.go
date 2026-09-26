@@ -7,7 +7,38 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"strings"
 )
+
+// RedirectDirect answers a 302 whose Location header alone carries the target URL.
+//
+// Unlike http.Redirect it deliberately writes no response body: for GET requests
+// net/http would embed the URL in a small HTML anchor ("<a href=...>Found</a>"), and the
+// direct link is temporary credential material that must never end up in a response body
+// (design doc §15.1). Clients follow the Location header and never read the body.
+func RedirectDirect(w http.ResponseWriter, raw string) {
+	w.Header().Set("Location", escapeNonASCII(raw))
+	w.WriteHeader(http.StatusFound)
+}
+
+// escapeNonASCII percent-encodes non-ASCII bytes so the Location value stays a valid HTTP
+// header value no matter what the drive's CDN hands us (same as net/http's Redirect does).
+func escapeNonASCII(s string) string {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 0x80 {
+			var b strings.Builder
+			for j := 0; j < len(s); j++ {
+				if s[j] < 0x80 {
+					b.WriteByte(s[j])
+				} else {
+					fmt.Fprintf(&b, "%%%02X", s[j])
+				}
+			}
+			return b.String()
+		}
+	}
+	return s
+}
 
 // FSFor returns a context-aware MusicFS handle for the given library path. Network-backed
 // storages (cloud sources) implement ContextualStorage so that cancelling ctx stops the
@@ -56,7 +87,8 @@ func DirectURL(ctx context.Context, libraryPath, relPath string) (string, bool) 
 // relPath is the library-relative, slash-separated path as stored in the database.
 func ServeFile(ctx context.Context, w http.ResponseWriter, r *http.Request, libraryPath, relPath string) error {
 	if raw, ok := DirectURL(ctx, libraryPath, relPath); ok {
-		http.Redirect(w, r, raw, http.StatusFound)
+		// Location header only — no body, no logging (design doc §15.1).
+		RedirectDirect(w, raw)
 		return nil
 	}
 

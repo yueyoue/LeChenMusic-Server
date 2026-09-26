@@ -20,10 +20,11 @@ export const isCloudPath = (path) =>
 
 /** Keep only `host:port`, dropping any scheme, trailing slash, query or fragment. */
 export const canonicalHost = (address) => {
-  let host = String(address || '')
-    .trim()
-    .replace(/\/+$/, '')
+  let host = String(address || '').trim()
+  // Drop the scheme first: stripping trailing slashes before this would turn
+  // "http://" into "http:" (a bogus host) instead of an empty one.
   host = host.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '') // drop http://, https://, ...
+  host = host.replace(/\/+$/, '') // drop trailing slashes
   host = host.split(/[/?#]/)[0].toLowerCase() // keep host:port only
   return host
 }
@@ -43,7 +44,9 @@ export const buildCloudPath = (address, remotePath) => {
   if (!host) {
     throw new Error('OpenList address is required')
   }
-  const path = String(remotePath || '').replace(/^\/+|\/+$/g, '')
+  const path = String(remotePath || '')
+    .trim()
+    .replace(/^\/+|\/+$/g, '')
   if (!path) {
     return `${CLOUD_SCHEME}${host}`
   }

@@ -77,7 +77,7 @@ func BuildURI(address, remotePath string) (string, error) {
 	if host == "" {
 		return "", fmt.Errorf("cloudsource: empty OpenList address")
 	}
-	remotePath = strings.Trim(remotePath, "/")
+	remotePath = strings.Trim(strings.TrimSpace(remotePath), "/")
 	u := url.URL{Scheme: SchemaID, Host: host}
 	if remotePath != "" {
 		// Set the *unescaped* path: url.URL.String() applies the per-component escaping

@@ -49,10 +49,10 @@ const (
 	defaultFailureThreshold = 5
 	defaultCircuitOpenFor   = 30 * time.Minute
 
-	defaultHeadBytes       = int64(2 << 20)  // 2MB head, per the design doc
-	defaultTailBytes       = int64(2 << 20)  // 2MB tail, to find trailing MP4 moov boxes
+	defaultHeadBytes       = int64(2 << 20)   // 2MB head, per the design doc
+	defaultTailBytes       = int64(2 << 20)   // 2MB tail, to find trailing MP4 moov boxes
 	defaultWindowBytes     = int64(256 << 10) // 256KB minimum sliding window
-	defaultMaxTagReadBytes = int64(16 << 20) // hard budget for one tag extraction
+	defaultMaxTagReadBytes = int64(16 << 20)  // hard budget for one tag extraction
 	defaultDirCacheTTL     = 5 * time.Minute
 )
 
@@ -186,17 +186,17 @@ func buildEndpoint(hostport, key string) (*Endpoint, error) {
 	}
 
 	ep.client = openlist.NewClient(openlist.Config{
-		BaseURL:         ep.BaseURL,
-		Username:        match.Username,
-		Password:        match.Password,
-		Token:           match.Token,
-		ListInterval:    orDefaultDuration(match.ListInterval, defaultListInterval),
-		GetInterval:     orDefaultDuration(match.ReadInterval, defaultReadInterval),
-		JitterFraction:  jitter,
-		MaxRetries:      int(orDefault(int64(match.MaxRetries), defaultMaxRetries)),
-		RetryBaseDelay:  orDefaultDuration(match.RetryBaseDelay, defaultRetryBaseDelay),
+		BaseURL:          ep.BaseURL,
+		Username:         match.Username,
+		Password:         match.Password,
+		Token:            match.Token,
+		ListInterval:     orDefaultDuration(match.ListInterval, defaultListInterval),
+		GetInterval:      orDefaultDuration(match.ReadInterval, defaultReadInterval),
+		JitterFraction:   jitter,
+		MaxRetries:       int(orDefault(int64(match.MaxRetries), defaultMaxRetries)),
+		RetryBaseDelay:   orDefaultDuration(match.RetryBaseDelay, defaultRetryBaseDelay),
 		FailureThreshold: int(orDefault(int64(match.FailureThreshold), defaultFailureThreshold)),
-		CircuitOpenFor:  orDefaultDuration(match.CircuitOpenFor, defaultCircuitOpenFor),
+		CircuitOpenFor:   orDefaultDuration(match.CircuitOpenFor, defaultCircuitOpenFor),
 	})
 	ep.fetcher = openlist.NewRangeFetcher(openlist.RangeFetcherOptions{
 		MinInterval:    orDefaultDuration(match.ReadInterval, defaultReadInterval),
@@ -213,19 +213,22 @@ func buildEndpoint(hostport, key string) (*Endpoint, error) {
 // canonicalHost normalises a host, host:port or full URL into a lookup key.
 func canonicalHost(s string) string {
 	s = strings.TrimSpace(s)
-	s = strings.TrimRight(s, "/")
 	if s == "" {
 		return ""
 	}
+	// Resolve a full URL first: trimming trailing slashes before this would turn
+	// "http://" into "http:" (a bogus host) instead of an empty one.
 	if strings.Contains(s, "://") {
 		s = urlHost(s)
 	}
+	s = strings.TrimRight(s, "/")
 	return strings.ToLower(s)
 }
 
-// urlHost extracts "host:port" from a URL, tolerating a missing scheme.
+// urlHost extracts "host:port" from a URL, tolerating a missing scheme. It returns ""
+// for a scheme with no host ("http://") so callers can reject the input.
 func urlHost(raw string) string {
-	raw = strings.TrimSpace(strings.TrimRight(raw, "/"))
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""
 	}
