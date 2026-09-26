@@ -100,7 +100,6 @@ export const useRefreshOnEvents = ({ events, onRefresh }) => {
       // Call the custom refresh function
       if (onRefresh) {
         onRefresh().catch((error) => {
-          // eslint-disable-next-line no-console
           console.warn('Error in useRefreshOnEvents onRefresh callback:', error)
         })
       }

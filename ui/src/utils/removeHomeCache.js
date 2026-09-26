@@ -15,7 +15,6 @@ export const removeHomeCache = async () => {
       await workboxCache.delete(indexKey)
     }
   } catch (e) {
-    // eslint-disable-next-line no-console
     console.error('error reading cache', e)
   }
 }

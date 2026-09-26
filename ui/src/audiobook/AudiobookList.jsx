@@ -325,4 +325,6 @@ const AudiobookList = ({ width }) => {
   )
 }
 
-export default withWidth()(AudiobookList)
+const AudiobookListWithWidth = withWidth()(AudiobookList)
+
+export default AudiobookListWithWidth

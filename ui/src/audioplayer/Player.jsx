@@ -306,7 +306,6 @@ const Player = () => {
             requestAnimationFrame(() => {
               if (audioInstance) {
                 audioInstance.currentTime = seekSec
-                console.log('[Player] Applied resume seek to', seekSec, 's')
               }
             })
           }

@@ -103,7 +103,7 @@ const handleUserLibraryAssociation = async (userId, libraryIds) => {
       body: JSON.stringify({ libraryIds }),
     })
   } catch (error) {
-    console.error('Error setting user libraries:', error) //eslint-disable-line no-console
+    console.error('Error setting user libraries:', error)
     throw error
   }
 }

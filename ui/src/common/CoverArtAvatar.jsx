@@ -41,7 +41,7 @@ export const CoverArtAvatar = ({
         if (res.ok) {
           setCustomUrl(`/api/scrape/image/artist/${record.id}${tokenParam}`)
         }
-      } catch (e) {}
+      } catch (e) { /* 探测失败用默认封面 */ }
     }
     checkSavedAvatar()
   }, [record?.id])

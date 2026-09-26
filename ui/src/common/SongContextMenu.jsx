@@ -99,7 +99,6 @@ export const SongContextMenu = ({
             shuffle: false,
           })
         } catch (e) {
-          // eslint-disable-next-line no-console
           console.error('Error starting instant mix:', e)
           notify('ra.page.error', { type: 'warning' })
         }
@@ -181,7 +180,6 @@ export const SongContextMenu = ({
           setPlaylistsLoaded(true)
         })
         .catch((error) => {
-          // eslint-disable-next-line no-console
           console.error('Failed to fetch playlists:', error)
           setPlaylists([])
           setPlaylistsLoaded(true)

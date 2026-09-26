@@ -146,7 +146,7 @@ const VersionPage = () => {
           <Box className={classes.versionInfo}>
             <Typography className={classes.label}>仓库</Typography>
             <Typography className={classes.value} style={{ fontSize: 13 }}>
-              <a href={versionInfo?.serverUrl} target="_blank" rel="noopener" style={{ color: '#1976d2' }}>
+              <a href={versionInfo?.serverUrl} target="_blank" rel="noopener noreferrer" style={{ color: '#1976d2' }}>
                 {versionInfo?.serverUrl}
               </a>
             </Typography>

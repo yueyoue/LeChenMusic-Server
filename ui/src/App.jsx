@@ -102,7 +102,6 @@ const Admin = (props) => {
           refresh(true)
         })
         .catch((e) => {
-          // eslint-disable-next-line no-console
           console.error(
             'Cannot load language "' + config.defaultLanguage + '": ' + e,
           )

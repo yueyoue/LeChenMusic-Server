@@ -13,6 +13,10 @@ import ImageIcon from '@material-ui/icons/Image'
 import CheckCircleIcon from '@material-ui/icons/CheckCircle'
 import CancelIcon from '@material-ui/icons/Cancel'
 
+// 模块级纯函数（只读 localStorage），保证引用稳定、可安全用于 useEffect 依赖
+const getToken = () => localStorage.getItem('token')
+const getHeaders = () => ({ 'X-ND-Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' })
+
 const useStyles = makeStyles((theme) => ({
   root: { padding: 16, maxWidth: 900, margin: '0 auto' },
   header: {
@@ -72,9 +76,6 @@ const AIPlaylistPage = () => {
   const [themes, setThemes] = useState([])
   const [sources, setSources] = useState(['酷我', '网易云', 'QQ音乐', '酷狗', '汽水音乐'])
   const [matchMode, setMatchMode] = useState('fuzzy') // 'exact' or 'fuzzy'
-
-  const getToken = () => localStorage.getItem('token')
-  const getHeaders = () => ({ 'X-ND-Authorization': `Bearer ${getToken()}`, 'Content-Type': 'application/json' })
 
   // Load themes
   useEffect(() => {
@@ -331,7 +332,7 @@ const AIPlaylistPage = () => {
             选择TXT文件
           </Button>
           <Typography style={{ fontSize: 12, color: 'text.secondary', alignSelf: 'center' }}>
-            支持格式：每行一首，如 "歌名 - 歌手" 或 "歌名"
+            {'支持格式：每行一首，如 "歌名 - 歌手" 或 "歌名"'}
           </Typography>
         </Box>
       </Card>

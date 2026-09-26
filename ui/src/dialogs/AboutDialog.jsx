@@ -240,7 +240,6 @@ const ConfigTabContent = ({ configData }) => {
       await navigator.clipboard.writeText(tomlContent)
       notify(translate('about.config.exportSuccess'), 'info')
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.error('Failed to copy TOML:', err)
       notify(translate('about.config.exportFailed'), 'error')
     }
@@ -457,7 +456,6 @@ const AboutDialog = ({ open, onClose }) => {
         }
       })
       .catch((e) => {
-        // eslint-disable-next-line no-console
         console.error('error pinging server', e)
       })
   }, [setServerVersion])

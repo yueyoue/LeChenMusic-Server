@@ -36,7 +36,9 @@
   },
   "plugins": ["react-refresh"],
   "rules": {
-    "no-console": "error",
+    // Debug logging (console.log/debug/info) stays banned; error/warn reporting in
+    // catch blocks is legitimate diagnostics and is allowed.
+    "no-console": ["error", { "allow": ["warn", "error"] }],
 //    "no-unused-vars": "off",
     "@typescript-eslint/no-unused-vars": "off",
     "react-refresh/only-export-components": [

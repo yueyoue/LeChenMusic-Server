@@ -46,7 +46,7 @@ const NarratorAvatar = ({ name }) => {
         if (res.ok) {
           setAvatarUrl(`/api/scrape/image/narrator/${encodeURIComponent(safeName)}${tokenParam}`)
         }
-      } catch (e) {}
+      } catch (e) { /* 探测失败用默认头像 */ }
     }
     checkAvatar()
   }, [name])

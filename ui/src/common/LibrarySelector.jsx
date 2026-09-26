@@ -89,7 +89,6 @@ const LibrarySelector = () => {
         const libraries = data.libraries || []
         dispatch(setUserLibraries(libraries))
       } catch (error) {
-        // eslint-disable-next-line no-console
         console.warn(
           'Could not load user libraries (this may be expected for non-admin users):',
           error,

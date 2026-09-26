@@ -168,20 +168,17 @@ const ArtistAvatarDialog = ({ open, onClose, artist, onApply }) => {
         alert('请选择一张图片或输入URL')
         return
       }
-      console.log('Saving avatar:', { artistId: artist.id, imageUrl })
       const res = await httpClient(`${REST_URL}/scrape/artist/${encodeURIComponent(artist.id)}/avatar`, {
         method: 'POST',
         headers: new Headers({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ imageUrl }),
       })
-      console.log('Avatar save response:', JSON.stringify(res.json))
       const savedUrl = res.json?.data?.imageUrl
       if (!savedUrl) {
         console.error('No imageUrl in response:', res.json)
         alert('保存失败: 服务器未返回图片URL')
         return
       }
-      console.log('Avatar saved successfully:', savedUrl)
       if (onApply) onApply()
       onClose()
     } catch (e) {

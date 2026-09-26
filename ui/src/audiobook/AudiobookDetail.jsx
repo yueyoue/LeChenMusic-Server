@@ -19,6 +19,14 @@ import RefreshIcon from '@material-ui/icons/Refresh'
 import ScrapeDialog from '../scraper/ScrapeDialog'
 import { playTracks, addTracks } from '../actions'
 
+// 模块级纯函数（只读 localStorage），保证引用稳定、不进 useEffect 依赖
+const getToken = () => localStorage.getItem('token')
+const getAuthHeaders = () => ({ 'X-ND-Authorization': `Bearer ${getToken()}` })
+const getCoverUrl = (bookId) => {
+  const token = getToken()
+  return `/api/audiobook/${bookId}/cover${token ? '?token=' + token : ''}`
+}
+
 const useStyles = makeStyles(
   (theme) => ({
     root: {
@@ -246,20 +254,15 @@ const AudiobookDetail = ({ id, onBack }) => {
   const currentPlaying = useSelector((state) => state.player.currentPlaying)
   const isPlayingCurrent = currentPlaying?.albumId === `audiobook-${id}`
 
-  const getToken = () => localStorage.getItem('token')
-  const getAuthHeaders = () => ({ 'X-ND-Authorization': `Bearer ${getToken()}` })
-  const getCoverUrl = (bookId) => {
-    const token = getToken()
-    return `/api/audiobook/${bookId}/cover${token ? '?token=' + token : ''}`
-  }
-
-  // 获取下一部有声书
+  // 获取下一部有声书（依赖原始值 bookId/bookGenre，避免 book 对象引用变化触发重复拉取）
+  const bookId = book?.id
+  const bookGenre = book?.genre
   useEffect(() => {
-    if (!book) return
+    if (!bookId) return
     const fetchNext = async () => {
       try {
         const headers = getAuthHeaders()
-        const genreParam = book.genre ? `&genre=${encodeURIComponent(book.genre)}` : ''
+        const genreParam = bookGenre ? `&genre=${encodeURIComponent(bookGenre)}` : ''
         const res = await fetch(`/api/audiobook?limit=100${genreParam}`, { headers })
         if (res.ok) {
           const data = await res.json()
@@ -272,10 +275,10 @@ const AudiobookDetail = ({ id, onBack }) => {
             setNextBookId(books[0].id)
           }
         }
-      } catch (e) {}
+      } catch (e) { /* 取下一部失败不影响本页 */ }
     }
     fetchNext()
-  }, [book?.id, id])
+  }, [bookId, bookGenre, id])
 
   useEffect(() => {
     const fetchData = async () => {

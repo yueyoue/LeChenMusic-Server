@@ -136,7 +136,7 @@ const BackupPage = () => {
             notify('备份失败: ' + job.error, 'error')
             break
           }
-        } catch (_) {}
+        } catch (_) { /* 轮询连接失败则继续重试 */ }
       }
       if (attempts >= maxAttempts) {
         notify('备份超时（10分钟），但任务可能仍在后台运行', 'warning')
@@ -231,7 +231,7 @@ const BackupPage = () => {
             notify('恢复失败: ' + job.error, 'error')
             break
           }
-        } catch (_) {}
+        } catch (_) { /* 轮询连接失败则继续重试 */ }
       }
       if (attempts >= maxAttempts) {
         notify('恢复超时（10分钟），但任务可能仍在后台运行', 'warning')
@@ -365,7 +365,7 @@ const BackupPage = () => {
               备份文件列表
             </Typography>
             {backups.length === 0 ? (
-              <Alert severity="info">暂无备份文件，点击上方"立即备份"创建第一个备份</Alert>
+              <Alert severity="info">{'暂无备份文件，点击上方"立即备份"创建第一个备份'}</Alert>
             ) : (
               <TableContainer component={Paper} variant="outlined">
                 <Table size="small">
