@@ -168,6 +168,20 @@ func registerFieldWhiteList(name string, instance any) {
 
 type fieldWhiteListedFunc func(field string) bool
 
+// registerColumnFields returns the snake_case names of the fields that are real columns of
+// the model's own table. Embedded structs tagged with `structs:"-"` (such as Annotations and
+// Bookmarkable) are already excluded by structs.Map, which is exactly what we want here:
+// their fields live in the separate `annotation` table and must not be qualified with this
+// table's name.
+func registerColumnFields(instance any) map[string]struct{} {
+	m := structs.Map(instance)
+	fields := make(map[string]struct{}, len(m))
+	for k := range m {
+		fields[toSnakeCase(k)] = struct{}{}
+	}
+	return fields
+}
+
 func getFieldWhiteListedFunc(tableName string) fieldWhiteListedFunc {
 	return func(field string) bool {
 		mutex.RLock()

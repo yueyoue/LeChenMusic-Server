@@ -183,8 +183,8 @@ func Import(ctx context.Context, ds model.DataStore, opts ImportOptions) (*Impor
 				}
 				abIDMap[bak.ID] = existing.ID
 			} else {
-				// Path not found → insert new (Put preserves the backup ID)
-			 bak.ID = bak.ID // keep backup ID
+				// Path not found → insert new. The backup ID is kept as-is (it is never
+				// remapped on this branch), so no rewrite is needed here.
 				if err := ds.Audiobook(ctx).Put(bak); err != nil {
 					bookFail++
 				} else {

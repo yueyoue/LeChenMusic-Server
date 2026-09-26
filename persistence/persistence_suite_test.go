@@ -33,7 +33,10 @@ func TestPersistence(t *testing.T) {
 func mf(mf model.MediaFile) model.MediaFile {
 	mf.Tags = model.Tags{}
 	mf.LibraryID = 1
-	mf.LibraryPath = "music" // Default folder
+	// LibraryPath is not a media_file column: it is joined in from the library table (whose
+	// path comes from conf.Server.MusicFolder and therefore differs per test setup), so the
+	// fixtures leave it empty and the tests blank it on the value they read back.
+	mf.LibraryPath = ""
 	mf.LibraryName = "Music Library"
 	mf.Participants = model.Participants{
 		model.RoleArtist: model.ParticipantList{
@@ -48,7 +51,7 @@ func mf(mf model.MediaFile) model.MediaFile {
 
 func al(al model.Album) model.Album {
 	al.LibraryID = 1
-	al.LibraryPath = "music"
+	al.LibraryPath = "" // joined in from the library table, see mf() above
 	al.LibraryName = "Music Library"
 	al.Discs = model.Discs{}
 	al.Tags = model.Tags{}

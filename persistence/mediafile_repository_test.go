@@ -33,6 +33,7 @@ var _ = Describe("MediaRepository", func() {
 		actual, err := mr.Get("1004")
 		Expect(err).ToNot(HaveOccurred())
 		actual.CreatedAt = time.Time{}
+		actual.LibraryPath = "" // joined from the library table, see mf()
 		Expect(actual).To(Equal(&songAntenna))
 	})
 

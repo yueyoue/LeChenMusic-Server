@@ -44,6 +44,11 @@ type sqlRepository struct {
 	// Do not set these fields manually, they are set by the registerModel method
 	filterMappings     map[string]filterFunc
 	isFieldWhiteListed fieldWhiteListedFunc
+	// columnFields holds the fields that are actual columns of the repository's own table
+	// (unlike isFieldWhiteListed, it excludes the fields of the shared model.Annotations
+	// struct, which live in the separate `annotation` table and must not be qualified with
+	// this table's name).
+	columnFields map[string]struct{}
 	// Do not set this field manually, it is set by the setSortMappings method
 	sortMappings map[string]string
 }
@@ -92,6 +97,7 @@ func (r *sqlRepository) registerModel(instance any, filters map[string]filterFun
 	}
 	r.tableName = strings.ToLower(r.tableName)
 	r.isFieldWhiteListed = registerModelWhiteList(instance)
+	r.columnFields = registerColumnFields(instance)
 	r.filterMappings = filters
 }
 
@@ -209,9 +215,75 @@ func splitFunc(delimiter rune) func(c rune) bool {
 
 func (r sqlRepository) applyFilters(sq SelectBuilder, options ...model.QueryOptions) SelectBuilder {
 	if len(options) > 0 && options[0].Filters != nil {
-		sq = sq.Where(options[0].Filters)
+		sq = sq.Where(r.qualifyFilters(options[0].Filters))
 	}
 	return sq
+}
+
+// qualifyFilters prefixes bare column names in a filter with the repository's table name.
+//
+// Why: several queries join other tables (the artist query joins library_artist and library,
+// both of which carry a `name` column), so an unqualified `WHERE name = ?` fails with
+// "ambiguous column name: name". The REST API never sees this because it routes filter keys
+// through the functions registered by registerModel, which already emit table-qualified SQL
+// (see idFilter/artistLibraryIdFilter). Callers building model.QueryOptions directly bypass
+// that, so we do the qualification here instead.
+//
+// Only keys that are model fields (the same whitelist the REST API validates against) are
+// touched, and keys that already carry a table qualifier are left alone.
+func (r sqlRepository) qualifyFilters(f Sqlizer) Sqlizer {
+	switch v := f.(type) {
+	case And:
+		out := make(And, 0, len(v))
+		for _, s := range v {
+			out = append(out, r.qualifyFilters(s))
+		}
+		return out
+	case Or:
+		out := make(Or, 0, len(v))
+		for _, s := range v {
+			out = append(out, r.qualifyFilters(s))
+		}
+		return out
+	case Eq:
+		return Eq(r.qualifyFilterColumns(map[string]any(v)))
+	case NotEq:
+		return NotEq(r.qualifyFilterColumns(map[string]any(v)))
+	case Like:
+		return Like(r.qualifyFilterColumns(map[string]any(v)))
+	case ILike:
+		return ILike(r.qualifyFilterColumns(map[string]any(v)))
+	case Lt:
+		return Lt(r.qualifyFilterColumns(map[string]any(v)))
+	case LtOrEq:
+		return LtOrEq(r.qualifyFilterColumns(map[string]any(v)))
+	case Gt:
+		return Gt(r.qualifyFilterColumns(map[string]any(v)))
+	case GtOrEq:
+		return GtOrEq(r.qualifyFilterColumns(map[string]any(v)))
+	default:
+		return f
+	}
+}
+
+func (r sqlRepository) qualifyFilterColumns(cols map[string]any) map[string]any {
+	out := make(map[string]any, len(cols))
+	for k, v := range cols {
+		out[r.qualifyFilterColumn(k)] = v
+	}
+	return out
+}
+
+func (r sqlRepository) qualifyFilterColumn(col string) string {
+	// Already qualified ("artist.name") or not a real column (raw SQL such as "1" used by
+	// the invalid/role filters) -> leave it exactly as the caller wrote it.
+	if strings.Contains(col, ".") || strings.ContainsAny(col, " ()'\"") {
+		return col
+	}
+	if _, ok := r.columnFields[col]; ok {
+		return r.tableName + "." + col
+	}
+	return col
 }
 
 // libraryIdFilter is a filter function to be added to resources that have a library_id column.
