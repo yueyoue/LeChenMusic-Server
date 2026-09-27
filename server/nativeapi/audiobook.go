@@ -566,21 +566,13 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 	// [LeChenMusic-START:audiobook-cover-fallback]
 	// 本地没有封面文件时，从数据库中的cover_url代理获取
 	if book.CoverUrl != "" {
-		client := &http.Client{Timeout: 15 * time.Second}
-		req, err := http.NewRequest("GET", book.CoverUrl, nil)
-		if err == nil {
-			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-			resp, err := client.Do(req)
-			if err == nil && resp.StatusCode == 200 {
-				defer resp.Body.Close()
-				w.Header().Set("Content-Type", resp.Header.Get("Content-Type"))
-				w.Header().Set("Cache-Control", "public, max-age=86400")
-				io.Copy(w, resp.Body)
-				return
-			}
-			if resp != nil {
-				resp.Body.Close()
-			}
+		// Proxy the scraped cover URL. SSRF-hardened: scheme/host validation, per-hop
+		// redirect re-checks and a size cap (see image_url_guard.go).
+		if data, contentType, err := fetchRemoteImage(r.Context(), book.CoverUrl); err == nil {
+			w.Header().Set("Content-Type", contentType)
+			w.Header().Set("Cache-Control", "public, max-age=86400")
+			_, _ = w.Write(data)
+			return
 		}
 	}
 	// [LeChenMusic-END:audiobook-cover-fallback]
@@ -819,24 +811,13 @@ func (h *audiobookHandler) uploadCover(w http.ResponseWriter, r *http.Request) {
 	var ext string
 
 	if imageURL != "" {
-		// Download image from URL
-		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := client.Get(imageURL)
+		// Download image from URL (SSRF-hardened, see image_url_guard.go)
+		data, contentType, err := fetchRemoteImage(r.Context(), imageURL)
 		if err != nil {
 			http.Error(w, "Failed to download image: "+err.Error(), 400)
 			return
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != 200 {
-			http.Error(w, "Failed to download image: HTTP "+resp.Status, 400)
-			return
-		}
-		imageData, err = io.ReadAll(resp.Body)
-		if err != nil {
-			http.Error(w, "Failed to read image data", 500)
-			return
-		}
-		contentType := resp.Header.Get("Content-Type")
+		imageData = data
 		ext = extFromContentType(contentType)
 	} else {
 		// File upload
@@ -906,23 +887,13 @@ func (h *audiobookHandler) uploadNarratorAvatar(w http.ResponseWriter, r *http.R
 	// Check if URL-based upload
 	imageURL := r.FormValue("url")
 	if imageURL != "" {
-		client := &http.Client{Timeout: 30 * time.Second}
-		resp, err := client.Get(imageURL)
+		// SSRF-hardened fetch, see image_url_guard.go
+		data, contentType, err := fetchRemoteImage(r.Context(), imageURL)
 		if err != nil {
 			http.Error(w, "Failed to download image: "+err.Error(), 400)
 			return
 		}
-		defer resp.Body.Close()
-		if resp.StatusCode != 200 {
-			http.Error(w, "Failed to download image: HTTP "+resp.Status, 400)
-			return
-		}
-		imageData, err = io.ReadAll(resp.Body)
-		if err != nil {
-			http.Error(w, "Failed to read image data", 500)
-			return
-		}
-		contentType := resp.Header.Get("Content-Type")
+		imageData = data
 		ext = extFromContentType(contentType)
 	} else {
 		file, header, err := r.FormFile("file")
