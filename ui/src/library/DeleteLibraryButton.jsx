@@ -1,15 +1,16 @@
-import React from 'react'
+import React, { useState } from 'react'
 import DeleteIcon from '@material-ui/icons/Delete'
 import { makeStyles, alpha } from '@material-ui/core/styles'
 import clsx from 'clsx'
 import {
   useNotify,
-  useDeleteWithConfirmController,
   Button,
   Confirm,
   useTranslate,
   useRedirect,
+  useRefresh,
 } from 'react-admin'
+import { REST_URL } from '../consts'
 
 const useStyles = makeStyles(
   (theme) => ({
@@ -27,38 +28,58 @@ const useStyles = makeStyles(
   { name: 'RaDeleteWithConfirmButton' },
 )
 
-const DeleteLibraryButton = ({
-  record,
-  resource,
-  basePath,
-  className,
-  ...props
-}) => {
+const authHeaders = () => ({
+  'X-ND-Authorization': `Bearer ${localStorage.getItem('token')}`,
+})
+
+// Self-contained delete (plain fetch instead of useDeleteWithConfirmController):
+// the API endpoint DELETE /api/library/{id} is straightforward and this keeps the
+// button working regardless of react-admin controller internals.
+const DeleteLibraryButton = ({ record, className, ...props }) => {
   const translate = useTranslate()
   const notify = useNotify()
   const redirect = useRedirect()
+  const refresh = useRefresh()
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
 
-  const onSuccess = () => {
-    notify('resources.library.notifications.deleted', 'info', {
-      smart_count: 1,
-    })
-    redirect('/library')
+  const handleDelete = async () => {
+    if (!record || record.id === undefined) {
+      setOpen(false)
+      return
+    }
+    setLoading(true)
+    try {
+      const res = await fetch(`${REST_URL}/library/${record.id}`, {
+        method: 'DELETE',
+        headers: authHeaders(),
+      })
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        throw new Error(body || `HTTP ${res.status}`)
+      }
+      setOpen(false)
+      setLoading(false)
+      notify('resources.library.notifications.deleted', 'info', {
+        smart_count: 1,
+      })
+      refresh()
+      redirect('/library')
+    } catch (e) {
+      setLoading(false)
+      notify(e.message || 'ra.notification.http_error', 'warning')
+    }
   }
-
-  const { open, loading, handleDialogOpen, handleDialogClose, handleDelete } =
-    useDeleteWithConfirmController({
-      resource,
-      record,
-      basePath,
-      onSuccess,
-    })
 
   const classes = useStyles(props)
   return (
     <>
       <Button
         label="ra.action.delete"
-        onClick={handleDialogOpen}
+        onClick={(e) => {
+          setOpen(true)
+          e.stopPropagation()
+        }}
         disabled={loading}
         className={clsx('ra-delete-button', classes.deleteButton, className)}
         {...props}
@@ -71,7 +92,7 @@ const DeleteLibraryButton = ({
         title={translate('resources.library.name', { smart_count: 1 })}
         content={translate('resources.library.messages.deleteConfirm')}
         onConfirm={handleDelete}
-        onClose={handleDialogClose}
+        onClose={() => setOpen(false)}
       />
     </>
   )

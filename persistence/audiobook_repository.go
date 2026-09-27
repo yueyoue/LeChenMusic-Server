@@ -36,7 +36,9 @@ func NewAudiobookRepository(ctx context.Context, db dbx.Builder) model.Audiobook
 // ─── Audiobook CRUD ──────────────────────────────────────
 
 func (r *audiobookRepository) Get(id string) (*model.Audiobook, error) {
-	sel := r.newSelect().Where(Eq{"id": id}).Columns("audiobook.*", "library.path as library_path").
+	// NOTE: the JOIN brings in library.id too, so the id filter MUST be qualified
+	// (unqualified "id" => SQLite "ambiguous column name" and every book 404s).
+	sel := r.newSelect().Where(Eq{"audiobook.id": id}).Columns("audiobook.*", "library.path as library_path").
 		LeftJoin("library on audiobook.library_id = library.id")
 	res := model.Audiobook{}
 	err := r.queryOne(sel, &res)

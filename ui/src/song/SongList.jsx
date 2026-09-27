@@ -188,7 +188,7 @@ const SongList = (props) => {
         <FunctionField
           source="libraryPath"
           label="resources.song.fields.source"
-          sortable={false}
+          sortBy="libraryPath"
           render={(r) => (
             <Chip
               size="small"

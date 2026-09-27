@@ -319,6 +319,7 @@
         "created": "成功建立媒體庫",
         "updated": "成功更新媒體庫",
         "deleted": "成功刪除媒體庫",
+        "deleteError": "有 %{failed} 個媒體庫刪除失敗",
         "scanStarted": "開始掃描媒體庫",
         "scanCompleted": "媒體庫掃描完成",
         "quickScanStarted": "快速掃描已開始",
@@ -335,6 +336,7 @@
       },
       "messages": {
         "deleteConfirm": "您確定要刪除此媒體庫嗎？這將刪除所有相關資料和使用者存取權限。",
+        "deleteConfirmBulk": "確定刪除選取的 %{count} 個媒體庫嗎？這將刪除其所有關聯資料和使用者存取權限。",
         "scanInProgress": "正在掃描...",
         "noLibrariesAssigned": "沒有為該使用者指派任何媒體庫"
       },

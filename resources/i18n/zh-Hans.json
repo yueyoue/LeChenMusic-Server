@@ -319,6 +319,7 @@
         "created": "媒体库创建成功",
         "updated": "媒体库更新成功",
         "deleted": "媒体库删除成功",
+        "deleteError": "有 %{failed} 个媒体库删除失败",
         "scanStarted": "媒体库扫描已开始",
         "quickScanStarted": "快速扫描已开始",
         "fullScanStarted": "完全扫描已开始",
@@ -335,6 +336,7 @@
       },
       "messages": {
         "deleteConfirm": "您确定要删除此媒体库吗？这将删除所有关联数据及用户访问权限。",
+        "deleteConfirmBulk": "确定删除选中的 %{count} 个媒体库吗？这将删除其所有关联数据和用户访问权限。",
         "scanInProgress": "正在扫描...",
         "noLibrariesAssigned": "未向此用户分配媒体库"
       },
