@@ -543,6 +543,13 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Library not found", 404)
 		return
 	}
+	// Local override cover (uploaded/scraped for books in cloud libraries, 评审 §4 P1-2)
+	// wins over the library copy.
+	if p := audiobookCoverOverride(book.ID); p != "" {
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		http.ServeFile(w, r, p)
+		return
+	}
 	// Cover lookup goes through the storage abstraction so cloud libraries work too. On a
 	// cloud source this costs at most one cached directory listing, and the image itself is
 	// served as a 302 direct link whenever the gateway can hand one out.
@@ -803,8 +810,6 @@ func (h *audiobookHandler) uploadCover(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Library not found", 404)
 		return
 	}
-	bookPath := filepath.Join(lib.Path, book.Path)
-
 	// Check if URL-based upload
 	imageURL := r.FormValue("url")
 	var imageData []byte
@@ -842,22 +847,13 @@ func (h *audiobookHandler) uploadCover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Remove old cover files
-	for _, name := range audiobookCoverNames {
-		oldPath := filepath.Join(bookPath, name)
-		os.Remove(oldPath)
-	}
-
-	// Save new cover
-	coverName := "cover" + ext
-	coverPath := filepath.Join(bookPath, coverName)
-	if err := os.WriteFile(coverPath, imageData, 0644); err != nil {
+	// Save the cover: next to the audio files for local libraries (unchanged behavior),
+	// into the local override directory for cloud/read-only libraries (评审 §4 P1-2).
+	relCover, err := saveAudiobookCover(book, lib, imageData, ext)
+	if err != nil {
 		http.Error(w, "Failed to save cover: "+err.Error(), 500)
 		return
 	}
-
-	// Update book's coverPath
-	relCover, _ := filepath.Rel(lib.Path, coverPath)
 	book.CoverPath = relCover
 	_ = repo.Put(book)
 

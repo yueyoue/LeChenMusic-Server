@@ -561,43 +561,27 @@ func downloadCover(coverURL, bookPath string, book *model.Audiobook, lib model.L
 	if coverURL == "" {
 		return fmt.Errorf("empty cover URL")
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := http.NewRequest("GET", coverURL, nil)
-	if err != nil {
-		return fmt.Errorf("create request: %w", err)
-	}
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-	req.Header.Set("Referer", coverURL)
-	resp, err := client.Do(req)
+	// SSRF-hardened fetch (scheme/host allowlist, redirect re-checks, size cap),
+	// see image_url_guard.go.
+	imageData, ct, err := fetchRemoteImage(context.Background(), coverURL)
 	if err != nil {
 		return fmt.Errorf("download cover: %w", err)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("download cover: HTTP %d", resp.StatusCode)
-	}
 	ext := ".jpg"
-	ct := resp.Header.Get("Content-Type")
 	if strings.Contains(ct, "png") {
 		ext = ".png"
 	} else if strings.Contains(ct, "webp") {
 		ext = ".webp"
 	}
-	for _, name := range []string{"cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.jpeg", "folder.png"} {
-		os.Remove(filepath.Join(bookPath, name))
-	}
-	coverPath := filepath.Join(bookPath, "cover"+ext)
-	imageData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read cover data: %w", err)
-	}
 	if len(imageData) < 100 {
 		return fmt.Errorf("cover data too small: %d bytes", len(imageData))
 	}
-	if err := os.WriteFile(coverPath, imageData, 0644); err != nil {
+	// Local libraries keep writing next to the audio files; cloud libraries fall back to
+	// the local override directory (评审 §4 P1-2).
+	relCover, err := saveAudiobookCover(book, &lib, imageData, ext)
+	if err != nil {
 		return fmt.Errorf("write cover file: %w", err)
 	}
-	relCover, _ := filepath.Rel(lib.Path, coverPath)
 	book.CoverPath = relCover
 	return nil
 }
