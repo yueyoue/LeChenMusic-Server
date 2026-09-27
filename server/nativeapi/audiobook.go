@@ -2,6 +2,7 @@ package nativeapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
@@ -17,7 +18,9 @@ import (
 	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
+	"github.com/navidrome/navidrome/model/id"
 	"github.com/navidrome/navidrome/model/request"
+	taglib "go.senan.xyz/taglib"
 )
 
 // [LeChenMusic-START:audiobook]
@@ -584,6 +587,16 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "No cover found", 404)
 }
 
+// rescan rebuilds a book's chapter list from its folder. The folder is enumerated
+// through the storage abstraction (core/storage), so local and cloud libraries share one
+// code path.
+//
+// Safety (评审 §4 P0-1): the new chapter list is built completely BEFORE the database is
+// touched. If the folder cannot be read — e.g. the cloud gateway is unreachable — the
+// existing chapters are left untouched. The previous implementation deleted all chapters
+// first and read the folder afterwards, which wiped a cloud book on every failed rescan.
+// Chapters that still exist keep their ID, title and measured duration, so playback
+// progress and bookmarks (which reference chapter IDs) survive a rescan.
 func (h *audiobookHandler) rescan(w http.ResponseWriter, r *http.Request) {
 	bookID := chi.URLParam(r, "id")
 	repo := h.ds.Audiobook(r.Context())
@@ -598,70 +611,141 @@ func (h *audiobookHandler) rescan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete existing chapters
-	_ = repo.DeleteChapters(bookID)
-
-	// Rescan chapters from filesystem
-	bookPath := filepath.Join(lib.Path, book.Path)
-	entries, readErr := os.ReadDir(bookPath)
-	if readErr != nil {
-		http.Error(w, "Cannot read directory: "+readErr.Error(), 500)
+	chapters, err := h.buildRescanChapters(r, repo, book, lib)
+	if err != nil {
+		// Nothing has been written yet: the old chapters are still intact.
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if err := h.replaceChapters(r, repo, book, chapters); err != nil {
+		http.Error(w, "Error saving chapters: "+err.Error(), 500)
 		return
 	}
 
-	type audioFile struct {
-		name string
-		path string
+	writeJSON(w, map[string]any{"data": map[string]any{"book": book, "chapters": chapters}})
+}
+
+// buildRescanChapters enumerates the book folder and builds the new chapter list WITHOUT
+// touching the database. Existing chapters are matched by path (chapter.Path is relative
+// to the book folder) so their identity and measured values survive the rescan. Only
+// genuinely new files get their tags read — which on a cloud source means a bounded Range
+// read instead of a full download (design doc §15.1).
+func (h *audiobookHandler) buildRescanChapters(r *http.Request, repo model.AudiobookRepository, book *model.Audiobook, lib *model.Library) ([]model.AudiobookChapter, error) {
+	fsys, err := storage.FSFor(r.Context(), lib.Path)
+	if err != nil {
+		return nil, fmt.Errorf("library storage not accessible: %w", err)
 	}
-	var audioFiles []audioFile
+	entries, err := fs.ReadDir(fsys, book.Path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read directory: %w", err)
+	}
+
+	var names []string
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
 		}
-		ext := strings.ToLower(filepath.Ext(e.Name()))
+		ext := strings.ToLower(fspath.Ext(e.Name()))
 		if audiobookAudioExts[ext] {
-			audioFiles = append(audioFiles, audioFile{name: e.Name(), path: e.Name()})
+			names = append(names, e.Name())
+		}
+	}
+	if len(names) == 0 {
+		// Refuse to wipe a book just because the folder looks empty or the extension
+		// convention changed — the caller keeps the existing chapters.
+		return nil, fmt.Errorf("no audio files found in %q, keeping existing chapters", book.Path)
+	}
+	sort.Strings(names)
+
+	byPath := map[string]model.AudiobookChapter{}
+	if existing, err := repo.GetChapters(book.ID); err == nil {
+		for _, ch := range existing {
+			byPath[ch.Path] = ch
 		}
 	}
 
-	sort.Slice(audioFiles, func(i, j int) bool {
-		return audioFiles[i].name < audioFiles[j].name
-	})
-
-	var totalSize int64
-	var chapters []model.AudiobookChapter
-	for i, af := range audioFiles {
-		chapterPath := filepath.Join(bookPath, af.name)
-		chapterTitle := strings.TrimSuffix(af.name, filepath.Ext(af.name))
-		format := strings.TrimPrefix(strings.ToLower(filepath.Ext(af.name)), ".")
+	chapters := make([]model.AudiobookChapter, 0, len(names))
+	for i, name := range names {
+		chapterPath := fspath.Join(book.Path, name)
+		chapterTitle := strings.TrimSuffix(name, fspath.Ext(name))
+		format := strings.TrimPrefix(strings.ToLower(fspath.Ext(name)), ".")
 		var fileSize int64
-		if info, err := os.Stat(chapterPath); err == nil {
+		if info, err := fs.Stat(fsys, chapterPath); err == nil {
 			fileSize = info.Size()
 		}
 
 		chapter := model.AudiobookChapter{
-			ID:            af.name, // Use filename as ID for simplicity
-			AudiobookID:   bookID,
+			ID:            id.NewRandom(),
+			AudiobookID:   book.ID,
 			Title:         chapterTitle,
 			ChapterNumber: i + 1,
-			Duration:      0,
 			Format:        format,
 			FileSize:      fileSize,
-			Path:          af.path,
+			Path:          name,
+			CreatedAt:     time.Now(),
 		}
-		if err := repo.PutChapter(&chapter); err != nil {
-			log.Error(r.Context(), "Rescan: Error saving chapter", "chapter", chapter.Title, err)
+		if old, known := byPath[name]; known {
+			// Same file as before: keep identity and measured values. This preserves
+			// progress/bookmark references and avoids re-reading tags from the cloud.
+			chapter.ID = old.ID
+			chapter.Title = old.Title
+			chapter.Duration = old.Duration
+			chapter.CreatedAt = old.CreatedAt
+		} else if rs, closer, err := openChapterForTag(fsys, chapterPath); err == nil {
+			if f, err := taglib.OpenStream(rs, taglib.WithReadStyle(taglib.ReadStyleFast), taglib.WithFilename(chapterPath)); err == nil {
+				allTags := f.AllTags()
+				props := f.Properties()
+				f.Close()
+				if v, ok := allTags.Tags["TITLE"]; ok && len(v) > 0 && v[0] != "" {
+					chapter.Title = v[0]
+				}
+				if props.Length > 0 {
+					chapter.Duration = int(props.Length.Seconds())
+				}
+			}
+			_ = closer.Close()
 		}
-		totalSize += fileSize
 		chapters = append(chapters, chapter)
 	}
+	return chapters, nil
+}
 
-	// Update book stats
-	book.ChapterCount = len(audioFiles)
+// openChapterForTag opens a file through the library FS as a seekable reader for taglib.
+// On a cloud source the handle is a lazy Range reader (same contract as the scanner's
+// openForTag helper).
+func openChapterForTag(fsys storage.MusicFS, filePath string) (io.ReadSeeker, io.Closer, error) {
+	f, err := fsys.Open(filePath)
+	if err != nil {
+		return nil, nil, err
+	}
+	rs, ok := f.(io.ReadSeeker)
+	if !ok {
+		_ = f.Close()
+		return nil, nil, fmt.Errorf("audiobook: %s is not seekable", filePath)
+	}
+	return rs, f, nil
+}
+
+// replaceChapters swaps the chapter list of a book and refreshes its stats. Only called
+// after buildRescanChapters has produced a complete new list.
+func (h *audiobookHandler) replaceChapters(r *http.Request, repo model.AudiobookRepository, book *model.Audiobook, chapters []model.AudiobookChapter) error {
+	if err := repo.DeleteChapters(book.ID); err != nil {
+		return err
+	}
+	var totalSize int64
+	var totalDuration int
+	for i := range chapters {
+		if err := repo.PutChapter(&chapters[i]); err != nil {
+			log.Error(r.Context(), "Rescan: Error saving chapter", "chapter", chapters[i].Title, err)
+			return err
+		}
+		totalSize += chapters[i].FileSize
+		totalDuration += chapters[i].Duration
+	}
+	book.ChapterCount = len(chapters)
 	book.Size = totalSize
-	_ = repo.Put(book)
-
-	writeJSON(w, map[string]any{"data": map[string]any{"book": book, "chapters": chapters}})
+	book.TotalDuration = totalDuration
+	return repo.Put(book)
 }
 
 // rescanAll rescans all audiobooks that have 0 chapters
@@ -689,58 +773,19 @@ func (h *audiobookHandler) rescanAll(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		// Delete existing chapters (should be none, but just in case)
-		_ = repo.DeleteChapters(book.ID)
-
-		// Rescan chapters from filesystem
-		bookPath := filepath.Join(lib.Path, book.Path)
-		entries, readErr := os.ReadDir(bookPath)
-		if readErr != nil {
+		// Build the new list first (storage abstraction, local + cloud). On failure the
+		// book is counted as failed and its chapters are left untouched.
+		chapters, buildErr := h.buildRescanChapters(r, repo, book, lib)
+		if buildErr != nil {
+			log.Warn(r.Context(), "RescanAll: cannot rescan book, keeping existing chapters", "book", book.Title, buildErr)
 			failed++
 			continue
 		}
-
-		var audioFiles []string
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			ext := strings.ToLower(filepath.Ext(e.Name()))
-			if audiobookAudioExts[ext] {
-				audioFiles = append(audioFiles, e.Name())
-			}
+		if err := h.replaceChapters(r, repo, book, chapters); err != nil {
+			log.Error(r.Context(), "RescanAll: Error saving chapters", "book", book.Title, err)
+			failed++
+			continue
 		}
-		sort.Strings(audioFiles)
-
-		var totalSize int64
-		for j, fname := range audioFiles {
-			chapterPath := filepath.Join(bookPath, fname)
-			chapterTitle := strings.TrimSuffix(fname, filepath.Ext(fname))
-			format := strings.TrimPrefix(strings.ToLower(filepath.Ext(fname)), ".")
-			var fileSize int64
-			if info, err := os.Stat(chapterPath); err == nil {
-				fileSize = info.Size()
-			}
-
-			chapter := model.AudiobookChapter{
-				ID:            fname,
-				AudiobookID:   book.ID,
-				Title:         chapterTitle,
-				ChapterNumber: j + 1,
-				Duration:      0,
-				Format:        format,
-				FileSize:      fileSize,
-				Path:          fname,
-			}
-			if err := repo.PutChapter(&chapter); err != nil {
-				log.Error(r.Context(), "RescanAll: Error saving chapter", "book", book.Title, "chapter", chapterTitle, err)
-			}
-			totalSize += fileSize
-		}
-
-		book.ChapterCount = len(audioFiles)
-		book.Size = totalSize
-		_ = repo.Put(book)
 		rescanned++
 	}
 
