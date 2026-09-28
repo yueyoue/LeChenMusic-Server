@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -55,6 +56,10 @@ type streamJob struct {
 	bitDepth   int
 	channels   int
 	offset     int
+	// remote marks a cloud-library transcode whose input is a signed direct link.
+	// Links expire (hours at most), so the input is re-resolved right before ffmpeg
+	// starts — see transcodeWithRefresh (整改方案 §4.4 / P1-4).
+	remote bool
 }
 
 func (j *streamJob) Key() string {
@@ -82,6 +87,7 @@ func (ms *mediaStreamer) NewStream(ctx context.Context, mf *model.MediaFile, req
 		bitRate = 0
 	}
 	filePath := mf.AbsolutePath()
+	remoteInput := false
 
 	// A cloud library has no local path for ffmpeg to open: hand ffmpeg the file's direct
 	// link instead, so it pulls straight from the drive's CDN (the media bytes still never
@@ -95,6 +101,7 @@ func (ms *mediaStreamer) NewStream(ctx context.Context, mf *model.MediaFile, req
 				format, bitRate = "raw", 0
 			} else {
 				filePath = raw
+				remoteInput = true
 			}
 		}
 	}
@@ -129,6 +136,7 @@ func (ms *mediaStreamer) NewStream(ctx context.Context, mf *model.MediaFile, req
 		ms:         ms,
 		mf:         mf,
 		filePath:   filePath,
+		remote:     remoteInput,
 		format:     format,
 		bitRate:    bitRate,
 		sampleRate: req.SampleRate,
@@ -401,10 +409,9 @@ func NewTranscodingCache() TranscodingCache {
 				transcodingCtx = request.AddValues(context.Background(), ctx)
 			}
 
-			out, err := job.ms.transcoder.Transcode(transcodingCtx, ffmpeg.TranscodeOptions{
+			out, err := transcodeWithRefresh(transcodingCtx, job.ms, job, ffmpeg.TranscodeOptions{
 				Command:    command,
 				Format:     job.format,
-				FilePath:   job.filePath,
 				BitRate:    job.bitRate,
 				SampleRate: job.sampleRate,
 				BitDepth:   job.bitDepth,
@@ -421,6 +428,122 @@ func NewTranscodingCache() TranscodingCache {
 			// ffmpeg has exited (either EOF or context cancellation).
 			return &releasingReadCloser{ReadCloser: out, release: release}, nil
 		})
+}
+
+// transcodeInput returns the input path a transcode job should hand to ffmpeg. For
+// cloud inputs it re-resolves a fresh signed direct link at the moment the transcode
+// actually starts: the link resolved at request time may be stale by then (the
+// transcode queue/limiter can delay the start) and links expire in hours
+// (整改方案 §4.4 / P1-4). Falls back to the original link when refresh fails.
+func (ms *mediaStreamer) transcodeInput(ctx context.Context, job *streamJob) string {
+	if !job.remote {
+		return job.filePath
+	}
+	if raw, ok := ms.directURL(ctx, job.mf); ok {
+		return raw
+	}
+	log.Debug(ctx, "stream: could not refresh transcode input link, reusing previous one", "id", job.mf.ID)
+	return job.filePath
+}
+
+// transcodeWithRefresh starts a transcode, hardening remote (cloud) inputs against
+// expired direct links: the input is freshly resolved right before ffmpeg starts and,
+// if ffmpeg dies with an empty output (the typical symptom of an already-expired or
+// rejected link), the transcode is retried exactly once with another fresh link.
+//
+// Residual risk (documented acceptance, 整改方案 §6): a link that expires mid-stream
+// after hours of transcoding still truncates the output; the full fix (piping the
+// remote stream through stdin) is deferred until audiobook transcoding is enabled.
+func transcodeWithRefresh(ctx context.Context, ms *mediaStreamer, job *streamJob, opts ffmpeg.TranscodeOptions) (io.ReadCloser, error) {
+	if !job.remote {
+		// Local input: behaviour unchanged — no peek, no retry.
+		opts.FilePath = job.filePath
+		return ms.transcoder.Transcode(ctx, opts)
+	}
+
+	resolve := func() string { return ms.transcodeInput(ctx, job) }
+	opts.FilePath = resolve()
+
+	out, err := ms.transcoder.Transcode(ctx, opts)
+	if err == nil {
+		if r, ok := peekOrKeep(out); ok {
+			return r, nil
+		}
+		_ = out.Close()
+		err = fmt.Errorf("transcoder produced no output")
+	}
+
+	// Exactly one retry with a freshly resolved direct link.
+	log.Warn(ctx, "Transcode failed on cloud input, retrying once with a fresh direct link", "id", job.mf.ID, err)
+	opts.FilePath = resolve()
+	out, err2 := ms.transcoder.Transcode(ctx, opts)
+	if err2 != nil {
+		return nil, err2
+	}
+	if r, ok := peekOrKeep(out); ok {
+		return r, nil
+	}
+	_ = out.Close()
+	return nil, fmt.Errorf("transcoder produced no output after retry")
+}
+
+// peekOrKeep consumes one byte to detect an already-dead transcoder (the typical
+// symptom of an expired direct link: ffmpeg exits immediately with empty output).
+// It returns false when the output is confirmed empty. A bounded wait avoids
+// blocking forever on a slow producer: if no byte shows up in time the stream is
+// assumed alive and handed to the consumer with the pending peek byte preserved.
+func peekOrKeep(out io.ReadCloser) (io.ReadCloser, bool) {
+	peek := make([]byte, 1)
+	ch := make(chan peekResult, 1)
+	go func() {
+		n, err := out.Read(peek)
+		ch <- peekResult{n, err}
+	}()
+	select {
+	case r := <-ch:
+		if r.n == 0 {
+			return nil, false
+		}
+		return &peekedReadCloser{Reader: io.MultiReader(bytes.NewReader(peek[:r.n]), out), Closer: out}, true
+	case <-time.After(5 * time.Second):
+		return &pendingPeekReader{out: out, ch: ch, peek: peek}, true
+	}
+}
+
+type peekResult struct {
+	n   int
+	err error
+}
+
+// pendingPeekReader defers the in-flight peek read to the consumer's first Read,
+// so no byte is ever lost and the producer is never blocked.
+type pendingPeekReader struct {
+	out  io.ReadCloser
+	ch   <-chan peekResult
+	peek []byte
+	r    io.Reader
+}
+
+func (p *pendingPeekReader) Read(b []byte) (int, error) {
+	if p.r == nil {
+		r := <-p.ch
+		if r.n == 0 {
+			if r.err == nil {
+				return 0, io.EOF
+			}
+			return 0, r.err
+		}
+		p.r = io.MultiReader(bytes.NewReader(p.peek[:r.n]), p.out)
+	}
+	return p.r.Read(b)
+}
+
+func (p *pendingPeekReader) Close() error { return p.out.Close() }
+
+// peekedReadCloser reassembles a reader after a one-byte liveness peek.
+type peekedReadCloser struct {
+	io.Reader
+	io.Closer
 }
 
 // userName extracts the username from the context for logging purposes.

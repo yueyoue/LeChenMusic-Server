@@ -409,6 +409,14 @@ func buildDynamicArgs(opts TranscodeOptions) []string {
 		args = append(args, "-ss", strconv.Itoa(opts.Offset))
 	}
 
+	if isRemoteInput(opts.FilePath) {
+		// Harden cloud direct-link inputs against transient network drops: ffmpeg's
+		// http protocol reconnects instead of aborting the whole transcode
+		// (整改方案 §4.4 / P1-4). Only the default command gets these flags;
+		// user-supplied template commands are left untouched.
+		args = append(args, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "5")
+	}
+
 	args = append(args, "-i", opts.FilePath)
 	args = append(args, "-map", "0:a:0")
 
