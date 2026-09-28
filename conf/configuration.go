@@ -3,6 +3,7 @@ package conf
 import (
 	"cmp"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -441,6 +442,7 @@ func Load(noConfigDump bool) {
 		validatePlaylistsPath,
 		validatePurgeMissingOption,
 		validateMaxImageUploadSize,
+		validateOpenListOptions,
 		validateURL("ExtAuth.LogoutURL", Server.ExtAuth.LogoutURL),
 	)
 	if err != nil {
@@ -670,6 +672,47 @@ func validateMaxImageUploadSize() error {
 		return fmt.Errorf("invalid MaxImageUploadSize %q: use values like '10MB', '1GB', or raw bytes like '10485760': %w", Server.MaxImageUploadSize, err)
 	}
 	return nil
+}
+
+// validateOpenListOptions checks every declared [OpenList.<name>] gateway at startup
+// (评审 §4.6 P2-5). It only fails when a gateway is declared but incomplete or malformed:
+// a partially configured gateway used to fail silently at scan/play time with confusing
+// errors. Deployments that don't use cloud sources declare nothing and are unaffected.
+func validateOpenListOptions() error {
+	names := make([]string, 0, len(Server.OpenList))
+	for name := range Server.OpenList {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	var errs []error
+	for _, name := range names {
+		opts := Server.OpenList[name]
+		prefix := "OpenList." + name
+		if opts.URL == "" {
+			errs = append(errs, fmt.Errorf("%s: URL is required (e.g. \"http://192.168.1.10:5244\"; in Docker use the LAN IP, never 127.0.0.1)", prefix))
+		} else if u, err := url.Parse(opts.URL); err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
+			errs = append(errs, fmt.Errorf("%s.URL %q: must be an http(s) URL with a host, e.g. \"http://192.168.1.10:5244\"", prefix, opts.URL))
+		}
+		if opts.Token == "" && (opts.Username == "" || opts.Password == "") {
+			errs = append(errs, fmt.Errorf("%s: credentials required — set Token, or both Username and Password", prefix))
+		}
+		switch opts.TagMode {
+		case "", "scan", "filename":
+		default:
+			errs = append(errs, fmt.Errorf("%s.TagMode %q: must be \"scan\" (default) or \"filename\"", prefix, opts.TagMode))
+		}
+		if opts.JitterFraction < 0 || opts.JitterFraction > 1 {
+			errs = append(errs, fmt.Errorf("%s.JitterFraction %v: must be between 0 and 1", prefix, opts.JitterFraction))
+		}
+		if opts.MaxRetries < 0 {
+			errs = append(errs, fmt.Errorf("%s.MaxRetries %d: must not be negative", prefix, opts.MaxRetries))
+		}
+		if opts.HeadBytes < 0 || opts.TailBytes < 0 || opts.WindowBytes < 0 || opts.MaxTagReadBytes < 0 {
+			errs = append(errs, fmt.Errorf("%s: byte-size options (HeadBytes/TailBytes/WindowBytes/MaxTagReadBytes) must not be negative", prefix))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func validateEnforceNonRootUser() error {

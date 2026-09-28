@@ -89,6 +89,7 @@ func runNavidrome(ctx context.Context) {
 	g.Go(scheduleDBOptimizer(ctx))
 	g.Go(startPluginManager(ctx))
 	g.Go(runInitialScan(ctx))
+	g.Go(startOpenListCheck(ctx))
 	if conf.Server.Scanner.Enabled {
 		g.Go(startScanWatcher(ctx))
 		g.Go(schedulePeriodicScan(ctx))
