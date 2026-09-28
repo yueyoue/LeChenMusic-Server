@@ -27,6 +27,8 @@ docker-compose.yml
 !contrib/docker-compose.yml
 binaries
 navidrome-*
+# 但测试配置必须入库（tests/init_tests.go 依赖它，忽略会导致全仓 go test 启动即 FATAL）
+!tests/navidrome-test.toml
 /ndpgen
 AGENTS.md
 .github/prompts

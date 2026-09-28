@@ -1,0 +1,7 @@
+# Test-only configuration, used by tests.Init (tests/init_tests.go).
+# Keeps tests off the real data folder and on an in-memory database.
+User = "deluan"
+Password = "wordpass"
+DbPath = "file::memory:?cache=shared"
+DataFolder = "tmp/tests"
+ScanSchedule = "0"
