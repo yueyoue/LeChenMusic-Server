@@ -153,7 +153,7 @@ func buildEndpoint(hostport, key string) (*Endpoint, error) {
 				o := opts
 				match, matchName = &o, name
 			}
-			log.Warn("cloudsource: library points to an unknown OpenList endpoint, falling back to the only configured one",
+			log.Warn("[cloud][cloudsource] library points to an unknown OpenList endpoint, falling back to the only configured one",
 				"requested", hostport, "using", matchName)
 		} else {
 			names := make([]string, 0, len(cfg))
@@ -204,7 +204,7 @@ func buildEndpoint(hostport, key string) (*Endpoint, error) {
 		RetryBaseDelay: orDefaultDuration(match.RetryBaseDelay, defaultRetryBaseDelay),
 	})
 
-	log.Debug("cloudsource: OpenList endpoint ready", "name", matchName, "url", ep.BaseURL,
+	log.Debug("[cloud][cloudsource] OpenList endpoint ready", "name", matchName, "url", ep.BaseURL,
 		"head", ep.headBytes, "tail", ep.tailBytes, "maxTagRead", ep.maxTagReadBytes, "redirect", ep.enableRedirect)
 	return ep, nil
 }

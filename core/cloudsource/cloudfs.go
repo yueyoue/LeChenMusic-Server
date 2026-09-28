@@ -115,7 +115,7 @@ func (f *cloudFS) rootStat() (fs.FileInfo, error) {
 			// /api/fs/get on a directory is not supported by every driver. The root is a
 			// directory no matter what it says about its mtime, so only give up when we
 			// can't even reach the gateway.
-			log.Debug(f.ctx, "cloudsource: could not stat root dir, assuming directory", "path", remote, err)
+			log.Debug(f.ctx, "[cloud][cloudsource] could not stat root dir, assuming directory", "path", remote, err)
 			f.rootInfo = &cloudInfo{name: path.Base(f.root), dir: true}
 		}
 	})

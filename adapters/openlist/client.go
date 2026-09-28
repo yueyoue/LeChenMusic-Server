@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/navidrome/navidrome/log"
 )
 
 // Default tuning. All values are overridable via Config.
@@ -173,6 +175,9 @@ func (c *Client) do(ctx context.Context, endpoint string, reqBody, out any, lim 
 	retries := 0
 	for {
 		if err := c.breaker.allow(); err != nil {
+			if errors.Is(err, ErrCircuitOpen) {
+				log.Debug(ctx, "[cloud][openlist] request fast-failed: circuit breaker is open", "endpoint", endpoint)
+			}
 			return err
 		}
 		if auth {
@@ -200,11 +205,11 @@ func (c *Client) do(ctx context.Context, endpoint string, reqBody, out any, lim 
 				c.invalidateToken()
 				continue
 			}
-			c.breaker.onFailure()
+			c.noteFailure(ctx, endpoint)
 			return err
 		}
 		if !retryable || retries >= c.maxRetries {
-			c.breaker.onFailure()
+			c.noteFailure(ctx, endpoint)
 			return err
 		}
 		retries++
@@ -212,6 +217,17 @@ func (c *Client) do(ctx context.Context, endpoint string, reqBody, out any, lim 
 		if serr := c.sleep(ctx, backoff); serr != nil {
 			return fmt.Errorf("openlist: request canceled while backing off: %w", serr)
 		}
+	}
+}
+
+// noteFailure records a failure on the breaker and logs the transition into the open
+// state exactly once (per transition). Fast-failed requests while it is open are logged
+// at Debug in do() — a Warn per request would flood the log during an outage.
+func (c *Client) noteFailure(ctx context.Context, endpoint string) {
+	wasOpen := c.breaker.isOpen()
+	c.breaker.onFailure()
+	if !wasOpen && c.breaker.isOpen() {
+		log.Warn(ctx, "[cloud][openlist] circuit breaker OPEN — too many consecutive failures, fast-failing for a while", "endpoint", endpoint, "openFor", c.breaker.openFor)
 	}
 }
 
@@ -235,11 +251,21 @@ func (c *Client) execute(ctx context.Context, endpoint string, reqBody, out any,
 		req.Header.Set("Authorization", c.getToken())
 	}
 
+	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
+		log.Debug(ctx, "[cloud][openlist] request", "endpoint", endpoint, "durationMs", time.Since(start).Milliseconds(), "err", err)
 		return true, fmt.Errorf("openlist: %s request failed: %w", endpoint, err)
 	}
 	defer resp.Body.Close()
+
+	// One structured line per round trip (path, status, duration) — the minimum needed
+	// to tell a gateway problem from a server-logic problem (评审 §4.14 P2-7).
+	if resp.StatusCode == http.StatusOK {
+		log.Trace(ctx, "[cloud][openlist] request", "endpoint", endpoint, "status", resp.StatusCode, "durationMs", time.Since(start).Milliseconds())
+	} else {
+		log.Debug(ctx, "[cloud][openlist] request", "endpoint", endpoint, "status", resp.StatusCode, "durationMs", time.Since(start).Milliseconds())
+	}
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
