@@ -551,36 +551,45 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Cover lookup goes through the storage abstraction so cloud libraries work too. On a
-	// cloud source this costs at most one cached directory listing, and the image itself is
-	// served as a 302 direct link whenever the gateway can hand one out.
+	// cloud source this costs at most one cached directory listing, and the cover itself is
+	// served from the local disk cache (评审 §4.14 P2-1) so repeat loads don't touch the
+	// gateway at all. Local libraries keep the direct ServeFile path (unchanged).
 	fsys, err := storage.FSFor(r.Context(), lib.Path)
 	if err != nil {
 		http.Error(w, "Library not accessible", 500)
 		return
 	}
+	isCloud := storage.IsRemoteURI(lib.Path)
 	for _, name := range audiobookCoverNames {
 		relCover := fspath.Join(book.Path, name)
-		if _, err := fs.Stat(fsys, relCover); err != nil {
+		info, err := fs.Stat(fsys, relCover)
+		if err != nil {
 			continue
 		}
-		// Set cache headers for cover images
 		w.Header().Set("Cache-Control", "public, max-age=3600")
+		if isCloud {
+			// Cached on disk: key includes the source fingerprint, so a replaced cover
+			// is picked up automatically (no manual invalidation).
+			serveCachedCover(w, r, getCoverCache(), &coverCacheItem{
+				keyStr:   coverCacheKey(lib.Path, relCover, info.ModTime(), info.Size()),
+				libPath:  lib.Path,
+				relCover: relCover,
+			}, name, info.ModTime())
+			return
+		}
 		if err := storage.ServeFile(r.Context(), w, r, lib.Path, relCover); err != nil {
 			http.Error(w, "No cover found", 404)
 		}
 		return
 	}
 	// [LeChenMusic-START:audiobook-cover-fallback]
-	// 本地没有封面文件时，从数据库中的cover_url代理获取
+	// 本地没有封面文件时，从数据库中的cover_url代理获取（结果同样走磁盘缓存）
 	if book.CoverUrl != "" {
-		// Proxy the scraped cover URL. SSRF-hardened: scheme/host validation, per-hop
-		// redirect re-checks and a size cap (see image_url_guard.go).
-		if data, contentType, err := fetchRemoteImage(r.Context(), book.CoverUrl); err == nil {
-			w.Header().Set("Content-Type", contentType)
-			w.Header().Set("Cache-Control", "public, max-age=86400")
-			_, _ = w.Write(data)
-			return
-		}
+		serveCachedCover(w, r, getCoverCache(), &coverCacheItem{
+			keyStr:   coverURLCacheKey(book.CoverUrl),
+			coverURL: book.CoverUrl,
+		}, "cover.jpg", time.Time{})
+		return
 	}
 	// [LeChenMusic-END:audiobook-cover-fallback]
 	http.Error(w, "No cover found", 404)
