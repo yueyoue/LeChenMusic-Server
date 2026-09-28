@@ -34,6 +34,28 @@ type scanState struct {
 	libraries         model.Libraries  // Store libraries list for consistency across phases
 	targets           map[int][]string // Optional: map[libraryID][]folderPaths for selective scans
 	totalLibraryCount int              // Total number of libraries (unfiltered), for cross-library move detection
+
+	// Scan result counters (评审 §4.14 P2-9): reported in the final "scan complete"
+	// log line so an operator can see at a glance what a scan actually did.
+	newFiles     atomic.Int64 // files imported for the first time
+	updatedFiles atomic.Int64 // files re-read because they changed (or full scan)
+	purgedFiles  atomic.Int64 // missing files deleted from the database
+}
+
+// scanSummary is the counters' snapshot for logging.
+type scanSummary struct {
+	New     int64
+	Updated int64
+	Purged  int64
+}
+
+// summary snapshots the result counters.
+func (s *scanState) summary() scanSummary {
+	return scanSummary{
+		New:     s.newFiles.Load(),
+		Updated: s.updatedFiles.Load(),
+		Purged:  s.purgedFiles.Load(),
+	}
 }
 
 func (s *scanState) sendProgress(info *ProgressInfo) {
@@ -183,9 +205,11 @@ func (s *scannerImpl) scanFolders(ctx context.Context, fullScan bool, targets []
 	}
 
 	if state.isSelectiveScan() {
-		log.Info(ctx, "Scanner: Finished scanning selected folders", "duration", time.Since(startTime), "numTargets", len(targets))
+		log.Info(ctx, "Scanner: Finished scanning selected folders", "duration", time.Since(startTime), "numTargets", len(targets),
+			"newFiles", state.summary().New, "updatedFiles", state.summary().Updated, "purgedFiles", state.summary().Purged)
 	} else {
-		log.Info(ctx, "Scanner: Finished scanning all libraries", "duration", time.Since(startTime))
+		log.Info(ctx, "Scanner: Finished scanning all libraries", "duration", time.Since(startTime),
+			"newFiles", state.summary().New, "updatedFiles", state.summary().Updated, "purgedFiles", state.summary().Purged)
 	}
 }
 

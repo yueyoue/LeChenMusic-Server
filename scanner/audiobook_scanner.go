@@ -86,7 +86,12 @@ func openForTag(fsys storage.MusicFS, filePath string) (io.ReadSeeker, io.Closer
 }
 
 func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Library) error {
-	log.Info(ctx, "Audiobook scanner: Starting scan", "library", library.Name, "path", library.Path)
+	startTime := time.Now()
+	source := "local"
+	if storage.IsRemoteURI(library.Path) {
+		source = "cloud"
+	}
+	log.Info(ctx, "Audiobook scanner: Starting scan", "library", library.Name, "path", library.Path, "source", source)
 
 	fsys, err := audiobookFS(ctx, library)
 	if err != nil {
@@ -181,10 +186,11 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 	})
 
 	if err != nil {
-		log.Error(ctx, "Audiobook scanner: Walk error", err)
+		log.Error(ctx, "Audiobook scanner: Walk error", "library", library.Name, err)
 	}
 
-	log.Info(ctx, "Audiobook scanner: Scan complete", "scanned", scanned, "created", created, "updated", updated)
+	log.Info(ctx, "Audiobook scanner: Scan complete", "library", library.Name, "source", source,
+		"scanned", scanned, "created", created, "updated", updated, "duration", time.Since(startTime))
 	return nil
 }
 

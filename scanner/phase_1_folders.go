@@ -311,6 +311,13 @@ func (p *phaseFolders) loadTagsFromFiles(entry *folderEntry, toImport map[string
 			md := metadata.New(filePath, info)
 			track := md.ToMediaFile(entry.job.lib.ID, entry.id)
 			tracks = append(tracks, track)
+			// Scan result counters (评审 §4.14 P2-9): a file with a DB record is an
+			// update, without one it is new.
+			if toImport[filePath] == nil {
+				p.state.newFiles.Add(1)
+			} else {
+				p.state.updatedFiles.Add(1)
+			}
 			for _, t := range track.Tags.FlattenAll() {
 				uniqueTags[t.ID] = t
 			}

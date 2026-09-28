@@ -359,6 +359,7 @@ func (p *phaseMissingTracks) purgeMissing() error {
 	if err != nil {
 		return fmt.Errorf("error deleting missing files: %w", err)
 	}
+	p.state.purgedFiles.Add(deletedCount)
 
 	if deletedCount > 0 {
 		log.Info(p.ctx, "Scanner: Purged missing items from the database", "mediaFiles", deletedCount)
