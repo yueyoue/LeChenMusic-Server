@@ -7,12 +7,20 @@ import (
 	"io"
 	"io/fs"
 	"sync"
+	"time"
+
+	"github.com/navidrome/navidrome/log"
 )
 
 // errReadBudget is returned when a single file read would exceed the configured budget.
 // It is what keeps a tag parser (or a buggy caller) from turning "read the header" into
 // a full-file download, which is exactly the 下载器特征 the design doc forbids.
 var errReadBudget = errors.New("cloudsource: read budget exceeded")
+
+// linkRefreshMargin is how long before a signed link's expiry the next read starts
+// re-resolving it. Generous enough to cover one round-trip to the gateway plus the
+// throttling delay between reads.
+const linkRefreshMargin = 2 * time.Minute
 
 // remoteFile is a lazy, seekable reader over a file's direct link (raw_url).
 //
@@ -32,7 +40,12 @@ type remoteFile struct {
 	mu       sync.Mutex
 	pos      int64
 	rawURL   string
-	resolved bool
+	// rawExpires is the expiry of rawURL when the gateway reports one (zero = unknown).
+	// Signed links are short-lived: a handle that stays open longer than the link (the
+	// server-side relay of a multi-hour chapter, for one) must re-resolve mid-read
+	// instead of failing every later window with a stale signature (评审 §4.4).
+	rawExpires time.Time
+	resolved   bool
 
 	head    []byte // covers [0, len(head))
 	tail    []byte // covers [tailOff, tailOff+len(tail))
@@ -246,24 +259,53 @@ func (f *remoteFile) fetchLocked(off, n int64) ([]byte, error) {
 	}
 	data, err := f.ep.fetcher.FetchRange(f.ctx, f.rawURL, off, n)
 	if err != nil {
-		return nil, err
+		// The link may have expired between resolve and use (or mid-handle on long
+		// streams). Re-resolve once and retry before giving up — the same signed URL is
+		// never reused after a failure, so a stale signature cannot wedge the handle.
+		if refreshErr := f.refreshRawURLLocked(); refreshErr != nil {
+			log.Debug(f.ctx, "[cloud][cloudsource] direct link refresh failed", "file", f.name, refreshErr)
+			return nil, err
+		}
+		data, err = f.ep.fetcher.FetchRange(f.ctx, f.rawURL, off, n)
+		if err != nil {
+			return nil, err
+		}
 	}
 	f.fetched += int64(len(data))
 	return data, nil
 }
 
-// ensureRawURLLocked resolves the signed direct link on first use. Links are short-lived
-// (hours at most), so they are never cached across handles: each handle re-resolves.
+// linkExpiringLocked reports whether the current link should be re-resolved before use.
+// With no expiry info from the gateway the link is kept (and refreshed only when a fetch
+// actually fails), so gateways that never report expiry don't pay an extra /api/fs/get
+// per window.
+func (f *remoteFile) linkExpiringLocked() bool {
+	if !f.resolved {
+		return true
+	}
+	if f.rawExpires.IsZero() {
+		return false
+	}
+	return !time.Now().Add(linkRefreshMargin).Before(f.rawExpires)
+}
+
+// ensureRawURLLocked resolves the signed direct link, re-resolving it once it expired
+// (or is about to). Links are short-lived (hours at most) and never cached across handles.
 func (f *remoteFile) ensureRawURLLocked() error {
-	if f.resolved {
+	if !f.linkExpiringLocked() {
 		return nil
 	}
-	raw, _, err := f.ep.directURL(f.ctx, remotePathOf(f.root, f.name))
+	return f.refreshRawURLLocked()
+}
+
+// refreshRawURLLocked resolves a new signed direct link, replacing whatever the handle
+// held before.
+func (f *remoteFile) refreshRawURLLocked() error {
+	raw, expires, err := f.ep.directURL(f.ctx, remotePathOf(f.root, f.name))
 	if err != nil {
 		return err
 	}
-	f.rawURL = raw
-	f.resolved = true
+	f.rawURL, f.rawExpires, f.resolved = raw, expires, true
 	return nil
 }
 

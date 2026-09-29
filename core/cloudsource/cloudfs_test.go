@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -36,6 +37,14 @@ type fakeOpenList struct {
 	dirs   map[string][]openlist.Entry
 
 	rawPath string // CDN path prefix
+
+	// Signed-link simulation: every /api/fs/get issues a new link version (signSeq),
+	// and with enforceSign the CDN only accepts the newest one — mimicking gateways
+	// that invalidate the previously signed URL. expiry, when set, is reported to
+	// callers as expires_at.
+	signSeq     int
+	enforceSign bool
+	expiry      time.Time
 }
 
 func newFakeOpenList(t *testing.T) *fakeOpenList {
@@ -116,6 +125,8 @@ func (f *fakeOpenList) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 	f.mu.Lock()
 	f.gets++
+	f.signSeq++
+	seq := f.signSeq
 	data, ok := f.files[req.Path]
 	f.mu.Unlock()
 	if !ok {
@@ -126,16 +137,30 @@ func (f *fakeOpenList) handleGet(w http.ResponseWriter, r *http.Request) {
 	if i := strings.LastIndex(name, "/"); i >= 0 {
 		name = name[i+1:]
 	}
-	writeEnvelope(w, map[string]any{
+	env := map[string]any{
 		"name":    name,
 		"size":    len(data),
 		"is_dir":  false,
-		"raw_url": f.srv.URL + f.rawPath + req.Path,
-		// No expiry field on purpose: FileInfo must cope with its absence.
-	})
+		"raw_url": f.srv.URL + f.rawPath + req.Path + "?v=" + strconv.Itoa(seq),
+		// No expiry field on purpose by default: FileInfo must cope with its absence.
+	}
+	if !f.expiry.IsZero() {
+		env["expires_at"] = f.expiry.Unix()
+	}
+	writeEnvelope(w, env)
 }
 
 func (f *fakeOpenList) handleCDN(w http.ResponseWriter, r *http.Request) {
+	if f.enforceSign {
+		v, _ := strconv.Atoi(r.URL.Query().Get("v"))
+		f.mu.Lock()
+		current := f.signSeq
+		f.mu.Unlock()
+		if v != current {
+			http.Error(w, "link expired", http.StatusForbidden)
+			return
+		}
+	}
 	name := strings.TrimPrefix(r.URL.Path, f.rawPath)
 	f.mu.Lock()
 	data, ok := f.files[name]
