@@ -11,7 +11,7 @@ import {
   NullableBooleanInput,
   usePermissions,
 } from 'react-admin'
-import { useMediaQuery, Chip } from '@material-ui/core'
+import { useMediaQuery } from '@material-ui/core'
 import FavoriteIcon from '@material-ui/icons/Favorite'
 import {
   DateField,
@@ -26,6 +26,7 @@ import {
   useResourceRefresh,
   ArtistLinkField,
   PathField,
+  SourceTag,
 } from '../common'
 import { useDispatch } from 'react-redux'
 import { makeStyles } from '@material-ui/core/styles'
@@ -35,7 +36,6 @@ import { SongListActions } from './SongListActions'
 import { AlbumLinkField } from './AlbumLinkField'
 import { SongBulkActions, QualityInfo, useSelectedFields } from '../common'
 import config from '../config'
-import { isCloudPath } from '../library/cloudPath'
 import ExpandInfoDialog from '../dialogs/ExpandInfoDialog'
 
 const useStyles = makeStyles({
@@ -132,7 +132,6 @@ const SongFilter = (props) => {
 const SongList = (props) => {
   const classes = useStyles()
   const dispatch = useDispatch()
-  const translate = useTranslate()
   const isXsmall = useMediaQuery((theme) => theme.breakpoints.down('xs'))
   const isDesktop = useMediaQuery((theme) => theme.breakpoints.up('md'))
   useResourceRefresh('song')
@@ -189,22 +188,7 @@ const SongList = (props) => {
           source="libraryPath"
           label="resources.song.fields.source"
           sortBy="libraryPath"
-          render={(r) => (
-            <Chip
-              size="small"
-              variant="outlined"
-              label={
-                isCloudPath(r?.libraryPath)
-                  ? translate('resources.library.cloud.tagCloud')
-                  : translate('resources.library.cloud.tagLocal')
-              }
-              style={
-                isCloudPath(r?.libraryPath)
-                  ? { borderColor: '#1976d2', color: '#1976d2' }
-                  : { borderColor: '#9e9e9e', color: '#616161' }
-              }
-            />
-          )}
+          render={(r) => <SourceTag libraryPath={r?.libraryPath} />}
         />
       ),
       path: <PathField source="path" />,
@@ -212,7 +196,7 @@ const SongList = (props) => {
         <DateField source="createdAt" sortBy="recently_added" showTime />
       ),
     }
-  }, [isDesktop, classes.ratingField, translate])
+  }, [isDesktop, classes.ratingField])
 
   const columns = useSelectedFields({
     resource: 'song',

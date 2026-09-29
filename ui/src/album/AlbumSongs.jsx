@@ -26,6 +26,7 @@ import {
   SongDatagrid,
   SongInfo,
   SongTitleField,
+  SourceTag,
   useResourceRefresh,
   useSelectedFields,
 } from '../common'
@@ -132,6 +133,14 @@ const AlbumSongs = (props) => {
         <FunctionField
           source="mood"
           render={(r) => r.tags?.mood?.[0] ?? ''}
+          sortable={false}
+        />
+      ),
+      source: (
+        <FunctionField
+          source="libraryPath"
+          label="resources.song.fields.source"
+          render={(r) => <SourceTag libraryPath={r?.libraryPath} />}
           sortable={false}
         />
       ),

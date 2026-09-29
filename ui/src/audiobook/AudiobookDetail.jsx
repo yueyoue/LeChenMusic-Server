@@ -17,6 +17,7 @@ import FavoriteIcon from '@material-ui/icons/Favorite'
 import FavoriteBorderIcon from '@material-ui/icons/FavoriteBorder'
 import RefreshIcon from '@material-ui/icons/Refresh'
 import ScrapeDialog from '../scraper/ScrapeDialog'
+import { SourceTag } from '../common'
 import { playTracks, addTracks } from '../actions'
 
 // 模块级纯函数（只读 localStorage），保证引用稳定、不进 useEffect 依赖
@@ -498,6 +499,7 @@ const AudiobookDetail = ({ id, onBack }) => {
               <Typography variant={isDesktop ? 'h5' : 'h6'} className={classes.recordName}>
                 {book.title}
               </Typography>
+              <SourceTag libraryPath={book.libraryPath} style={{ marginTop: 6 }} />
 
               {/* Author */}
               {book.author && (

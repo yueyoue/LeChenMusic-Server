@@ -27,6 +27,7 @@ import {
   DateField,
   ArtistLinkField,
   RatingField,
+  SourceTag,
 } from '../common'
 import { AlbumLinkField } from '../song/AlbumLinkField'
 import { playTracks } from '../actions'
@@ -170,6 +171,14 @@ const PlaylistSongs = ({ playlistId, readOnly, actions, ...props }) => {
       channels: isDesktop && <NumberField source="channels" />,
       bpm: isDesktop && <NumberField source="bpm" />,
       genre: <TextField source="genre" />,
+      source: (
+        <FunctionField
+          source="libraryPath"
+          label="resources.song.fields.source"
+          render={(r) => <SourceTag libraryPath={r?.libraryPath} />}
+          sortable={false}
+        />
+      ),
       rating: config.enableStarRating && (
         <RatingField
           source="rating"

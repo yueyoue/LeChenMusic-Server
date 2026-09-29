@@ -8,6 +8,7 @@ import PlayArrowIcon from '@material-ui/icons/PlayArrow'
 import PersonIcon from '@material-ui/icons/Person'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
 import ArtistAvatarDialog from '../scraper/ArtistAvatarDialog'
+import { SourceTag } from '../common'
 
 const useStyles = makeStyles((theme) => ({
   root: { padding: 16 },
@@ -140,6 +141,7 @@ const NarratorDetail = ({ name, onBack, onPlayBook }) => {
                   {book.author && `${book.author} · `}{book.chapterCount} 章
                 </Typography>
                 {book.genre && <Chip label={book.genre} size="small" style={{ fontSize: 11, marginTop: 4 }} />}
+                <SourceTag libraryPath={book.libraryPath} style={{ marginTop: 4, marginLeft: 4 }} />
               </Box>
             </CardContent>
           </Card>

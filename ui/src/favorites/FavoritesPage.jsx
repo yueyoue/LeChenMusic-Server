@@ -17,6 +17,7 @@ import MenuBookIcon from '@material-ui/icons/MenuBook'
 import QueueMusicIcon from '@material-ui/icons/QueueMusic'
 import RadioIcon from '@material-ui/icons/Radio'
 import { useDataProvider, useNotify } from 'react-admin'
+import { SourceTag } from '../common'
 import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
 import { setTrack } from '../actions'
@@ -387,6 +388,7 @@ const FavoritesPage = () => {
                     <Typography className={classes.songTitle}>{song.title}</Typography>
                     <Typography className={classes.songArtist}>{song.artist}</Typography>
                   </Box>
+                  <SourceTag libraryPath={song.libraryPath} style={{ marginRight: 8 }} />
                   <Typography className={classes.songDuration}>
                     {formatDuration(song.duration)}
                   </Typography>
@@ -480,6 +482,7 @@ const FavoritesPage = () => {
                     <Typography className={classes.audiobookSub}>
                       {book.author} · {book.chapterCount}章
                     </Typography>
+                    <SourceTag libraryPath={book.libraryPath} style={{ marginTop: 4 }} />
                   </CardContent>
                 </Card>
               ))}
