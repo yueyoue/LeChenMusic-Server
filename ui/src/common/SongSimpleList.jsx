@@ -7,7 +7,12 @@ import ListItemSecondaryAction from '@material-ui/core/ListItemSecondaryAction'
 import ListItemText from '@material-ui/core/ListItemText'
 import { makeStyles } from '@material-ui/core/styles'
 import { sanitizeListRestProps } from 'react-admin'
-import { DurationField, SongContextMenu, RatingField } from './index'
+import {
+  DurationField,
+  MissingHint,
+  RatingField,
+  SongContextMenu,
+} from './index'
 import { setTrack } from '../actions'
 import { useDispatch } from 'react-redux'
 import config from '../config'
@@ -71,8 +76,21 @@ export const SongSimpleList = ({
         {ids.map(
           (id) =>
             data[id] && (
-              <span key={id} onClick={() => dispatch(setTrack(data[id]))}>
-                <ListItem className={classes.listItem} button={true}>
+              <MissingHint key={id} record={data[id]}>
+                <span
+                  onClick={() =>
+                    !data[id].missing && dispatch(setTrack(data[id]))
+                  }
+                  style={
+                    data[id].missing
+                      ? { opacity: 0.3, cursor: 'inherit' }
+                      : undefined
+                  }
+                >
+                  <ListItem
+                    className={classes.listItem}
+                    button={!data[id].missing}
+                  >
                   <ListItemText
                     primary={
                       <div className={classes.title}>{data[id].title}</div>
@@ -107,7 +125,8 @@ export const SongSimpleList = ({
                     </ListItemIcon>
                   </ListItemSecondaryAction>
                 </ListItem>
-              </span>
+                </span>
+              </MissingHint>
             ),
         )}
       </List>

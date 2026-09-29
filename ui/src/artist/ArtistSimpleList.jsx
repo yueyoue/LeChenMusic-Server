@@ -8,7 +8,12 @@ import ListItemSecondaryAction from '@material-ui/core/ListItemSecondaryAction'
 import ListItemText from '@material-ui/core/ListItemText'
 import { makeStyles } from '@material-ui/core/styles'
 import { sanitizeListRestProps } from 'react-admin'
-import { ArtistContextMenu, CoverArtAvatar, RatingField } from '../common'
+import {
+  ArtistContextMenu,
+  CoverArtAvatar,
+  MissingHint,
+  RatingField,
+} from '../common'
 import config from '../config'
 
 const useStyles = makeStyles(
@@ -46,8 +51,19 @@ const ArtistSimpleList = ({
         {ids.map(
           (id) =>
             data[id] && (
-              <span key={id} onClick={() => linkType(id)}>
-                <ListItem className={classes.listItem} button={true}>
+              <MissingHint key={id} record={data[id]}>
+                <span
+                  onClick={() => !data[id].missing && linkType(id)}
+                  style={
+                    data[id].missing
+                      ? { opacity: 0.3, cursor: 'inherit' }
+                      : undefined
+                  }
+                >
+                  <ListItem
+                    className={classes.listItem}
+                    button={!data[id].missing}
+                  >
                   <ListItemAvatar>
                     <CoverArtAvatar record={data[id]} />
                   </ListItemAvatar>
@@ -73,7 +89,8 @@ const ArtistSimpleList = ({
                     </ListItemIcon>
                   </ListItemSecondaryAction>
                 </ListItem>
-              </span>
+                </span>
+              </MissingHint>
             ),
         )}
       </List>

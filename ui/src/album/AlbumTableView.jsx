@@ -16,6 +16,7 @@ import {
   ArtistLinkField,
   CoverArtAvatar,
   DurationField,
+  MissingHint,
   RangeField,
   SimpleList,
   AlbumContextMenu,
@@ -74,7 +75,9 @@ const AlbumDatagridRow = (props) => {
     record.missing && classes.missingRow,
   )
   return (
-    <DatagridRow ref={dragAlbumRef} {...props} className={computedClasses} />
+    <MissingHint record={record}>
+      <DatagridRow ref={dragAlbumRef} {...props} className={computedClasses} />
+    </MissingHint>
   )
 }
 

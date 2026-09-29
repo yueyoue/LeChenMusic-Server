@@ -24,6 +24,7 @@ import {
   ArtistContextMenu,
   CoverArtAvatar,
   List,
+  MissingHint,
   useGetHandleArtistClick,
   RatingField,
   useSelectedFields,
@@ -115,7 +116,9 @@ const ArtistDatagridRow = (props) => {
     record?.missing && classes.missingRow,
   )
   return (
-    <DatagridRow ref={dragArtistRef} {...props} className={computedClasses} />
+    <MissingHint record={record}>
+      <DatagridRow ref={dragArtistRef} {...props} className={computedClasses} />
+    </MissingHint>
   )
 }
 

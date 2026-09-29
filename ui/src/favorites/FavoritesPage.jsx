@@ -17,7 +17,7 @@ import MenuBookIcon from '@material-ui/icons/MenuBook'
 import QueueMusicIcon from '@material-ui/icons/QueueMusic'
 import RadioIcon from '@material-ui/icons/Radio'
 import { useDataProvider, useNotify } from 'react-admin'
-import { SourceTag } from '../common'
+import { MissingHint, SourceTag } from '../common'
 import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
 import { setTrack } from '../actions'
@@ -58,6 +58,13 @@ const useStyles = makeStyles((theme) => ({
     transition: 'background 0.15s',
     '&:hover': {
       backgroundColor: theme.palette.action.hover,
+    },
+  },
+  missingSongRow: {
+    opacity: 0.3,
+    cursor: 'inherit',
+    '&:hover': {
+      backgroundColor: 'transparent',
     },
   },
   songInfo: {
@@ -362,10 +369,14 @@ const FavoritesPage = () => {
           ) : (
             <Box className={classes.songList}>
               {starredSongs.map((song, idx) => (
+                <MissingHint key={song.id} record={song}>
                 <Box
-                  key={song.id}
-                  className={classes.songRow}
-                  onClick={() => { dispatch(setTrack(song)) }}
+                  className={`${classes.songRow}${
+                    song.missing ? ` ${classes.missingSongRow}` : ''
+                  }`}
+                  onClick={() => {
+                    if (!song.missing) dispatch(setTrack(song))
+                  }}
                 >
                   <Typography style={{ width: 32, textAlign: 'center', fontSize: 13, color: 'text.secondary' }}>
                     {idx + 1}
@@ -393,6 +404,7 @@ const FavoritesPage = () => {
                     {formatDuration(song.duration)}
                   </Typography>
                 </Box>
+                </MissingHint>
               ))}
             </Box>
           )}

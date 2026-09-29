@@ -613,6 +613,7 @@
     "remove_missing_content": "Are you sure you want to remove the selected missing files from the database? This will remove permanently any references to them, including their play counts and ratings.",
     "remove_all_missing_title": "Remove all missing files",
     "remove_all_missing_content": "Are you sure you want to remove all missing files from the database? This will permanently remove any references to them, including their play counts and ratings.",
+    "missingFileHint": "File missing: the file could not be found on disk. This entry is grayed out and cannot be played until the file is back.",
     "notifications_blocked": "You have blocked Notifications for this site in your browser's settings",
     "notifications_not_available": "This browser does not support desktop notifications or you are not accessing Navidrome over https",
     "lastfmLinkSuccess": "Last.fm successfully linked and scrobbling enabled",

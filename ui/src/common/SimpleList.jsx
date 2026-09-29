@@ -10,6 +10,7 @@ import ListItemText from '@material-ui/core/ListItemText'
 import { makeStyles } from '@material-ui/core/styles'
 import { Link } from 'react-router-dom'
 import { linkToRecord, sanitizeListRestProps } from 'react-admin'
+import { MissingHint } from './MissingHint'
 
 const useStyles = makeStyles(
   {
@@ -79,7 +80,15 @@ export const SimpleList = ({
             key={id}
             record={data[id]}
           >
-            <ListItem button={!!linkType}>
+            <MissingHint record={data[id]}>
+              <ListItem
+                button={!!linkType}
+                style={
+                  data[id]?.missing
+                    ? { opacity: 0.3, cursor: 'inherit' }
+                    : undefined
+                }
+              >
               {leftIcon && (
                 <ListItemIcon>{leftIcon(data[id], id)}</ListItemIcon>
               )}
@@ -110,6 +119,7 @@ export const SimpleList = ({
                 </ListItemSecondaryAction>
               )}
             </ListItem>
+            </MissingHint>
           </LinkOrNot>
         ))}
       </List>

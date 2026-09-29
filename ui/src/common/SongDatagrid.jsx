@@ -27,7 +27,7 @@ import Lightbox from 'react-image-lightbox'
 import 'react-image-lightbox/style.css'
 import { playTracks } from '../actions'
 import subsonic from '../subsonic'
-import { AlbumContextMenu } from '../common'
+import { AlbumContextMenu, MissingHint } from '../common'
 import { DraggableTypes } from '../consts'
 import { formatFullDate } from '../utils'
 
@@ -242,15 +242,17 @@ export const SongDatagridRow = ({
           colSpan={childCount + (rest.expand ? 1 : 0)}
         />
       )}
-      <PureDatagridRow
-        ref={dragSongRef}
-        record={record}
-        {...rest}
-        rowClick={rowClick}
-        className={computedClasses}
-      >
-        {fields}
-      </PureDatagridRow>
+      <MissingHint record={record}>
+        <PureDatagridRow
+          ref={dragSongRef}
+          record={record}
+          {...rest}
+          rowClick={rowClick}
+          className={computedClasses}
+        >
+          {fields}
+        </PureDatagridRow>
+      </MissingHint>
     </>
   )
 }

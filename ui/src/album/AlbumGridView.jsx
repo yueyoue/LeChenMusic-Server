@@ -15,6 +15,7 @@ import { useDrag } from 'react-dnd'
 import subsonic from '../subsonic'
 import {
   AlbumContextMenu,
+  MissingHint,
   PlayButton,
   ArtistLinkField,
   OverflowTooltip,
@@ -167,6 +168,7 @@ const AlbumGridTile = ({ showArtist, record, basePath, ...props }) => {
     record.missing && classes.missingAlbum,
   )
   return (
+    <MissingHint record={record} placement="bottom">
     <div className={computedClasses}>
       <Link
         className={classes.link}
@@ -208,6 +210,7 @@ const AlbumGridTile = ({ showArtist, record, basePath, ...props }) => {
         <AlbumDatesField record={record} className={classes.albumSubtitle} />
       )}
     </div>
+    </MissingHint>
   )
 }
 
