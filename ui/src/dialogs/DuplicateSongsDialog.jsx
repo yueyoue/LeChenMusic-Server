@@ -10,10 +10,12 @@ import FolderOpenIcon from '@material-ui/icons/FolderOpen'
 import FileCopyIcon from '@material-ui/icons/FileCopy'
 import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
+import { SourceTag } from '../common/SourceTag'
 
 const DuplicateSongsDialog = ({ open, onClose }) => {
   const [loading, setLoading] = useState(false)
   const [duplicates, setDuplicates] = useState(null)
+  const [crossGroups, setCrossGroups] = useState(null)
   const [error, setError] = useState(null)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [deleting, setDeleting] = useState(false)
@@ -22,6 +24,7 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
     setLoading(true)
     setError(null)
     setDuplicates(null)
+    setCrossGroups(null)
     try {
       const res = await httpClient(`${REST_URL}/song/duplicates`)
       setDuplicates(res.json?.data || [])
@@ -30,6 +33,13 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
       setError(e.message || '扫描失败')
     } finally {
       setLoading(false)
+    }
+    // 跨源重复提示（P2-8）：失败不影响主扫描结果
+    try {
+      const res = await httpClient(`${REST_URL}/song/cross-source-duplicates`)
+      setCrossGroups(res.json?.data || [])
+    } catch (e) {
+      console.error('Failed to find cross-source duplicates:', e)
     }
   }, [])
 
@@ -338,6 +348,86 @@ const DuplicateSongsDialog = ({ open, onClose }) => {
                 ))}
               </Box>
             )}
+          </Box>
+        )}
+        {/* 跨源重复提示（P2-8）：只提示、不自动删除（红线：不哈希、不下载） */}
+        {crossGroups && crossGroups.length > 0 && (
+          <Box mt={3}>
+            <Box p={1.5} style={{ backgroundColor: '#e8f5e9', borderRadius: 6, border: '1px solid #a5d6a7' }}>
+              <Typography style={{ fontSize: 12, color: '#1b5e20' }}>
+                ℹ️ <strong>跨源重复提示：</strong>以下音频在多个媒体源中重复入库（例如本地 + 网盘各一份）。
+                这里<strong>只提示、不自动删除</strong>；建议保留本地的一份，确认后再自行处理多余的副本。
+              </Typography>
+            </Box>
+            <Box style={{ maxHeight: 400, overflow: 'auto' }} mt={1}>
+              {crossGroups.map((group, idx) => (
+                <Accordion key={`x-${idx}`}>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Box display="flex" alignItems="center" gap={1} flex={1}>
+                      <Typography style={{ fontWeight: 600, flex: 1 }}>
+                        {group.songs[0]?.title}
+                      </Typography>
+                      {group.songs[0]?.artist && (
+                        <Typography style={{ color: '#666', fontSize: 13 }}>
+                          {group.songs[0].artist}
+                        </Typography>
+                      )}
+                      <Chip label={`${group.count} 个来源`} size="small" />
+                    </Box>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Box width="100%">
+                      {group.songs.map((song) => (
+                        <Box
+                          key={song.id}
+                          p={1}
+                          mb={0.5}
+                          style={{ backgroundColor: '#f1f8e9', borderRadius: 6, border: '1px solid #c5e1a5' }}
+                        >
+                          <Box display="flex" alignItems="center" gap={1}>
+                            <SourceTag libraryPath={song.libraryPath} />
+                            <Box flex={1}>
+                              <Typography style={{ fontSize: 12, color: '#666' }}>
+                                {song.album && `专辑: ${song.album}`}
+                                {song.duration > 0 && ` · ${formatDuration(song.duration)}`}
+                                {` · ${formatSize(song.size)}`}
+                              </Typography>
+                              <Box
+                                display="flex"
+                                alignItems="center"
+                                gap={0.5}
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontSize: 12,
+                                  color: '#333',
+                                  backgroundColor: 'rgba(0,0,0,0.04)',
+                                  padding: '4px 8px',
+                                  borderRadius: 4,
+                                  wordBreak: 'break-all',
+                                  marginTop: 4,
+                                }}
+                              >
+                                <FolderOpenIcon style={{ fontSize: 14, color: '#666', flexShrink: 0 }} />
+                                <span>{song.path || '路径未知'}</span>
+                                <Tooltip title="复制路径">
+                                  <IconButton
+                                    size="small"
+                                    onClick={(e) => { e.stopPropagation(); handleCopyPath(song.path) }}
+                                    style={{ padding: 2 }}
+                                  >
+                                    <FileCopyIcon style={{ fontSize: 14 }} />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
+                            </Box>
+                          </Box>
+                        </Box>
+                      ))}
+                    </Box>
+                  </AccordionDetails>
+                </Accordion>
+              ))}
+            </Box>
           </Box>
         )}
       </DialogContent>
