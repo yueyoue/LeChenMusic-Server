@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -22,6 +23,7 @@ type Metrics interface {
 	WriteAfterScanMetrics(ctx context.Context, success bool)
 	RecordRequest(ctx context.Context, endpoint, method, client string, status int32, elapsed int64)
 	RecordPluginRequest(ctx context.Context, plugin, method string, ok bool, elapsed int64)
+	RecordScanDuration(ctx context.Context, elapsed time.Duration, success bool)
 	GetHandler() http.Handler
 }
 
@@ -88,6 +90,41 @@ func (m *metrics) RecordPluginRequest(_ context.Context, plugin, method string, 
 	getPrometheusMetrics().pluginRequestDuration.With(pluginLatencyLabel).Observe(float64(elapsed))
 }
 
+// RecordScanDuration observes the wall-clock duration of a media scan
+// (评审 P2-10: 扫描时长).
+func (m *metrics) RecordScanDuration(_ context.Context, elapsed time.Duration, success bool) {
+	scanDurationLabel := prometheus.Labels{"success": strconv.FormatBool(success)}
+	getPrometheusMetrics().mediaScanDuration.With(scanDurationLabel).Observe(float64(elapsed.Milliseconds()))
+}
+
+// RecordCloudRequest observes one OpenList gateway round trip (评审 P2-10:
+// 请求成功率/耗时). status is the HTTP status; 0 means a transport error.
+// ok reflects the final logical outcome (e.g. a 200 with an API error code is
+// counted as ok=false).
+//
+// This is a package-level function (not a Metrics method) because cloud
+// gateways are built from config outside the DI graph (core/cloudsource); it is
+// a no-op while Prometheus is disabled.
+func RecordCloudRequest(gateway, op string, status int, ok bool, elapsed time.Duration) {
+	if !conf.Server.Prometheus.Enabled {
+		return
+	}
+	statusLabel := strconv.Itoa(status)
+	if status == 0 {
+		statusLabel = "transport_error"
+	}
+	getPrometheusMetrics().cloudRequestCounter.With(prometheus.Labels{
+		"gateway": gateway,
+		"op":      op,
+		"status":  statusLabel,
+		"ok":      strconv.FormatBool(ok),
+	}).Inc()
+	getPrometheusMetrics().cloudRequestDuration.With(prometheus.Labels{
+		"gateway": gateway,
+		"op":      op,
+	}).Observe(float64(elapsed.Milliseconds()))
+}
+
 func (m *metrics) GetHandler() http.Handler {
 	r := chi.NewRouter()
 
@@ -111,10 +148,13 @@ type prometheusMetrics struct {
 	versionInfo           *prometheus.GaugeVec
 	lastMediaScan         *prometheus.GaugeVec
 	mediaScansCounter     *prometheus.CounterVec
+	mediaScanDuration     *prometheus.SummaryVec
 	httpRequestCounter    *prometheus.CounterVec
 	httpRequestDuration   *prometheus.SummaryVec
 	pluginRequestCounter  *prometheus.CounterVec
 	pluginRequestDuration *prometheus.SummaryVec
+	cloudRequestCounter   *prometheus.CounterVec
+	cloudRequestDuration  *prometheus.SummaryVec
 }
 
 // Prometheus' metrics requires initialization. But not more than once
@@ -150,6 +190,14 @@ var getPrometheusMetrics = sync.OnceValue(func() *prometheusMetrics {
 			},
 			[]string{"success"},
 		),
+		mediaScanDuration: prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Name:       "media_scan_duration",
+				Help:       "Duration (in ms) of media scans by success",
+				Objectives: quartilesToEstimate,
+			},
+			[]string{"success"},
+		),
 		httpRequestCounter: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "http_request_count",
@@ -180,6 +228,21 @@ var getPrometheusMetrics = sync.OnceValue(func() *prometheusMetrics {
 			},
 			[]string{"plugin", "method"},
 		),
+		cloudRequestCounter: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "cloud_request_count",
+				Help: "Cloud gateway (OpenList) requests by gateway/op/status/ok",
+			},
+			[]string{"gateway", "op", "status", "ok"},
+		),
+		cloudRequestDuration: prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Name:       "cloud_request_latency",
+				Help:       "Latency (in ms) of cloud gateway (OpenList) requests",
+				Objectives: quartilesToEstimate,
+			},
+			[]string{"gateway", "op"},
+		),
 	}
 
 	prometheus.DefaultRegisterer.MustRegister(
@@ -187,10 +250,13 @@ var getPrometheusMetrics = sync.OnceValue(func() *prometheusMetrics {
 		instance.versionInfo,
 		instance.lastMediaScan,
 		instance.mediaScansCounter,
+		instance.mediaScanDuration,
 		instance.httpRequestCounter,
 		instance.httpRequestDuration,
 		instance.pluginRequestCounter,
 		instance.pluginRequestDuration,
+		instance.cloudRequestCounter,
+		instance.cloudRequestDuration,
 	)
 
 	return instance
@@ -236,5 +302,7 @@ func (n noopMetrics) WriteAfterScanMetrics(context.Context, bool) {}
 func (n noopMetrics) RecordRequest(context.Context, string, string, string, int32, int64) {}
 
 func (n noopMetrics) RecordPluginRequest(context.Context, string, string, bool, int64) {}
+
+func (n noopMetrics) RecordScanDuration(context.Context, time.Duration, bool) {}
 
 func (n noopMetrics) GetHandler() http.Handler { return nil }

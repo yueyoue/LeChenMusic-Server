@@ -48,6 +48,12 @@ type Config struct {
 	CircuitOpenFor   time.Duration // circuit open (fast-fail) duration
 
 	HTTPClient *http.Client // optional, defaults to http.DefaultClient
+
+	// OnResult, when set, is called after every HTTP round trip (one call per
+	// attempt, including retries) with the API path, HTTP status (0 on transport
+	// error), the final error and the elapsed time. Used by the metrics layer
+	// (评审 P2-10: 请求成功率/耗时); must be nil-safe and fast.
+	OnResult func(op string, status int, err error, elapsed time.Duration)
 }
 
 // Client is a throttled, retrying, circuit-broken OpenList API client.
@@ -76,6 +82,8 @@ type Client struct {
 	token   string
 
 	loginMu sync.Mutex // serializes logins to avoid a token stampede
+
+	onResult func(op string, status int, err error, elapsed time.Duration) // nil-safe, see Config.OnResult
 }
 
 // NewClient builds a Client from cfg. It does not perform any network I/O; the
@@ -118,6 +126,7 @@ func NewClient(cfg Config) *Client {
 		retryBaseDelay: cfg.RetryBaseDelay,
 		jitterFrac:     cfg.JitterFraction,
 		token:          cfg.Token,
+		onResult:       cfg.OnResult,
 		now:            time.Now,
 		sleep:          defaultSleep,
 		randFloat:      defaultRandFloat,
@@ -220,6 +229,16 @@ func (c *Client) do(ctx context.Context, endpoint string, reqBody, out any, lim 
 	}
 }
 
+// noteResult reports one finished round trip to the optional OnResult hook
+// (评审 P2-10). Never panics the request path: the hook is expected to be fast
+// and nil-safe, and a misbehaving hook must not break playback.
+func (c *Client) noteResult(op string, status int, err error, elapsed time.Duration) {
+	if c.onResult == nil {
+		return
+	}
+	c.onResult(op, status, err, elapsed)
+}
+
 // noteFailure records a failure on the breaker and logs the transition into the open
 // state exactly once (per transition). Fast-failed requests while it is open are logged
 // at Debug in do() — a Warn per request would flood the log during an outage.
@@ -234,7 +253,12 @@ func (c *Client) noteFailure(ctx context.Context, endpoint string) {
 // execute performs a single HTTP round trip (no retries). It returns
 // retryable=true for transient failures (transport errors, 429, 5xx).
 // ErrUnauthorized is returned bare so do() can decide whether to re-login.
+//
+// Each round trip is reported to cfg.OnResult exactly once (评审 P2-10).
 func (c *Client) execute(ctx context.Context, endpoint string, reqBody, out any, auth bool) (retryable bool, err error) {
+	start := time.Now()
+	status := 0
+	defer func() { c.noteResult(endpoint, status, err, time.Since(start)) }()
 	var buf bytes.Buffer
 	if reqBody != nil {
 		if err := json.NewEncoder(&buf).Encode(reqBody); err != nil {
@@ -251,13 +275,13 @@ func (c *Client) execute(ctx context.Context, endpoint string, reqBody, out any,
 		req.Header.Set("Authorization", c.getToken())
 	}
 
-	start := time.Now()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		log.Debug(ctx, "[cloud][openlist] request", "endpoint", endpoint, "durationMs", time.Since(start).Milliseconds(), "err", err)
 		return true, fmt.Errorf("openlist: %s request failed: %w", endpoint, err)
 	}
 	defer resp.Body.Close()
+	status = resp.StatusCode
 
 	// One structured line per round trip (path, status, duration) — the minimum needed
 	// to tell a gateway problem from a server-logic problem (评审 §4.14 P2-7).

@@ -37,9 +37,9 @@ type remoteFile struct {
 	info   *cloudInfo
 	budget int64 // max bytes this handle may fetch; 0 = unlimited (streaming)
 
-	mu       sync.Mutex
-	pos      int64
-	rawURL   string
+	mu     sync.Mutex
+	pos    int64
+	rawURL string
 	// rawExpires is the expiry of rawURL when the gateway reports one (zero = unknown).
 	// Signed links are short-lived: a handle that stays open longer than the link (the
 	// server-side relay of a multi-hour chapter, for one) must re-resolve mid-read

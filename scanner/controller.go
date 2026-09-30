@@ -229,6 +229,9 @@ func (s *controller) ScanFolders(requestCtx context.Context, fullScan bool, targ
 	if scanError != nil {
 		_ = s.ds.Property(ctx).Put(consts.LastScanErrorKey, scanError.Error())
 	}
+	// 评审 P2-10: observe scan duration for both outcomes.
+	_, scanElapsed, _ := s.getScanInfo(ctx)
+	s.metrics.RecordScanDuration(ctx, scanElapsed, scanError == nil)
 	// If changes were detected, send a refresh event to all clients
 	if s.changesDetected {
 		log.Debug(ctx, "Library changes imported. Sending refresh event")

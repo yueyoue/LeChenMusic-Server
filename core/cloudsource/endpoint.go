@@ -33,6 +33,7 @@ import (
 
 	"github.com/navidrome/navidrome/adapters/openlist"
 	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/core/metrics"
 	"github.com/navidrome/navidrome/log"
 )
 
@@ -196,6 +197,11 @@ func buildEndpoint(hostport, key string) (*Endpoint, error) {
 		RetryBaseDelay:   orDefaultDuration(match.RetryBaseDelay, defaultRetryBaseDelay),
 		FailureThreshold: int(orDefault(int64(match.FailureThreshold), defaultFailureThreshold)),
 		CircuitOpenFor:   orDefaultDuration(match.CircuitOpenFor, defaultCircuitOpenFor),
+		// 评审 P2-10: expose per-gateway request success rate + latency as Prometheus
+		// metrics (no-op unless Prometheus is enabled).
+		OnResult: func(op string, status int, err error, elapsed time.Duration) {
+			metrics.RecordCloudRequest(matchName, op, status, err == nil, elapsed)
+		},
 	})
 	ep.fetcher = openlist.NewRangeFetcher(openlist.RangeFetcherOptions{
 		MinInterval:    orDefaultDuration(match.ReadInterval, defaultReadInterval),
