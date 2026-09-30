@@ -12,6 +12,7 @@ import (
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/consts"
 	"github.com/navidrome/navidrome/core/artwork"
+	"github.com/navidrome/navidrome/core/cloudsource"
 	"github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/db"
 	"github.com/navidrome/navidrome/log"
@@ -121,6 +122,12 @@ func (s *scannerImpl) scanFolders(ctx context.Context, fullScan bool, targets []
 		state.libraries = allLibs
 		log.Info(ctx, "Scanner: Starting scan", "fullScan", state.fullScan, "numLibraries", len(state.libraries))
 	}
+
+	// 评审 P2-4 (云源管理面板 启停): libraries on a gateway disabled by the admin panel are
+	// skipped entirely — no listing, no tag reads, and no missing/purge processing for them
+	// (every phase iterates state.libraries), so their existing rows are never touched.
+	// Local libraries are always kept (红线: 本地库行为零变化).
+	state.libraries = cloudsource.SkipDisabledGateways(ctx, s.ds, state.libraries)
 
 	// Store scan type and start time
 	scanType := "quick"

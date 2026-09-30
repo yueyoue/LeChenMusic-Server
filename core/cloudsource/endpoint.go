@@ -114,7 +114,7 @@ func EndpointFor(hostport string) (*Endpoint, error) {
 		return ep, nil
 	}
 
-	ep, err := buildEndpoint(hostport, key)
+	ep, err := buildEndpoint(hostport)
 	if err != nil {
 		return nil, err
 	}
@@ -128,41 +128,49 @@ func EndpointFor(hostport string) (*Endpoint, error) {
 	return ep, nil
 }
 
-func buildEndpoint(hostport, key string) (*Endpoint, error) {
+// matchGateway resolves the conf.Server.OpenList entry that a `openlist://<hostport>/...`
+// URI refers to. Matching rules (in order):
+//  1. the map key in conf.Server.OpenList equals the URI host (or its host:port);
+//  2. the configured URL's host:port equals the URI host;
+//  3. exactly one gateway is configured -> use it (with a warning).
+//
+// Shared by EndpointFor (runtime access) and the 云源管理面板 (P2-4) so both resolve
+// libraries to gateways with exactly the same rules.
+func matchGateway(hostport string) (match *conf.OpenListOptions, matchName string, err error) {
 	cfg := conf.Server.OpenList
 	if len(cfg) == 0 {
-		return nil, fmt.Errorf("cloudsource: no OpenList gateway configured. Fix: add [OpenList.<name>] with URL/Username/Password to %s (then restart), or set ND_OPENLIST_<NAME>_URL / ND_OPENLIST_<NAME>_USERNAME / ND_OPENLIST_<NAME>_PASSWORD environment variables", configHint())
+		return nil, "", fmt.Errorf("cloudsource: no OpenList gateway configured. Fix: add [OpenList.<name>] with URL/Username/Password to %s (then restart), or set ND_OPENLIST_<NAME>_URL / ND_OPENLIST_<NAME>_USERNAME / ND_OPENLIST_<NAME>_PASSWORD environment variables", configHint())
 	}
 
-	var match *conf.OpenListOptions
-	matchName := ""
+	key := canonicalHost(hostport)
 	for name, opts := range cfg {
 		o := opts
 		switch {
 		case canonicalHost(name) == key:
-			match, matchName = &o, name
+			return &o, name, nil
 		case canonicalHost(urlHost(o.URL)) == key:
-			match, matchName = &o, name
-		}
-		if match != nil {
-			break
+			return &o, name, nil
 		}
 	}
-	if match == nil {
-		if len(cfg) == 1 {
-			for name, opts := range cfg {
-				o := opts
-				match, matchName = &o, name
-			}
+	if len(cfg) == 1 {
+		for name, opts := range cfg {
+			o := opts
 			log.Warn("[cloud][cloudsource] library points to an unknown OpenList endpoint, falling back to the only configured one",
-				"requested", hostport, "using", matchName)
-		} else {
-			names := make([]string, 0, len(cfg))
-			for name := range cfg {
-				names = append(names, name)
-			}
-			return nil, fmt.Errorf("cloudsource: no credentials configured for OpenList endpoint %q (configured: %s)", hostport, strings.Join(names, ", "))
+				"requested", hostport, "using", name)
+			return &o, name, nil
 		}
+	}
+	names := make([]string, 0, len(cfg))
+	for name := range cfg {
+		names = append(names, name)
+	}
+	return nil, "", fmt.Errorf("cloudsource: no credentials configured for OpenList endpoint %q (configured: %s)", hostport, strings.Join(names, ", "))
+}
+
+func buildEndpoint(hostport string) (*Endpoint, error) {
+	match, matchName, err := matchGateway(hostport)
+	if err != nil {
+		return nil, err
 	}
 
 	if match.URL == "" {

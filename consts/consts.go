@@ -20,6 +20,9 @@ const (
 	LastScanErrorKey              = "LastScanError"
 	LastScanTypeKey               = "LastScanType"
 	LastScanStartTimeKey          = "LastScanStartTime"
+	// CloudSourceGatewayStatesKey stores per-gateway enable/disable flags for the
+	// 云源管理面板 (评审 P2-4), as a JSON map: {"<gateway name>": false}.
+	CloudSourceGatewayStatesKey = "CloudSourceGatewayStates"
 
 	UIAuthorizationHeader  = "X-ND-Authorization"
 	UIClientUniqueIDHeader = "X-ND-Client-Unique-Id"

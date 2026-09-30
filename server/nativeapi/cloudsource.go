@@ -13,6 +13,7 @@ import (
 	"github.com/navidrome/navidrome/core/cloudsource"
 	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
+	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 )
 
@@ -23,7 +24,9 @@ import (
 //
 // It only ever lists a directory (one cheap JSON call) — it deliberately never reads any
 // file content, in line with the 风控 rules of docs/网盘媒体源方案设计.md §4.
-type cloudSourceHandler struct{}
+type cloudSourceHandler struct {
+	ds model.DataStore
+}
 
 // cloudSourceTestRequest is what the wizard sends: a raw OpenList address and a remote
 // folder path, exactly as typed by the user. The handler composes the storage URI with
@@ -176,6 +179,10 @@ func writeCloudSourceTest(w http.ResponseWriter, resp cloudSourceTestResponse) {
 }
 
 func (api *Router) addCloudSourceRoute(r chi.Router) {
-	h := &cloudSourceHandler{}
+	h := &cloudSourceHandler{ds: api.ds}
 	r.Post("/cloudsource/test", h.test)
+	// 评审 P2-4: 云源管理面板 (status / file counts / last scan / probe / enable-disable)
+	r.Get("/cloudsource/gateways", h.gateways)
+	r.Post("/cloudsource/gateways/{name}/check", h.checkGateway)
+	r.Put("/cloudsource/gateways/{name}/enabled", h.setGatewayEnabled)
 }
