@@ -26,7 +26,7 @@ import RefreshIcon from '@material-ui/icons/Refresh'
 import CheckCircleIcon from '@material-ui/icons/CheckCircle'
 import ErrorIcon from '@material-ui/icons/Error'
 import HelpIcon from '@material-ui/icons/Help'
-import PauseCircleIcon from '@material-ui/icons/PauseCircle'
+import PauseCircleOutlineIcon from '@material-ui/icons/PauseCircleOutline'
 import SyncIcon from '@material-ui/icons/Sync'
 import { useSelector } from 'react-redux'
 import httpClient from '../dataProvider/httpClient'
@@ -75,7 +75,7 @@ const statusChip = (gw, classes) => {
     return (
       <Chip
         size="small"
-        icon={<PauseCircleIcon />}
+        icon={<PauseCircleOutlineIcon />}
         label="已停用"
         style={{ background: '#dfe4ea', color: '#2f3542' }}
       />
