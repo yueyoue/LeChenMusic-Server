@@ -202,6 +202,12 @@ func (f *remoteFile) loadWindowLocked(off, n int64) ([]byte, int64, error) {
 		tail = size
 	}
 
+	// Tail window base: [tailBase, size).
+	tailBase := size - tail
+	if tailBase < 0 {
+		tailBase = 0
+	}
+
 	switch {
 	case off < head:
 		data, err := f.fetchLocked(0, head)
@@ -211,17 +217,18 @@ func (f *remoteFile) loadWindowLocked(off, n int64) ([]byte, int64, error) {
 		f.head = data
 		return data, 0, nil
 
-	case off+n > size-tail:
-		base := size - tail
-		if base < 0 {
-			base = 0
-		}
-		data, err := f.fetchLocked(base, size-base)
+	case off >= tailBase:
+		// Inside the tail window. Note the condition must anchor on `off` alone:
+		// a request spanning the middle/tail boundary (off < tailBase < off+n)
+		// must NOT return the tail window — its base would exceed off and the
+		// caller's src[off-base:] would panic (found by the P2-6 conformance
+		// suite streaming a whole file through tiny windows).
+		data, err := f.fetchLocked(tailBase, size-tailBase)
 		if err != nil {
 			return nil, 0, err
 		}
-		f.tail, f.tailOff = data, base
-		return data, base, nil
+		f.tail, f.tailOff = data, tailBase
+		return data, tailBase, nil
 
 	default:
 		width := n
