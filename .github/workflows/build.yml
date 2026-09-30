@@ -87,7 +87,7 @@ jobs:
       - name: Docker meta
         if: steps.changes.outputs.build == 'true'
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ env.REPO_LOWER }}
           tags: |
