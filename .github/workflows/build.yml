@@ -47,13 +47,37 @@ jobs:
             -ldflags="-w -s -X github.com/navidrome/navidrome/consts.GitSHA=${GIT_SHA} -X github.com/navidrome/navidrome/consts.GitTag=${GIT_TAG}" \
             -o navidrome .
 
+      - name: Detect image-relevant changes
+        id: changes
+        # Docs-only commits must not rebuild/push multi-arch images: every push burns
+        # registry data quota (buildx "toomanyrequests: Data limit exceeded").
+        run: |
+          if [ "${{ github.event_name }}" != "push" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          BEFORE="${{ github.event.before }}"
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --name-only "$BEFORE" "${{ github.sha }}" | grep -qvE '^(docs/|[^/]+\.md$)'; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "Docs-only change: skipping image build/push to save registry quota"
+          fi
+
       - name: Set up QEMU
+        if: steps.changes.outputs.build == 'true'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
+        if: steps.changes.outputs.build == 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GHCR
+        if: steps.changes.outputs.build == 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -61,6 +85,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Docker meta
+        if: steps.changes.outputs.build == 'true'
         id: meta
         uses: docker/metadata-action@v5
         with:
@@ -71,6 +96,7 @@ jobs:
 
       - name: Build and push Docker image
         id: docker-push
+        if: steps.changes.outputs.build == 'true'
         uses: docker/build-push-action@v6
         continue-on-error: true
         with:
@@ -84,20 +110,22 @@ jobs:
             GIT_TAG=${{ github.ref_name }}
 
       - name: Debug push failure
-        if: steps.docker-push.outcome == 'failure'
+        if: steps.changes.outputs.build == 'true' && steps.docker-push.outcome == 'failure'
         run: |
           echo "❌ Docker push failed!"
           echo "Outcome: ${{ steps.docker-push.outcome }}"
           echo "Tags: ${{ steps.meta.outputs.tags }}"
-          echo "Trying single-platform push as fallback..."
+          echo "Waiting 90s for registry rate/data window, then retrying single-platform push..."
+          sleep 90
           docker build -t ghcr.io/${{ env.REPO_LOWER }}:latest .
           docker push ghcr.io/${{ env.REPO_LOWER }}:latest 2>&1 || echo "Single push also failed"
 
       - name: Fail if push failed
-        if: steps.docker-push.outcome == 'failure'
+        if: steps.changes.outputs.build == 'true' && steps.docker-push.outcome == 'failure'
         run: exit 1
 
       - name: Verify GHCR push
+        if: steps.changes.outputs.build == 'true'
         run: |
           echo "=== Docker Push Result ==="
           echo "Outcome: ${{ steps.docker-push.outcome }}"
