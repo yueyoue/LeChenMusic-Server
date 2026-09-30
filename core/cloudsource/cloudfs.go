@@ -390,9 +390,49 @@ func (e *Endpoint) listDir(ctx context.Context, remote string) ([]openlist.Entry
 	return all, nil
 }
 
-// directURL resolves a fresh, signed download link for a remote file. Links expire in
-// hours at most, so one is resolved per playback and never persisted (design doc §2.2).
+// directURL resolves a signed download link for a remote file. Links the gateway gives
+// an expiry for are memoised in memory until linkRefreshMargin before that expiry, so a
+// seek burst pays one /api/fs/get instead of one per Range request (each resolution goes
+// through the gateway request throttle, ≥2s/get — the main scrub-lag source). Concurrent
+// resolutions of the same file are coalesced into one gateway round trip. The link is
+// never persisted or logged (design doc §2.2 / §15.1).
 func (e *Endpoint) directURL(ctx context.Context, remote string) (string, time.Time, error) {
+	if url, expires, ok := e.links.get(remote); ok {
+		return url, expires, nil
+	}
+	type resolved struct {
+		url     string
+		expires time.Time
+	}
+	v, err, _ := e.links.group.Do(remote, func() (any, error) {
+		// A coalesced caller may have filled the cache while we waited our turn.
+		if url, expires, ok := e.links.get(remote); ok {
+			return resolved{url, expires}, nil
+		}
+		url, expires, err := e.resolveDirectURL(ctx, remote)
+		if err != nil {
+			return nil, err
+		}
+		e.links.put(remote, url, expires)
+		return resolved{url, expires}, nil
+	})
+	if err != nil {
+		return "", time.Time{}, err
+	}
+	r := v.(resolved)
+	return r.url, r.expires, nil
+}
+
+// directURLFresh drops any cached link for the file and resolves a new one. It must be
+// used after a fetch failed on the old link: reusing the same signature would wedge the
+// caller in a fail-refresh-fail loop.
+func (e *Endpoint) directURLFresh(ctx context.Context, remote string) (string, time.Time, error) {
+	e.links.invalidate(remote)
+	return e.directURL(ctx, remote)
+}
+
+// resolveDirectURL performs the actual gateway round trip (/api/fs/get).
+func (e *Endpoint) resolveDirectURL(ctx context.Context, remote string) (string, time.Time, error) {
 	info, err := e.client.Get(ctx, remote)
 	if err != nil {
 		return "", time.Time{}, err

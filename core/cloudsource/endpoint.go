@@ -74,7 +74,8 @@ type Endpoint struct {
 	maxTagReadBytes int64
 	enableRedirect  bool
 
-	dirs *dirCache
+	dirs  *dirCache
+	links *linkCache
 }
 
 // RemoteRoot is the part of a remote path below the gateway's drive root.
@@ -186,6 +187,7 @@ func buildEndpoint(hostport string) (*Endpoint, error) {
 		maxTagReadBytes: orDefault(match.MaxTagReadBytes, defaultMaxTagReadBytes),
 		enableRedirect:  !match.DisableRedirect,
 		dirs:            newDirCache(orDefaultDuration(match.DirCacheTTL, defaultDirCacheTTL)),
+		links:           newLinkCache(),
 	}
 
 	jitter := match.JitterFraction

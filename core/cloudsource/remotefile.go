@@ -269,7 +269,7 @@ func (f *remoteFile) fetchLocked(off, n int64) ([]byte, error) {
 		// The link may have expired between resolve and use (or mid-handle on long
 		// streams). Re-resolve once and retry before giving up — the same signed URL is
 		// never reused after a failure, so a stale signature cannot wedge the handle.
-		if refreshErr := f.refreshRawURLLocked(); refreshErr != nil {
+		if refreshErr := f.refreshRawURLForcedLocked(); refreshErr != nil {
 			log.Debug(f.ctx, "[cloud][cloudsource] direct link refresh failed", "file", f.name, refreshErr)
 			return nil, err
 		}
@@ -308,7 +308,17 @@ func (f *remoteFile) ensureRawURLLocked() error {
 // refreshRawURLLocked resolves a new signed direct link, replacing whatever the handle
 // held before.
 func (f *remoteFile) refreshRawURLLocked() error {
-	raw, expires, err := f.ep.directURL(f.ctx, remotePathOf(f.root, f.name))
+	return f.refreshRawURLFromLocked(f.ep.directURL)
+}
+
+// refreshRawURLForcedLocked re-resolves bypassing the shared link cache: it runs after a
+// fetch failed, so the very same (dead) signature must never be served again.
+func (f *remoteFile) refreshRawURLForcedLocked() error {
+	return f.refreshRawURLFromLocked(f.ep.directURLFresh)
+}
+
+func (f *remoteFile) refreshRawURLFromLocked(resolve func(context.Context, string) (string, time.Time, error)) error {
+	raw, expires, err := resolve(f.ctx, remotePathOf(f.root, f.name))
 	if err != nil {
 		return err
 	}
