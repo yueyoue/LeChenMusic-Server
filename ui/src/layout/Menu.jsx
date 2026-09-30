@@ -249,6 +249,14 @@ const Menu = ({ dense = false }) => {
           sidebarIsOpen={open}
           dense={dense}
         />
+        <MenuItemLink
+          to="/settings/cloudsource"
+          activeClassName={classes.active}
+          primaryText="云源管理"
+          leftIcon={<span style={{ fontSize: 18 }}>☁️</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
         {config.devSidebarPlaylists && open ? (
         <>
           <Divider />

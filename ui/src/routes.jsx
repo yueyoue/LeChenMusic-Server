@@ -11,6 +11,7 @@ import FavoritesPage from './favorites/FavoritesPage'
 import AIPlaylistPage from './ai-playlist/AIPlaylistPage'
 import ErrorLogPage from './error-log/ErrorLogPage'
 import BackupPage from './backup/BackupList'
+import CloudSourcePage from './cloudsource/CloudSourcePage'
 import UserStatsPage from './stats/UserStatsPage'
 
 const routes = [
@@ -26,6 +27,7 @@ const routes = [
   <Route exact path="/settings/version" render={() => <VersionPage />} key={'version'} />,
   <Route exact path="/settings/app" render={() => <AppManagePage />} key={'app-manage'} />,
   <Route exact path="/settings/backup" render={() => <BackupPage />} key={'backup'} />,
+  <Route exact path="/settings/cloudsource" render={() => <CloudSourcePage />} key={'cloudsource'} />,
   <Route exact path="/stats" render={() => <UserStatsPage />} key={'user-stats'} />,
 ]
 
