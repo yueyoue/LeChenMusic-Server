@@ -81,7 +81,9 @@ const gatewayList = {
 describe('CloudSourcePage (P2-4 云源管理面板)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mockHttpClient.mockResolvedValue(gatewayList)
+    // httpClient（react-admin fetchJson）返回 { status, headers, body, json }，
+    // 组件按 res.json?.data?.gateways 解析——mock 必须带 json 包装层
+    mockHttpClient.mockResolvedValue({ json: gatewayList })
   })
 
   it('lists gateways with file counts, last scan and bound libraries', async () => {
@@ -109,7 +111,7 @@ describe('CloudSourcePage (P2-4 云源管理面板)', () => {
       if (options && options.method === 'PUT') {
         return Promise.resolve({ json: { data: { name: 'nas', enabled: false } } })
       }
-      return Promise.resolve(gatewayList)
+      return Promise.resolve({ json: gatewayList })
     })
     render(<CloudSourcePage />)
 
