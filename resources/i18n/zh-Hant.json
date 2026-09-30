@@ -614,6 +614,7 @@
     "remove_missing_content": "您確定要從媒體庫中刪除所選的遺失的檔案嗎？這將永久刪除它們的所有相關資訊，包括其播放次數和評分。",
     "remove_all_missing_title": "刪除所有遺失檔案",
     "remove_all_missing_content": "您確定要從媒體庫中刪除所有遺失的檔案嗎？這將永久刪除它們的所有相關資訊，包括它們的播放次數和評分。",
+    "missingFileHint": "檔案遺失：磁碟上找不到該檔案。此條目已灰顯，檔案復原前無法播放。",
     "noSimilarSongsFound": "找不到相似歌曲",
     "noTopSongsFound": "找不到熱門歌曲",
     "startingInstantMix": "正在載入即時混音...",

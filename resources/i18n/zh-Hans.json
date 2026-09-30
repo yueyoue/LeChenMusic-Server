@@ -611,6 +611,7 @@
     "remove_missing_content": "您确定要从数据库中移除选中的丢失文件吗？这将永久删除对它们的所有引用，包括播放次数和评分。",
     "remove_all_missing_title": "移除所有丢失文件",
     "remove_all_missing_content": "您确定要从数据库中移除所有丢失文件吗？这将永久删除对它们的所有引用，包括播放次数和评分。",
+    "missingFileHint": "文件丢失：磁盘上找不到该文件。此条目已灰置，文件恢复前无法播放。",
     "notifications_blocked": "您已在浏览器的设置中屏蔽了此网站的通知",
     "notifications_not_available": "此浏览器不支持桌面通知，或者您未通过 https 访问 Navidrome",
     "lastfmLinkSuccess": "Last.fm 成功关联并启用个性化记录",

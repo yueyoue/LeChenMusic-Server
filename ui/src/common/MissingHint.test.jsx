@@ -7,11 +7,13 @@ vi.mock('react-admin', () => ({
   useTranslate: () => (key) => key,
 }))
 
-const Row = React.forwardRef((props, ref) => (
-  <tr ref={ref} {...props}>
-    <td>row</td>
-  </tr>
-))
+const Row = React.forwardRef(function Row(props, ref) {
+  return (
+    <tr ref={ref} {...props}>
+      <td>row</td>
+    </tr>
+  )
+})
 
 describe('MissingHint', () => {
   it('shows the missing hint on hover for a missing record', () => {
