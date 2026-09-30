@@ -74,6 +74,22 @@ const gatewayList = {
         totalFiles: 0,
         totalSongs: 0,
       },
+      {
+        name: 'pan',
+        url: 'http://pan2.example.com:5244',
+        host: 'pan2.example.com:5244',
+        enabled: true,
+        check: {
+          name: 'pan',
+          ok: false,
+          error: 'timeout',
+          checkedAt: '2026-09-30T11:30:00Z',
+          source: 'manual',
+        },
+        libraries: [],
+        totalFiles: 5,
+        totalSongs: 3,
+      },
     ],
   },
 }
@@ -102,8 +118,10 @@ describe('CloudSourcePage (P2-4 云源管理面板)', () => {
     render(<CloudSourcePage />)
 
     await waitFor(() => expect(screen.getByText('quark')).toBeInTheDocument())
-    expect(screen.getByText(/连接异常/)).toBeInTheDocument()
-    expect(screen.getByText(/已停用/)).toBeInTheDocument()
+    // pan：启用但连接异常 → 红条；quark：已停用 → 黄条（一个网关只渲染一条告警，停用文案优先）
+    const alerts = screen.getAllByRole('alert')
+    expect(alerts.some((a) => /连接异常/.test(a.textContent))).toBe(true)
+    expect(alerts.some((a) => /已停用/.test(a.textContent))).toBe(true)
   })
 
   it('toggles the 启停 switch through the API', async () => {
