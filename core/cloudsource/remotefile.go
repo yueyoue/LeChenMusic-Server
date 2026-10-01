@@ -191,31 +191,35 @@ func (f *remoteFile) cachedLocked(off, n int64) ([]byte, int64, bool) {
 
 // loadWindowLocked fetches a window able to cover [off, off+n), choosing the cheapest
 // shape: the file head, the file tail, or a sliding middle window.
+//
+// Windows are fetched *on demand* in probe-sized pieces instead of eagerly pulling the
+// full configured head/tail span (评审 P2-11: 云库有声书扫描提速). The configured
+// HeadBytes/TailBytes remain the caps for eager extension, so existing configs keep
+// their meaning — but a tag read on a file with a small tag now transfers kilobytes
+// instead of megabytes, without changing a single byte of what the parser sees.
 func (f *remoteFile) loadWindowLocked(off, n int64) ([]byte, int64, error) {
 	size := f.info.size
-	head := f.ep.headBytes
-	tail := f.ep.tailBytes
-	if head > size {
-		head = size
+	headCap := f.ep.headBytes
+	tailCap := f.ep.tailBytes
+	if headCap > size {
+		headCap = size
 	}
-	if tail > size {
-		tail = size
+	if tailCap > size {
+		tailCap = size
 	}
 
 	// Tail window base: [tailBase, size).
-	tailBase := size - tail
+	tailBase := size - tailCap
 	if tailBase < 0 {
 		tailBase = 0
 	}
 
 	switch {
-	case off < head:
-		data, err := f.fetchLocked(0, head)
-		if err != nil {
+	case off < headCap:
+		if err := f.ensureHeadLocked(off + n); err != nil {
 			return nil, 0, err
 		}
-		f.head = data
-		return data, 0, nil
+		return f.head, 0, nil
 
 	case off >= tailBase:
 		// Inside the tail window. Note the condition must anchor on `off` alone:
@@ -223,12 +227,10 @@ func (f *remoteFile) loadWindowLocked(off, n int64) ([]byte, int64, error) {
 		// must NOT return the tail window — its base would exceed off and the
 		// caller's src[off-base:] would panic (found by the P2-6 conformance
 		// suite streaming a whole file through tiny windows).
-		data, err := f.fetchLocked(tailBase, size-tailBase)
-		if err != nil {
+		if err := f.ensureTailLocked(size - off); err != nil {
 			return nil, 0, err
 		}
-		f.tail, f.tailOff = data, tailBase
-		return data, tailBase, nil
+		return f.tail, f.tailOff, nil
 
 	default:
 		width := n
@@ -248,6 +250,103 @@ func (f *remoteFile) loadWindowLocked(off, n int64) ([]byte, int64, error) {
 		f.mid, f.midOff = data, off
 		return data, off, nil
 	}
+}
+
+// probe-sized first fetches for the two end windows (评审 P2-11). The configured
+// head/tail bytes remain the maximum eager span; extension beyond the probe is driven
+// by what the parser actually reads (plus the ID3v2 size hint for the head).
+const (
+	headProbeBytes = int64(64 << 10)
+	tailProbeBytes = int64(64 << 10)
+	id3FrameSlack  = int64(256 << 10) // first audio frames + Xing header, right after the tag
+)
+
+// id3TagEnd returns the byte offset just past the ID3v2 tag (header + tag body + footer),
+// or 0 when the head does not start with an ID3v2 header. The 10-byte header carries the
+// exact tag size, so one small probe read is enough to size the follow-up fetch.
+func id3TagEnd(head []byte, size int64) int64 {
+	if len(head) < 10 || head[0] != 'I' || head[1] != 'D' || head[2] != '3' {
+		return 0
+	}
+	// Synchsafe 28-bit size in bytes 6..9.
+	tagSize := int64(head[6]&0x7f)<<21 | int64(head[7]&0x7f)<<14 | int64(head[8]&0x7f)<<7 | int64(head[9]&0x7f)
+	end := 10 + tagSize
+	if head[5]&0x10 != 0 { // footer present
+		end += 10
+	}
+	if end > size {
+		return 0
+	}
+	return end
+}
+
+// ensureHeadLocked grows the head window until it covers [0, need), fetching only the
+// missing suffix. The first fetch is probe-sized; when the file starts with an ID3v2 tag
+// the exact tag span is coalesced into one follow-up fetch, so parsing a 300KB tag never
+// downloads the old fixed 2MB head window.
+func (f *remoteFile) ensureHeadLocked(need int64) error {
+	size := f.info.size
+	probe := headProbeBytes
+	if f.ep.headBytes < probe {
+		probe = f.ep.headBytes
+	}
+	if probe > size {
+		probe = size
+	}
+	want := need
+	if want < probe {
+		want = probe
+	}
+	if end := id3TagEnd(f.head, size); end > 0 && end+id3FrameSlack > want {
+		want = end + id3FrameSlack
+	}
+	if want > size {
+		want = size
+	}
+	if want <= int64(len(f.head)) {
+		return nil
+	}
+	data, err := f.fetchLocked(int64(len(f.head)), want-int64(len(f.head)))
+	if err != nil {
+		return err
+	}
+	f.head = append(f.head, data...)
+	return nil
+}
+
+// ensureTailLocked grows the tail window backwards until it covers [size-need, size),
+// fetching only the missing prefix.
+func (f *remoteFile) ensureTailLocked(need int64) error {
+	size := f.info.size
+	probe := tailProbeBytes
+	if f.ep.tailBytes < probe {
+		probe = f.ep.tailBytes
+	}
+	if probe > size {
+		probe = size
+	}
+	want := need
+	if want < probe {
+		want = probe
+	}
+	if want > size {
+		want = size
+	}
+	if want <= int64(len(f.tail)) {
+		return nil
+	}
+	tailEnd := f.tailOff
+	if len(f.tail) == 0 {
+		tailEnd = size
+	}
+	newBase := size - want
+	data, err := f.fetchLocked(newBase, tailEnd-newBase)
+	if err != nil {
+		return err
+	}
+	f.tail = append(data, f.tail...)
+	f.tailOff = newBase
+	return nil
 }
 
 // fetchLocked pulls [off, off+n) bytes through the throttled RangeFetcher.
