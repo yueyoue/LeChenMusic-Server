@@ -42,3 +42,8 @@ openspec/
 .agents
 go.work*
 .worktrees/
+
+# 插件测试的 make 构建产物（测试时生成，不入库）
+plugins/testdata/*.ndp
+plugins/testdata/*.ndp.zip
+plugins/testdata/*.wasm
