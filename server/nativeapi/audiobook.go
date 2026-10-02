@@ -1,6 +1,7 @@
 package nativeapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/core/audiobookcover"
 	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
@@ -582,6 +584,18 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
+	// [LeChenMusic-START:audiobook-embedded-cover]
+	// 书目录没有封面文件时，识别音频文件本身内嵌的封面（ID3v2 APIC/FLAC PICTURE/MP4 covr…）。
+	// 新入库的书在扫描时已把内嵌封面落盘（scanner → book.CoverPath），这里兜底老数据
+	// 和只有音频的书，让 /cover 总能返回音频文件自己的封面。优先于刮削失败时留下的
+	// cover_url 远程兑底（文件自带的封面比网页抓的更准）。浏览器/客户端按 Cache-Control
+	// 缓存，重复请求不会重复解析标签。
+	if data, ext, err := audiobookcover.EmbeddedCover(fsys, book.Path); err == nil {
+		w.Header().Set("Cache-Control", "public, max-age=3600")
+		http.ServeContent(w, r, "cover"+ext, time.Time{}, bytes.NewReader(data))
+		return
+	}
+	// [LeChenMusic-END:audiobook-embedded-cover]
 	// [LeChenMusic-START:audiobook-cover-fallback]
 	// 本地没有封面文件时，从数据库中的cover_url代理获取（结果同样走磁盘缓存）
 	if book.CoverUrl != "" {

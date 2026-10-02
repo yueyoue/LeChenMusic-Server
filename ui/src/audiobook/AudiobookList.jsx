@@ -117,8 +117,9 @@ const AudiobookCover = ({ book }) => {
   const url = `/api/audiobook/${book.id}/cover?token=${token || ''}`
   const [imgError, setImgError] = useState(false)
 
-  // Show placeholder only if there's no local cover AND no remote cover URL
-  if (imgError || (!book.coverPath && !book.coverUrl)) {
+  // 服务端 /cover 会解析音频文件内嵌封面（即使没有 coverPath/coverUrl），
+  // 所以一律先请求图片，加载失败才回退占位图。
+  if (imgError) {
     return (
       <div className={classes.coverPlaceholder}>
         <MenuBookIcon style={{ fontSize: 32, opacity: 0.5, color: '#fff' }} />

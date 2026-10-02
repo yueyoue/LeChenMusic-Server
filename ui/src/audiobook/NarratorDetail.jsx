@@ -40,6 +40,18 @@ const useStyles = makeStyles((theme) => ({
   empty: { textAlign: 'center', padding: 40, color: theme.palette.text.secondary },
 }))
 
+// 书封面缩略图：/cover 现在能解析音频文件内嵌封面（无封面文件也会返回图片），
+// 所以不看 coverPath 一律先请求，加载失败才回退为占位图标。
+const BookCoverThumb = ({ book }) => {
+  const classes = useStyles()
+  const [failed, setFailed] = useState(false)
+  if (failed) return <MenuBookIcon style={{ fontSize: 24, opacity: 0.5 }} />
+  return (
+    <img src={`/api/audiobook/${book.id}/cover`} alt={book.title} className={classes.cover}
+      onError={() => setFailed(true)} />
+  )
+}
+
 const NarratorDetail = ({ name, onBack, onPlayBook }) => {
   const classes = useStyles()
   const [works, setWorks] = useState([])
@@ -128,12 +140,7 @@ const NarratorDetail = ({ name, onBack, onPlayBook }) => {
             onClick={() => window.location.hash = `#/audiobook/${book.id}`}>
             <CardContent style={{ display: 'flex', padding: '8px 16px' }}>
               <Box className={classes.cover} display="flex" alignItems="center" justifyContent="center">
-                {book.coverPath ? (
-                  <img src={`/api/audiobook/${book.id}/cover`} alt={book.title} className={classes.cover}
-                    onError={(e) => { e.target.style.display = 'none' }} />
-                ) : (
-                  <MenuBookIcon style={{ fontSize: 24, opacity: 0.5 }} />
-                )}
+                <BookCoverThumb book={book} />
               </Box>
               <Box ml={1.5} flex={1} overflow="hidden">
                 <Typography className={classes.bookTitle} noWrap>{book.title}</Typography>

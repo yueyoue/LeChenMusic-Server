@@ -13,6 +13,7 @@ import (
 	"time"
 
 	. "github.com/Masterminds/squirrel"
+	"github.com/navidrome/navidrome/core/audiobookcover"
 	"github.com/navidrome/navidrome/core/storage"
 	// The scanner resolves library paths through core/storage; the local backend registers
 	// itself in init(). Importing it here keeps the "file" scheme available no matter which
@@ -26,15 +27,11 @@ import (
 
 // [LeChenMusic-START:audiobook]
 
-var audiobookAudioExts = map[string]bool{
-	".mp3": true, ".m4a": true, ".m4b": true, ".flac": true,
-	".ogg": true, ".wav": true, ".opus": true, ".wma": true, ".aac": true,
-}
+// 书目录/章节命名约定与封面落盘规则收敛在 core/audiobookcover，
+// 与 server/nativeapi（上传/刮削/出图）同源。
+var audiobookAudioExts = audiobookcover.AudioExts
 
-var audiobookCoverNames = []string{
-	"cover.jpg", "cover.jpeg", "cover.png",
-	"folder.jpg", "folder.jpeg", "folder.png",
-}
+var audiobookCoverNames = audiobookcover.CoverNames
 
 var genreKeywords = map[string]string{
 	"有声书":  "有声读物",
@@ -146,11 +143,20 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 			book := existing[0]
 			if book.Hash != bookHash || book.ChapterCount == 0 {
 				book.Hash = bookHash
-				// Re-read narrator from tags if empty
-				if book.Narrator == "" {
-					_, _, _, _, _, tagNarr := readFirstAudioFileTags(fsys, book.Path)
-					if tagNarr != "" {
-						book.Narrator = tagNarr
+				// Re-read empty metadata from tags (narrator/author/description/series)
+				if book.Narrator == "" || book.Author == "" || book.Description == "" || book.Series == "" {
+					tags := readFirstAudioFileTags(fsys, book.Path)
+					if book.Narrator == "" && tags.narrator != "" {
+						book.Narrator = tags.narrator
+					}
+					if book.Author == "" && tags.author != "" {
+						book.Author = tags.author
+					}
+					if book.Description == "" && tags.description != "" {
+						book.Description = tags.description
+					}
+					if book.Series == "" && tags.series != "" {
+						book.Series = tags.series
 					}
 				}
 				s.scanChapters(ctx, fsys, &book, repo)
@@ -201,36 +207,49 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, fsys stor
 
 	// [LeChenMusic-START:audiobook-id3-tags]
 	// Try to read metadata from the first audio file's ID3 tags
-	tagArtist, tagTitle, tagAlbum, tagGenre, tagYear, tagNarrator := readFirstAudioFileTags(fsys, relPath)
-	if tagTitle != "" {
-		stripped := stripChapterSuffix(tagTitle)
+	tags := readFirstAudioFileTags(fsys, relPath)
+	if tags.title != "" {
+		stripped := stripChapterSuffix(tags.title)
 		if stripped != "" && !isNumericOnly(stripped) && len([]rune(stripped)) > 1 {
 			if title == dirName {
 				title = stripped
 			}
 		}
 	}
-	if tagAlbum != "" && (title == "" || title == dirName) {
+	if tags.album != "" && (title == "" || title == dirName) {
 		// Use ALBUM tag as fallback, but only if it's a meaningful title
-		if !isNumericOnly(tagAlbum) && len([]rune(tagAlbum)) > 1 {
-			title = tagAlbum
+		if !isNumericOnly(tags.album) && len([]rune(tags.album)) > 1 {
+			title = tags.album
 		}
 	}
-	if tagGenre != "" && genre == "有声读物" {
-		genre = tagGenre
+	if tags.genre != "" && genre == "有声读物" {
+		genre = tags.genre
 	}
-	var year int
-	if tagYear > 0 {
-		year = tagYear
+	year := tags.year
+	// 作者：目录名解析优先，解析不出作者再用显式作者标签（ARTIST 是演播者，不用作作者）
+	if author == "" {
+		author = tags.author
 	}
 	// In audiobook files, ARTIST tag typically contains the narrator (演播者), not the author (作者).
-	// Priority for narrator: explicit narrator tag > ARTIST/ALBUMARTIST
-	// Priority for author: directory name parsing only (ARTIST is NOT used as author)
-	narrator := tagNarrator
-	if narrator == "" && tagArtist != "" {
-		narrator = tagArtist
-	}
+	// tags.narrator 已按 COMPOSER > CONDUCTOR > DIRECTOR > TXXX:NARRATOR > ARTIST/ALBUMARTIST解析好。
+	narrator := tags.narrator
 	// [LeChenMusic-END:audiobook-id3-tags]
+
+	book := model.Audiobook{
+		ID:          id.NewRandom(),
+		LibraryID:   library.ID,
+		Title:       title,
+		Author:      author,
+		Narrator:    narrator,
+		Description: tags.description,
+		Genre:       genre,
+		Year:        year,
+		Series:      tags.series,
+		Path:        relPath,
+		Hash:        bookHash,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
 
 	coverPath := ""
 	for _, coverName := range audiobookCoverNames {
@@ -240,21 +259,23 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, fsys stor
 			break
 		}
 	}
-
-	return model.Audiobook{
-		ID:        id.NewRandom(),
-		LibraryID: library.ID,
-		Title:     title,
-		Author:    author,
-		Narrator:  narrator,
-		Genre:     genre,
-		Year:      year,
-		CoverPath: coverPath,
-		Path:      relPath,
-		Hash:      bookHash,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+	// [LeChenMusic-START:audiobook-embedded-cover]
+	// 书目录没有封面文件时，识别音频文件本身内嵌的封面（ID3v2 APIC/FLAC PICTURE/MP4 covr…）：
+	// 提取后按上传/刮削同款规则落盘（本地可写库写进书目录，云库/只读库写本地覆盖目录），
+	// 入库即把音频文件的封面图片信息记录进 book.CoverPath。
+	if coverPath == "" {
+		if data, ext, err := audiobookcover.EmbeddedCover(fsys, relPath); err == nil {
+			if relCover, saveErr := audiobookcover.SaveCover(&book, &library, data, ext); saveErr == nil {
+				coverPath = relCover
+				log.Debug(ctx, "Audiobook scanner: recognized cover embedded in audio files", "book", title, "cover", relCover)
+			} else {
+				log.Warn(ctx, "Audiobook scanner: cannot save embedded cover", "book", title, saveErr)
+			}
+		}
 	}
+	// [LeChenMusic-END:audiobook-embedded-cover]
+	book.CoverPath = coverPath
+	return book
 }
 
 func (s *AudiobookScanner) scanChapters(ctx context.Context, fsys storage.MusicFS, book *model.Audiobook, repo model.AudiobookRepository) {
@@ -351,13 +372,77 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, fsys storage.MusicF
 }
 
 // [LeChenMusic-START:audiobook-id3-tags]
+// audiobookTags 是从首个音频文件标签里读出的书目级字段。
+// 注意：有声书里 ARTIST/ALBUMARTIST 通常是演播者（narrator）而不是作者（author），
+// 所以作者只认显式作者标签。
+type audiobookTags struct {
+	artist      string
+	title       string
+	album       string
+	genre       string
+	year        int
+	narrator    string
+	author      string
+	description string
+	series      string
+}
+
+// firstTagValue 返回给定标签键里第一个非空值（taglib 的 key 是大写，TXXX 帧为 "TXXX:<描述>"）。
+func firstTagValue(tags map[string][]string, keys ...string) string {
+	for _, key := range keys {
+		if v, ok := tags[key]; ok && len(v) > 0 && v[0] != "" {
+			return v[0]
+		}
+	}
+	return ""
+}
+
+// tagsFromMap 把 taglib 的原始标签映射到书目级字段。纯函数，便于单测标签→字段的映射规则。
+func tagsFromMap(tags map[string][]string) audiobookTags {
+	t := audiobookTags{
+		artist:      firstTagValue(tags, "ARTIST"),
+		title:       firstTagValue(tags, "TITLE"),
+		album:       firstTagValue(tags, "ALBUM"),
+		genre:       firstTagValue(tags, "GENRE"),
+		description: firstTagValue(tags, "DESCRIPTION", "COMMENT", "TXXX:DESCRIPTION", "TXXX:COMMENT"),
+		series:      firstTagValue(tags, "SERIES", "TXXX:SERIES"),
+	}
+	if v := firstTagValue(tags, "DATE"); v != "" {
+		t.year = parseYear(v)
+	}
+	if t.artist == "" {
+		t.artist = firstTagValue(tags, "ALBUMARTIST")
+	}
+	// 作者：只认显式作者标签（ARTIST 在有声书里是演播者，绝不能当作者）
+	t.author = firstTagValue(tags, "TXXX:AUTHOR", "TXXX:BOOKAUTHOR", "TXXX:BOOK AUTHOR", "AUTHOR", "WRITER", "TXXX:WRITER")
+	// 演播者：COMPOSER > CONDUCTOR > DIRECTOR > TXXX:NARRATOR，都没有再退回 ARTIST/ALBUMARTIST
+	t.narrator = firstTagValue(tags, "COMPOSER", "CONDUCTOR", "DIRECTOR", "TXXX:NARRATOR")
+	if t.narrator == "" {
+		t.narrator = t.artist
+	}
+	return t
+}
+
+// parseYear 从 DATE 标签解析年份：兼容 "2014" 和 "2014-05-21" 这类带月日的写法。
+func parseYear(v string) int {
+	v = strings.TrimSpace(v)
+	if y, err := strconv.Atoi(v); err == nil && y > 0 {
+		return y
+	}
+	if len(v) >= 4 {
+		if y, err := strconv.Atoi(v[:4]); err == nil && y > 0 {
+			return y
+		}
+	}
+	return 0
+}
+
 // readFirstAudioFileTags reads ID3/metadata tags from the first audio file in a directory.
-// Returns (artist, title, album, genre, year, narrator). Empty strings/zeros if not found.
-// Note: In audiobook files, ARTIST/ALBUMARTIST typically contains the narrator, not the book author.
-func readFirstAudioFileTags(fsys storage.MusicFS, dirPath string) (artist, title, album, genre string, year int, narrator string) {
+// Empty strings/zeros if not found.
+func readFirstAudioFileTags(fsys storage.MusicFS, dirPath string) audiobookTags {
 	entries, err := fs.ReadDir(fsys, dirPath)
 	if err != nil {
-		return
+		return audiobookTags{}
 	}
 	for _, e := range entries {
 		if e.IsDir() {
@@ -381,43 +466,9 @@ func readFirstAudioFileTags(fsys storage.MusicFS, dirPath string) (artist, title
 		allTags := f.AllTags()
 		f.Close()
 		closer.Close()
-		// Extract common tag fields (taglib returns UPPERCASE keys)
-		tags := allTags.Tags
-		if v, ok := tags["ARTIST"]; ok && len(v) > 0 {
-			artist = v[0]
-		}
-		if v, ok := tags["TITLE"]; ok && len(v) > 0 {
-			title = v[0]
-		}
-		if v, ok := tags["ALBUM"]; ok && len(v) > 0 {
-			album = v[0]
-		}
-		if v, ok := tags["GENRE"]; ok && len(v) > 0 {
-			genre = v[0]
-		}
-		if v, ok := tags["DATE"]; ok && len(v) > 0 {
-			if y, parseErr := strconv.Atoi(v[0]); parseErr == nil {
-				year = y
-			}
-		}
-		// Also try ALBUMARTIST for author
-		if artist == "" {
-			if v, ok := tags["ALBUMARTIST"]; ok && len(v) > 0 {
-				artist = v[0]
-			}
-		}
-		// Read narrator from multiple tag sources (common for audiobooks)
-		// Priority: COMPOSER > CONDUCTOR > DIRECTOR > TXXX:NARRATOR > TXXX:ARTISTSORT
-		narratorSources := []string{"COMPOSER", "CONDUCTOR", "DIRECTOR", "TXXX:NARRATOR"}
-		for _, tag := range narratorSources {
-			if v, ok := tags[tag]; ok && len(v) > 0 && v[0] != "" {
-				narrator = v[0]
-				break
-			}
-		}
-		return
+		return tagsFromMap(allTags.Tags)
 	}
-	return
+	return audiobookTags{}
 }
 
 // [LeChenMusic-END:audiobook-id3-tags]
