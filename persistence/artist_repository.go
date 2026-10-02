@@ -142,6 +142,7 @@ func NewArtistRepository(ctx context.Context, db dbx.Builder) model.ArtistReposi
 		"has_rating": annotationBoolFilter("rating"),
 		"role":       roleFilter,
 		"missing":    booleanFilter,
+		"no_image":   noImageFilter,
 		"library_id": artistLibraryIdFilter,
 	})
 	r.setSortMappings(map[string]string{ //nolint:gosec
@@ -172,6 +173,32 @@ func roleFilter(_ string, role any) Sqlizer {
 // artistLibraryIdFilter filters artists based on library access through the library_artist table
 func artistLibraryIdFilter(_ string, value any) Sqlizer {
 	return Eq{"library_artist.library_id": value}
+}
+
+// noImageFilter matches artists that have no avatar at all — no image URL from the external
+// agents and no uploaded image — i.e. exactly the ones the UI renders with the default avatar.
+// It backs the artist list's「筛选无头像」action, so the batch avatar match can be limited to them.
+func noImageFilter(_ string, value any) Sqlizer {
+	enabled := false
+	switch v := value.(type) {
+	case string:
+		enabled = strings.EqualFold(v, "true")
+	case bool:
+		enabled = v
+	}
+	if !enabled {
+		// Filter switched off: every artist matches
+		return Expr("1 = 1")
+	}
+	blank := func(column string) Sqlizer {
+		return Expr("COALESCE(" + column + ", '') = ''")
+	}
+	return And{
+		blank("artist.small_image_url"),
+		blank("artist.medium_image_url"),
+		blank("artist.large_image_url"),
+		blank("artist.uploaded_image"),
+	}
 }
 
 // applyLibraryFilterToArtistQuery applies library filtering to artist queries through the library_artist junction table

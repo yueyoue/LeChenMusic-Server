@@ -108,8 +108,9 @@ describe('CloudSourcePage (P2-4 云源管理面板)', () => {
 
     await waitFor(() => expect(screen.getByText('nas')).toBeInTheDocument())
     expect(screen.getByText('quark')).toBeInTheDocument()
-    expect(screen.getByText('专辑数')).toBeInTheDocument()
-    expect(screen.getByText('歌曲数')).toBeInTheDocument()
+    // 「专辑数 / 歌曲数」在汇总卡片和云库表格表头各出现一次
+    expect(screen.getAllByText('专辑数').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('歌曲数').length).toBeGreaterThan(0)
     expect(screen.getByText('120')).toBeInTheDocument() // 专辑数 totalAlbums
     expect(screen.getByText('390')).toBeInTheDocument() // 歌曲数 totalSongs（含 300 章有声书）
     expect(screen.getByText('网盘音乐')).toBeInTheDocument()

@@ -111,6 +111,33 @@ var _ = Describe("ArtistRepository", func() {
 			})
 		})
 
+		Describe("noImageFilter", func() {
+			It("matches only artists with no image at all when enabled", func() {
+				sql, args, err := noImageFilter("no_image", "true").ToSql()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(args).To(BeEmpty())
+				Expect(sql).To(ContainSubstring("artist.small_image_url"))
+				Expect(sql).To(ContainSubstring("artist.medium_image_url"))
+				Expect(sql).To(ContainSubstring("artist.large_image_url"))
+				Expect(sql).To(ContainSubstring("artist.uploaded_image"))
+				Expect(sql).To(ContainSubstring(" AND "))
+			})
+
+			It("accepts a boolean value as well as the string form", func() {
+				sql, _, err := noImageFilter("no_image", true).ToSql()
+				Expect(err).ToNot(HaveOccurred())
+				Expect(sql).To(ContainSubstring("artist.uploaded_image"))
+			})
+
+			It("is a no-op when the filter is switched off", func() {
+				for _, value := range []any{"false", "", false, 123, nil, []string{"true"}} {
+					sql, _, err := noImageFilter("no_image", value).ToSql()
+					Expect(err).ToNot(HaveOccurred())
+					Expect(sql).To(Equal("1 = 1"))
+				}
+			})
+		})
+
 		Describe("searchScope", func() {
 			// Resolves the library IDs a search must be restricted to (nil = fast-path / no filter),
 			// the way Search() does, for a repo whose context carries the given user.

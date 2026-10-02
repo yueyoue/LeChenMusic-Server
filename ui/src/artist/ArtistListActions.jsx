@@ -1,5 +1,11 @@
 import React, { cloneElement, useState } from 'react'
-import { sanitizeListRestProps, TopToolbar, Button, useDataProvider, useNotify } from 'react-admin'
+import {
+  sanitizeListRestProps,
+  TopToolbar,
+  Button,
+  useListContext,
+  useNotify,
+} from 'react-admin'
 import { useMediaQuery, CircularProgress } from '@material-ui/core'
 import { ToggleFieldsMenu } from '../common'
 import httpClient from '../dataProvider/httpClient'
@@ -16,6 +22,20 @@ const ArtistListActions = ({
 }) => {
   const isNotSmall = useMediaQuery((theme) => theme.breakpoints.up('sm'))
   const [dialogOpen, setDialogOpen] = useState(false)
+  const { setFilters } = useListContext()
+  const noImageOnly = String(filterValues?.no_image) === 'true'
+
+  // 把所有未设置头像（显示默认头像）的艺人筛选出来：往列表过滤器里加 no_image=true。
+  // 后端 persistence.noImageFilter 按「没有任何头像图源」筛选。
+  const toggleNoImageFilter = () => {
+    const next = { ...(filterValues || {}) }
+    if (noImageOnly) {
+      delete next.no_image
+    } else {
+      next.no_image = 'true'
+    }
+    setFilters(next, displayedFilters || {})
+  }
 
   return (
     <TopToolbar className={className} {...sanitizeListRestProps(rest)}>
@@ -29,17 +49,26 @@ const ArtistListActions = ({
         })}
       {isNotSmall && <ToggleFieldsMenu resource="artist" />}
       <Button
-        label="🔍 批量匹配头像"
+        label={noImageOnly ? '🖼️ 显示全部艺人' : '🖼️ 筛选无头像'}
+        onClick={toggleNoImageFilter}
+      />
+      <Button
+        label={noImageOnly ? '🔍 批量匹配无头像' : '🔍 批量匹配头像'}
         onClick={() => setDialogOpen(true)}
       />
       {dialogOpen && (
-        <BatchAvatarDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+        <BatchAvatarDialog
+          open={dialogOpen}
+          onClose={() => setDialogOpen(false)}
+          filterValues={filterValues}
+          noImageOnly={noImageOnly}
+        />
       )}
     </TopToolbar>
   )
 }
 
-const BatchAvatarDialog = ({ open, onClose }) => {
+const BatchAvatarDialog = ({ open, onClose, filterValues, noImageOnly }) => {
   const [loading, setLoading] = useState(false)
   const [results, setResults] = useState(null)
   const [saving, setSaving] = useState(false)
@@ -50,10 +79,21 @@ const BatchAvatarDialog = ({ open, onClose }) => {
     setLoading(true)
     setResults(null)
     try {
-      // Get all artists using react-admin data provider format
-      const res = await httpClient(`${REST_URL}/artist?sort=["name"]&order=ASC&range=[0,499]`)
-      const artists = res.json || []
-      setResults(Array.isArray(artists) ? artists : [])
+      // 按当前列表过滤器取艺人：勾了「筛选无头像」就只取没头像的，否则取全部
+      const filterParam = encodeURIComponent(JSON.stringify(filterValues || {}))
+      const all = []
+      const pageSize = 500
+      for (let page = 0; page < 10; page++) {
+        const start = page * pageSize
+        const res = await httpClient(
+          `${REST_URL}/artist?sort=["name"]&order=ASC&range=[${start},${start + pageSize - 1}]&filter=${filterParam}`,
+        )
+        const batch = res.json || []
+        if (!Array.isArray(batch) || batch.length === 0) break
+        all.push(...batch)
+        if (batch.length < pageSize) break
+      }
+      setResults(all)
     } catch (e) {
       console.error('Failed to load artists:', e)
       notify('加载艺人失败', 'warning')
@@ -154,10 +194,12 @@ const BatchAvatarDialog = ({ open, onClose }) => {
     setSaving(false)
     const skippedMsg = skippedCount > 0 ? `，跳过${skippedCount}个无效艺人` : ''
     notify(`完成: ${successCount} 成功, ${failCount} 失败${skippedMsg}`, successCount > 0 ? 'info' : 'warning')
-    // Reload page to show new avatars (with cache-busting)
+    // Reload page to show new avatars (with cache-busting)，保留原有查询参数（含筛选条件）
     if (successCount > 0) {
       setTimeout(() => {
-        window.location.href = window.location.href.split('?')[0] + '?t=' + Date.now()
+        const search = new URLSearchParams(window.location.search)
+        search.set('t', String(Date.now()))
+        window.location.search = search.toString()
       }, 2000)
     }
   }
@@ -174,10 +216,14 @@ const BatchAvatarDialog = ({ open, onClose }) => {
         backgroundColor: '#fff', borderRadius: 8, width: '90%', maxWidth: 600,
         maxHeight: '80vh', overflow: 'auto', padding: 24, color: '#333',
       }} onClick={e => e.stopPropagation()}>
-        <h2 style={{ margin: '0 0 16px', fontSize: 18 }}>🔍 批量匹配艺人头像</h2>
+        <h2 style={{ margin: '0 0 16px', fontSize: 18 }}>
+          {noImageOnly ? '🔍 批量匹配无头像艺人' : '🔍 批量匹配艺人头像'}
+        </h2>
 
         <p style={{ fontSize: 13, color: '#666', marginBottom: 16 }}>
-          自动为所有艺人搜索并保存头像。会从网易云音乐、QQ音乐、酷我音乐、酷狗音乐搜索匹配的头像图片。
+          {noImageOnly
+            ? '只处理当前筛选出的「未设置头像」艺人。会从网易云音乐、QQ音乐、酷我音乐、酷狗音乐搜索匹配的头像图片。'
+            : '自动为所有艺人搜索并保存头像。会从网易云音乐、QQ音乐、酷我音乐、酷狗音乐搜索匹配的头像图片。'}
         </p>
 
         {!results && !loading && (
@@ -198,7 +244,9 @@ const BatchAvatarDialog = ({ open, onClose }) => {
 
         {results && !saving && (
           <div>
-            <p style={{ fontWeight: 600 }}>共 {results.length} 位艺人</p>
+            <p style={{ fontWeight: 600 }}>
+              共 {results.length} 位{noImageOnly ? '无头像' : ''}艺人
+            </p>
             <div style={{ maxHeight: 300, overflow: 'auto', marginBottom: 16 }}>
               {results.map((artist, idx) => {
                 const valid = isValidArtistName(artist.name)
