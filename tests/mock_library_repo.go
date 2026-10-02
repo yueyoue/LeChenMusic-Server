@@ -6,20 +6,27 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"sync"
 
 	"github.com/Masterminds/squirrel"
 	"github.com/deluan/rest"
 	"github.com/navidrome/navidrome/model"
 )
 
+// MockLibraryRepo 用内存 map 模拟 library 表。core.NewLibrary 会起后台 goroutine
+// （autoDetectMediaType）并发读库，真实实现是 DB（本身线程安全），mock 也必须是
+// 线程安全的——否则测试会随机撞上 "concurrent map iteration and map write"。
 type MockLibraryRepo struct {
 	model.LibraryRepository
+	mu    sync.RWMutex
 	Data  map[int]model.Library
 	Err   error
 	PutFn func(*model.Library) error // Allow custom Put behavior for testing
 }
 
 func (m *MockLibraryRepo) SetData(data model.Libraries) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.Data = make(map[int]model.Library)
 	for _, d := range data {
 		m.Data[d.ID] = d
@@ -27,6 +34,8 @@ func (m *MockLibraryRepo) SetData(data model.Libraries) {
 }
 
 func (m *MockLibraryRepo) GetAll(...model.QueryOptions) (model.Libraries, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if m.Err != nil {
 		return nil, m.Err
 	}
@@ -41,7 +50,7 @@ func (m *MockLibraryRepo) GetAll(...model.QueryOptions) (model.Libraries, error)
 	return libraries, nil
 }
 
-func (m *MockLibraryRepo) CountAll(qo ...model.QueryOptions) (int64, error) {
+func (m *MockLibraryRepo) countAllLocked(qo ...model.QueryOptions) (int64, error) {
 	if m.Err != nil {
 		return 0, m.Err
 	}
@@ -70,7 +79,13 @@ func (m *MockLibraryRepo) CountAll(qo ...model.QueryOptions) (int64, error) {
 	return int64(len(m.Data)), nil
 }
 
-func (m *MockLibraryRepo) Get(id int) (*model.Library, error) {
+func (m *MockLibraryRepo) CountAll(qo ...model.QueryOptions) (int64, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.countAllLocked(qo...)
+}
+
+func (m *MockLibraryRepo) getLocked(id int) (*model.Library, error) {
 	if m.Err != nil {
 		return nil, m.Err
 	}
@@ -80,7 +95,15 @@ func (m *MockLibraryRepo) Get(id int) (*model.Library, error) {
 	return nil, model.ErrNotFound
 }
 
+func (m *MockLibraryRepo) Get(id int) (*model.Library, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.getLocked(id)
+}
+
 func (m *MockLibraryRepo) GetPath(id int) (string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if m.Err != nil {
 		return "", m.Err
 	}
@@ -94,6 +117,8 @@ func (m *MockLibraryRepo) Put(library *model.Library) error {
 	if m.PutFn != nil {
 		return m.PutFn(library)
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.Err != nil {
 		return m.Err
 	}
@@ -105,6 +130,8 @@ func (m *MockLibraryRepo) Put(library *model.Library) error {
 }
 
 func (m *MockLibraryRepo) Delete(id int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.Err != nil {
 		return m.Err
 	}
@@ -165,12 +192,16 @@ func (m *MockLibraryRepo) GetUsersWithLibraryAccess(libraryID int) (model.Users,
 }
 
 func (m *MockLibraryRepo) Count(options ...rest.QueryOptions) (int64, error) {
-	return m.CountAll()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.countAllLocked()
 }
 
 func (m *MockLibraryRepo) Read(id string) (any, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	idInt, _ := strconv.Atoi(id)
-	mf, err := m.Get(idInt)
+	mf, err := m.getLocked(idInt)
 	if errors.Is(err, model.ErrNotFound) {
 		return nil, rest.ErrNotFound
 	}
@@ -178,7 +209,19 @@ func (m *MockLibraryRepo) Read(id string) (any, error) {
 }
 
 func (m *MockLibraryRepo) ReadAll(options ...rest.QueryOptions) (any, error) {
-	return m.GetAll()
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.Err != nil {
+		return nil, m.Err
+	}
+	var libraries model.Libraries
+	for _, lib := range m.Data {
+		libraries = append(libraries, lib)
+	}
+	slices.SortFunc(libraries, func(a, b model.Library) int {
+		return a.ID - b.ID
+	})
+	return libraries, nil
 }
 
 func (m *MockLibraryRepo) EntityName() string {
@@ -193,6 +236,8 @@ func (m *MockLibraryRepo) NewInstance() any {
 
 func (m *MockLibraryRepo) Save(entity any) (string, error) {
 	lib := entity.(*model.Library)
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.Err != nil {
 		return "", m.Err
 	}
@@ -218,6 +263,8 @@ func (m *MockLibraryRepo) Save(entity any) (string, error) {
 
 func (m *MockLibraryRepo) Update(id string, entity any, cols ...string) error {
 	lib := entity.(*model.Library)
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.Err != nil {
 		return m.Err
 	}
@@ -243,6 +290,8 @@ func (m *MockLibraryRepo) Update(id string, entity any, cols ...string) error {
 }
 
 func (m *MockLibraryRepo) DeleteByStringID(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.Err != nil {
 		return m.Err
 	}
@@ -260,6 +309,8 @@ func (m *MockLibraryRepo) DeleteByStringID(id string) error {
 // Service-level methods for core.Library interface
 
 func (m *MockLibraryRepo) GetUserLibraries(ctx context.Context, userID string) (model.Libraries, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if m.Err != nil {
 		return nil, m.Err
 	}
@@ -279,6 +330,8 @@ func (m *MockLibraryRepo) GetUserLibraries(ctx context.Context, userID string) (
 }
 
 func (m *MockLibraryRepo) SetUserLibraries(ctx context.Context, userID string, libraryIDs []int) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if m.Err != nil {
 		return m.Err
 	}
