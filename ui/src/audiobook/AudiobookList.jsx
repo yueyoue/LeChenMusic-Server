@@ -9,7 +9,10 @@ import MenuBookIcon from '@material-ui/icons/MenuBook'
 import SearchIcon from '@material-ui/icons/Search'
 import ScrapeDialog from '../scraper/ScrapeDialog'
 import { useLocation } from 'react-router-dom'
+import { useSelector } from 'react-redux'
 import { OverflowTooltip, SourceTag } from '../common'
+import AudiobookViewToggler from './AudiobookViewToggler'
+import AudiobookTableView from './AudiobookTableView'
 
 const useStyles = makeStyles((theme) => ({
   root: { padding: 12 },
@@ -237,6 +240,11 @@ const AudiobookList = ({ width }) => {
   }
 
   const displayBooks = searchResults !== null ? searchResults : audiobooks
+  // 布局（网格 / 表格）与「专辑 → 全部」右上角一致，存 redux 的 audiobookView
+  const gridView = useSelector((state) => state.audiobookView?.grid !== false)
+  const openBook = (book) => {
+    window.location.hash = `#/audiobook/${book.id}`
+  }
 
   if (loading) {
     return <Box p={2} textAlign="center"><Typography>{translate('ra.loading')}...</Typography></Box>
@@ -248,7 +256,7 @@ const AudiobookList = ({ width }) => {
   return (
     <>
       <Box className={classes.root}>
-        <Typography className={classes.header}>
+        <Box className={classes.header}>
           {getTitle()} ({displayBooks.length})
           <Button size="small" variant="outlined" onClick={() => setScrapeOpen(true)}>
             🔍 批量刮削
@@ -279,7 +287,10 @@ const AudiobookList = ({ width }) => {
             }}>
             {rescanning ? '⏳ 扫描中...' : '🔄 扫描缺失章节'}
           </Button>
-        </Typography>
+          <Box ml="auto" display="flex" alignItems="center">
+            <AudiobookViewToggler />
+          </Box>
+        </Box>
 
         <Box px={1} mb={1}>
           <TextField
@@ -307,7 +318,7 @@ const AudiobookList = ({ width }) => {
               {searchQuery ? '未找到匹配的有声书' : genreFilter ? `暂无${genreFilter}` : '暂无有声书'}
             </Typography>
           </Box>
-        ) : (
+        ) : gridView ? (
           <GridList
             component="div"
             cellHeight="auto"
@@ -320,6 +331,8 @@ const AudiobookList = ({ width }) => {
               </GridListTile>
             ))}
           </GridList>
+        ) : (
+          <AudiobookTableView books={displayBooks} onOpen={openBook} />
         )}
       </Box>
       <ScrapeDialog open={scrapeOpen} onClose={() => setScrapeOpen(false)} />

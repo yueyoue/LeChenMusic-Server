@@ -40,7 +40,7 @@ const gatewayList = {
             name: '网盘音乐',
             mediaType: 'music',
             path: 'openlist://192.168.1.10:5244/fnos/音乐',
-            totalFiles: 100,
+            totalAlbums: 100,
             totalSongs: 90,
             lastScanAt: '2026-09-30T12:00:00Z',
           },
@@ -49,13 +49,14 @@ const gatewayList = {
             name: '网盘有声书',
             mediaType: 'audiobook',
             path: 'openlist://192.168.1.10:5244/fnos/有声书',
-            totalFiles: 20,
-            totalSongs: 0,
+            // 有声书：一部书 = 一个专辑，一个章节 = 一首歌曲，计数与文件库一致
+            totalAlbums: 20,
+            totalSongs: 300,
             lastScanAt: '2026-09-29T12:00:00Z',
           },
         ],
-        totalFiles: 120,
-        totalSongs: 90,
+        totalAlbums: 120,
+        totalSongs: 390,
         lastScanAt: '2026-09-30T12:00:00Z',
       },
       {
@@ -71,7 +72,7 @@ const gatewayList = {
           source: 'manual',
         },
         libraries: [],
-        totalFiles: 0,
+        totalAlbums: 0,
         totalSongs: 0,
       },
       {
@@ -87,7 +88,7 @@ const gatewayList = {
           source: 'manual',
         },
         libraries: [],
-        totalFiles: 5,
+        totalAlbums: 5,
         totalSongs: 3,
       },
     ],
@@ -102,12 +103,15 @@ describe('CloudSourcePage (P2-4 云源管理面板)', () => {
     mockHttpClient.mockResolvedValue({ json: gatewayList })
   })
 
-  it('lists gateways with file counts, last scan and bound libraries', async () => {
+  it('lists gateways with album counts, last scan and bound libraries', async () => {
     render(<CloudSourcePage />)
 
     await waitFor(() => expect(screen.getByText('nas')).toBeInTheDocument())
     expect(screen.getByText('quark')).toBeInTheDocument()
-    expect(screen.getByText('120')).toBeInTheDocument() // 文件数 totalFiles
+    expect(screen.getByText('专辑数')).toBeInTheDocument()
+    expect(screen.getByText('歌曲数')).toBeInTheDocument()
+    expect(screen.getByText('120')).toBeInTheDocument() // 专辑数 totalAlbums
+    expect(screen.getByText('390')).toBeInTheDocument() // 歌曲数 totalSongs（含 300 章有声书）
     expect(screen.getByText('网盘音乐')).toBeInTheDocument()
     expect(screen.getByText('网盘有声书')).toBeInTheDocument()
     // 有声书 media type chip

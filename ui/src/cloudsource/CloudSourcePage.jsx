@@ -33,7 +33,7 @@ import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
 import subsonic from '../subsonic'
 
-// 云源管理面板 (评审 P2-4)：网关状态 / 文件数 / 最后扫描时间 / 单源扫描 / 启停。
+// 云源管理面板 (评审 P2-4)：网关状态 / 专辑数 / 歌曲数 / 最后扫描时间 / 单源扫描 / 启停。
 // 启停语义：停用的网关会被所有扫描跳过（定时 + 手动），已入库媒体仍可播放。
 
 const useStyles = makeStyles((theme) => ({
@@ -256,8 +256,8 @@ const CloudSourcePage = () => {
 
               <Box className={classes.statsRow}>
                 <Box className={classes.stat}>
-                  <Typography className={classes.statValue}>{gw.totalFiles}</Typography>
-                  <Typography className={classes.statLabel}>文件数</Typography>
+                  <Typography className={classes.statValue}>{gw.totalAlbums}</Typography>
+                  <Typography className={classes.statLabel}>专辑数</Typography>
                 </Box>
                 <Box className={classes.stat}>
                   <Typography className={classes.statValue}>{gw.totalSongs}</Typography>
@@ -327,7 +327,7 @@ const CloudSourcePage = () => {
                       <TableRow>
                         <TableCell>云库</TableCell>
                         <TableCell>类型</TableCell>
-                        <TableCell align="right">文件数</TableCell>
+                        <TableCell align="right">专辑数</TableCell>
                         <TableCell align="right">歌曲数</TableCell>
                         <TableCell align="right">最后扫描</TableCell>
                       </TableRow>
@@ -343,7 +343,7 @@ const CloudSourcePage = () => {
                               variant="outlined"
                             />
                           </TableCell>
-                          <TableCell align="right">{lib.totalFiles}</TableCell>
+                          <TableCell align="right">{lib.totalAlbums}</TableCell>
                           <TableCell align="right">{lib.totalSongs}</TableCell>
                           <TableCell align="right">{fmtTime(lib.lastScanAt)}</TableCell>
                         </TableRow>

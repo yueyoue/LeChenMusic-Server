@@ -71,11 +71,12 @@ func decodeGatewayList(t *testing.T, w *httptest.ResponseRecorder) []cloudGatewa
 func TestCloudGatewaysListsBoundLibrariesAndAggregates(t *testing.T) {
 	scanned := time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC)
 	h := gatewayFixture(t, model.Libraries{
-		{ID: 1, Name: "本地音乐", Path: "/vol1/music", TotalFiles: 50, TotalSongs: 40},
+		{ID: 1, Name: "本地音乐", Path: "/vol1/music", TotalAlbums: 50, TotalSongs: 40},
 		{ID: 2, Name: "网盘音乐", Path: "openlist://192.168.1.10:5244/fnos/音乐", MediaType: "music",
-			TotalFiles: 100, TotalSongs: 90, LastScanAt: scanned},
+			TotalAlbums: 100, TotalSongs: 90, LastScanAt: scanned},
+		// 有声书库：一部书 = 一个专辑，一章 = 一首歌曲，计数与文件库一致（不再出现 0）。
 		{ID: 3, Name: "网盘有声书", Path: "openlist://192.168.1.10:5244/fnos/有声书", MediaType: "audiobook",
-			TotalFiles: 20, LastScanAt: scanned.Add(-time.Hour)},
+			TotalAlbums: 20, TotalSongs: 300, LastScanAt: scanned.Add(-time.Hour)},
 	})
 
 	w := httptest.NewRecorder()
@@ -107,8 +108,8 @@ func TestCloudGatewaysListsBoundLibrariesAndAggregates(t *testing.T) {
 	if len(nas.Libraries) != 2 {
 		t.Fatalf("nas must have 2 bound libraries, got %+v", nas.Libraries)
 	}
-	if nas.TotalFiles != 120 || nas.TotalSongs != 90 {
-		t.Fatalf("nas aggregates wrong: files=%d songs=%d", nas.TotalFiles, nas.TotalSongs)
+	if nas.TotalAlbums != 120 || nas.TotalSongs != 390 {
+		t.Fatalf("nas aggregates wrong: albums=%d songs=%d", nas.TotalAlbums, nas.TotalSongs)
 	}
 	if nas.LastScanAt == nil || !nas.LastScanAt.Equal(scanned) {
 		t.Fatalf("nas lastScanAt must be the most recent of its libraries, got %v", nas.LastScanAt)

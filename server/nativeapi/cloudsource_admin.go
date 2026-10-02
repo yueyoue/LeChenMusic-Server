@@ -31,13 +31,15 @@ import (
 )
 
 // cloudGatewayLibrary is one library bound to a gateway, with the aggregate stats the
-// panel shows ("文件数/最后扫描时间").
+// panel shows ("专辑数/歌曲数/最后扫描时间"). Counts come straight from the library row —
+// the same numbers 文件库 shows (an audiobook counts as an album, a chapter as a song),
+// so audiobook libraries no longer show a zero 文件数.
 type cloudGatewayLibrary struct {
 	ID                int       `json:"id"`
 	Name              string    `json:"name"`
 	MediaType         string    `json:"mediaType"`
 	Path              string    `json:"path"`
-	TotalFiles        int       `json:"totalFiles"`
+	TotalAlbums       int       `json:"totalAlbums"`
 	TotalSongs        int       `json:"totalSongs"`
 	LastScanAt        time.Time `json:"lastScanAt"`
 	LastScanStartedAt time.Time `json:"lastScanStartedAt"`
@@ -45,15 +47,15 @@ type cloudGatewayLibrary struct {
 
 // cloudGatewayInfo is one configured OpenList gateway as shown by the panel.
 type cloudGatewayInfo struct {
-	Name       string                   `json:"name"`
-	URL        string                   `json:"url"`
-	Host       string                   `json:"host"`
-	Enabled    bool                     `json:"enabled"`
-	Check      *cloudsource.GatewayCheck `json:"check,omitempty"`
-	Libraries  []cloudGatewayLibrary    `json:"libraries"`
-	TotalFiles int                      `json:"totalFiles"`
-	TotalSongs int                      `json:"totalSongs"`
-	LastScanAt *time.Time               `json:"lastScanAt,omitempty"`
+	Name        string                   `json:"name"`
+	URL         string                   `json:"url"`
+	Host        string                   `json:"host"`
+	Enabled     bool                     `json:"enabled"`
+	Check       *cloudsource.GatewayCheck `json:"check,omitempty"`
+	Libraries   []cloudGatewayLibrary    `json:"libraries"`
+	TotalAlbums int                      `json:"totalAlbums"`
+	TotalSongs  int                      `json:"totalSongs"`
+	LastScanAt  *time.Time               `json:"lastScanAt,omitempty"`
 }
 
 type cloudGatewayListResponse struct {
@@ -96,12 +98,12 @@ func (h *cloudSourceHandler) gateways(w http.ResponseWriter, r *http.Request) {
 				Name:              lib.Name,
 				MediaType:         lib.MediaType,
 				Path:              lib.Path,
-				TotalFiles:        lib.TotalFiles,
+				TotalAlbums:       lib.TotalAlbums,
 				TotalSongs:        lib.TotalSongs,
 				LastScanAt:        lib.LastScanAt,
 				LastScanStartedAt: lib.LastScanStartedAt,
 			})
-			gw.TotalFiles += lib.TotalFiles
+			gw.TotalAlbums += lib.TotalAlbums
 			gw.TotalSongs += lib.TotalSongs
 			if gw.LastScanAt == nil || lib.LastScanAt.After(*gw.LastScanAt) {
 				t := lib.LastScanAt
