@@ -125,6 +125,18 @@ func GatewayName(hostport string) (string, bool) {
 	return name, true
 }
 
+// TagModeForLibrary returns the configured tag-reading mode ("scan"/"filename") of the
+// gateway serving this library path. "filename" means: never read any file content —
+// titles come from file names and durations are unknown (评审 P2-11 快速模式).
+// Empty for local libraries (they always read tags locally, which is free).
+func TagModeForLibrary(libraryPath string) string {
+	name, ok := LibraryGatewayName(libraryPath)
+	if !ok {
+		return ""
+	}
+	return conf.Server.OpenList[name].TagMode
+}
+
 // loadGatewayStates reads the persisted enable/disable flags. Entries default to
 // enabled: only an explicit `false` disables a gateway.
 func loadGatewayStates(ctx context.Context, ds model.DataStore) map[string]bool {

@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/core/audiobookcover"
+	"github.com/navidrome/navidrome/core/cloudsource"
 	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
@@ -62,9 +63,9 @@ func (api *Router) addAudiobookRoute(r chi.Router) {
 		r.Get("/{id}/cover", h.cover)
 		r.Post("/{id}/cover", h.uploadCover) // Upload cover image (file or URL)
 		r.Post("/{id}/rescan", h.rescan)
-		r.Post("/rescan-all", h.rescanAll) // Batch rescan all audiobooks
+		r.Post("/rescan-all", h.rescanAll)                        // Batch rescan all audiobooks
 		r.Post("/narrator/{name}/avatar", h.uploadNarratorAvatar) // Upload narrator avatar
-		r.Get("/narrator/{name}/avatar", h.getNarratorAvatar) // Serve narrator avatar
+		r.Get("/narrator/{name}/avatar", h.getNarratorAvatar)     // Serve narrator avatar
 	})
 }
 
@@ -79,7 +80,9 @@ func (h *audiobookHandler) list(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	if books == nil { books = model.Audiobooks{} }
+	if books == nil {
+		books = model.Audiobooks{}
+	}
 	writeJSON(w, map[string]any{"data": books})
 }
 
@@ -95,7 +98,9 @@ func (h *audiobookHandler) listWithProgress(w http.ResponseWriter, r *http.Reque
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	if books == nil { books = model.Audiobooks{} }
+	if books == nil {
+		books = model.Audiobooks{}
+	}
 	progressList, _ := repo.GetUserProgress(usr.ID)
 	progressMap := make(map[string]*model.AudiobookProgress)
 	for i := range progressList {
@@ -256,7 +261,9 @@ func (h *audiobookHandler) starred(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	if books == nil { books = model.Audiobooks{} }
+	if books == nil {
+		books = model.Audiobooks{}
+	}
 	// Populate starred timestamp for each book
 	for i := range books {
 		starredAt, _ := repo.GetStarredAt(usr.ID, books[i].ID)
@@ -713,6 +720,8 @@ func (h *audiobookHandler) buildRescanChapters(r *http.Request, repo model.Audio
 			chapter.Title = old.Title
 			chapter.Duration = old.Duration
 			chapter.CreatedAt = old.CreatedAt
+		} else if cloudsource.TagModeForLibrary(lib.Path) == "filename" {
+			// 评审 P2-11 快速模式：新文件也不读内容——标题用文件名、时长留空。
 		} else if rs, closer, err := openChapterForTag(fsys, chapterPath); err == nil {
 			if f, err := taglib.OpenStream(rs, taglib.WithReadStyle(taglib.ReadStyleFast), taglib.WithFilename(chapterPath)); err == nil {
 				allTags := f.AllTags()
@@ -979,4 +988,3 @@ func writeJSON(w http.ResponseWriter, data any) {
 }
 
 // [LeChenMusic-END:audiobook]
-

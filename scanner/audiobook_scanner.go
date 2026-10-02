@@ -14,6 +14,7 @@ import (
 
 	. "github.com/Masterminds/squirrel"
 	"github.com/navidrome/navidrome/core/audiobookcover"
+	"github.com/navidrome/navidrome/core/cloudsource"
 	"github.com/navidrome/navidrome/core/storage"
 	// The scanner resolves library paths through core/storage; the local backend registers
 	// itself in init(). Importing it here keeps the "file" scheme available no matter which
@@ -82,12 +83,18 @@ func openForTag(fsys storage.MusicFS, filePath string) (io.ReadSeeker, io.Closer
 	return rs, f, nil
 }
 
+// tagModeForLibrary resolves the gateway's tag-reading mode for a library path
+// (评审 P2-11: "filename" = 云库快速模式，绝不读文件内容). Seam var so tests can stub it.
+var tagModeForLibrary = cloudsource.TagModeForLibrary
+
 func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Library) error {
 	startTime := time.Now()
 	source := "local"
 	if storage.IsRemoteURI(library.Path) {
 		source = "cloud"
 	}
+	// 快速模式：标题取文件名、时长留空、内嵌封面也不提取——零内容读取（风控友好）。
+	skipTags := tagModeForLibrary(library.Path) == "filename"
 	log.Info(ctx, "Audiobook scanner: Starting scan", "library", library.Name, "path", library.Path, "source", source)
 
 	fsys, err := audiobookFS(ctx, library)
@@ -159,7 +166,7 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 						book.Series = tags.series
 					}
 				}
-				s.scanChapters(ctx, fsys, &book, repo)
+				s.scanChapters(ctx, fsys, &book, repo, skipTags)
 				if err := repo.Put(&book); err != nil {
 					log.Error(ctx, "Audiobook scanner: Error updating", "book", book.Title, err)
 				} else {
@@ -171,7 +178,7 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 		}
 
 		// Create new audiobook
-		book := s.createAudiobookFromDir(ctx, fsys, library, relPath, bookHash)
+		book := s.createAudiobookFromDir(ctx, fsys, library, relPath, bookHash, skipTags)
 		// IMPORTANT: Save the book FIRST before scanning chapters,
 		// because audiobook_chapter has a foreign key referencing audiobook(id).
 		// If the book doesn't exist in DB yet, chapter inserts will fail.
@@ -179,7 +186,7 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 			log.Error(ctx, "Audiobook scanner: Error creating", "book", book.Title, err)
 			return nil
 		}
-		s.scanChapters(ctx, fsys, &book, repo)
+		s.scanChapters(ctx, fsys, &book, repo, skipTags)
 		// scanChapters fills ChapterCount/TotalDuration/Size in on the book struct. Persist
 		// them here, or the DB keeps the zero values: the API then reports 0 chapters and the
 		// "ChapterCount == 0" guard above re-reads every chapter tag on every single scan.
@@ -200,14 +207,17 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 	return nil
 }
 
-func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, fsys storage.MusicFS, library model.Library, relPath, bookHash string) model.Audiobook {
+func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, fsys storage.MusicFS, library model.Library, relPath, bookHash string, skipTags bool) model.Audiobook {
 	dirName := path.Base(relPath)
 	author, title := parseAudiobookDirName(dirName)
 	genre := detectGenreFromPath(relPath)
 
 	// [LeChenMusic-START:audiobook-id3-tags]
 	// Try to read metadata from the first audio file's ID3 tags
-	tags := readFirstAudioFileTags(fsys, relPath)
+	tags := audiobookTags{}
+	if !skipTags {
+		tags = readFirstAudioFileTags(fsys, relPath)
+	}
 	if tags.title != "" {
 		stripped := stripChapterSuffix(tags.title)
 		if stripped != "" && !isNumericOnly(stripped) && len([]rune(stripped)) > 1 {
@@ -263,7 +273,8 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, fsys stor
 	// 书目录没有封面文件时，识别音频文件本身内嵌的封面（ID3v2 APIC/FLAC PICTURE/MP4 covr…）：
 	// 提取后按上传/刮削同款规则落盘（本地可写库写进书目录，云库/只读库写本地覆盖目录），
 	// 入库即把音频文件的封面图片信息记录进 book.CoverPath。
-	if coverPath == "" {
+	// 快速模式（TagMode=filename）同样跳过：提取内嵌封面就是内容读取。
+	if coverPath == "" && !skipTags {
 		if data, ext, err := audiobookcover.EmbeddedCover(fsys, relPath); err == nil {
 			if relCover, saveErr := audiobookcover.SaveCover(&book, &library, data, ext); saveErr == nil {
 				coverPath = relCover
@@ -278,7 +289,7 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, fsys stor
 	return book
 }
 
-func (s *AudiobookScanner) scanChapters(ctx context.Context, fsys storage.MusicFS, book *model.Audiobook, repo model.AudiobookRepository) {
+func (s *AudiobookScanner) scanChapters(ctx context.Context, fsys storage.MusicFS, book *model.Audiobook, repo model.AudiobookRepository, skipTags bool) {
 	_ = repo.DeleteChapters(book.ID)
 
 	audiobookPath := book.Path
@@ -318,21 +329,24 @@ func (s *AudiobookScanner) scanChapters(ctx context.Context, fsys storage.MusicF
 			fileSize = info.Size()
 		}
 		// [LeChenMusic-START:audiobook-id3-tags]
-		// Try to read chapter title and duration from ID3 tags
+		// Try to read chapter title and duration from ID3 tags (skipped in filename mode:
+		// title falls back to the file name, duration stays 0 — zero content reads).
 		var chapterDuration int
-		if rs, closer, err := openForTag(fsys, chapterPath); err == nil {
-			if f, err := taglib.OpenStream(rs, taglib.WithReadStyle(taglib.ReadStyleFast), taglib.WithFilename(chapterPath)); err == nil {
-				allTags := f.AllTags()
-				props := f.Properties()
-				f.Close()
-				if v, ok := allTags.Tags["TITLE"]; ok && len(v) > 0 && v[0] != "" {
-					chapterTitle = v[0]
+		if !skipTags {
+			if rs, closer, err := openForTag(fsys, chapterPath); err == nil {
+				if f, err := taglib.OpenStream(rs, taglib.WithReadStyle(taglib.ReadStyleFast), taglib.WithFilename(chapterPath)); err == nil {
+					allTags := f.AllTags()
+					props := f.Properties()
+					f.Close()
+					if v, ok := allTags.Tags["TITLE"]; ok && len(v) > 0 && v[0] != "" {
+						chapterTitle = v[0]
+					}
+					if props.Length > 0 {
+						chapterDuration = int(props.Length.Seconds())
+					}
 				}
-				if props.Length > 0 {
-					chapterDuration = int(props.Length.Seconds())
-				}
+				closer.Close()
 			}
-			closer.Close()
 		}
 		// [LeChenMusic-END:audiobook-id3-tags]
 
