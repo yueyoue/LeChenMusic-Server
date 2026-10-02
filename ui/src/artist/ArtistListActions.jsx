@@ -22,19 +22,26 @@ const ArtistListActions = ({
 }) => {
   const isNotSmall = useMediaQuery((theme) => theme.breakpoints.up('sm'))
   const [dialogOpen, setDialogOpen] = useState(false)
-  const { setFilters } = useListContext()
-  const noImageOnly = String(filterValues?.no_image) === 'true'
+  // 以 useListContext 的实时值为准：react-admin 不一定会把 filterValues 传给 actions 元素，
+  // 拿 props 里的值会是 undefined，导致批量弹窗发出去的是空 filter（列出全部艺人）。
+  const {
+    setFilters,
+    filterValues: ctxFilterValues,
+    displayedFilters: ctxDisplayedFilters,
+  } = useListContext()
+  const activeFilters = ctxFilterValues ?? filterValues ?? {}
+  const noImageOnly = String(activeFilters?.no_image) === 'true'
 
   // 把所有未设置头像（显示默认头像）的艺人筛选出来：往列表过滤器里加 no_image=true。
   // 后端 persistence.noImageFilter 按「没有任何头像图源」筛选。
   const toggleNoImageFilter = () => {
-    const next = { ...(filterValues || {}) }
+    const next = { ...activeFilters }
     if (noImageOnly) {
       delete next.no_image
     } else {
       next.no_image = 'true'
     }
-    setFilters(next, displayedFilters || {})
+    setFilters(next, ctxDisplayedFilters ?? displayedFilters ?? {})
   }
 
   return (
@@ -60,13 +67,23 @@ const ArtistListActions = ({
         <BatchAvatarDialog
           open={dialogOpen}
           onClose={() => setDialogOpen(false)}
-          filterValues={filterValues}
+          filterValues={activeFilters}
           noImageOnly={noImageOnly}
         />
       )}
     </TopToolbar>
   )
 }
+
+// 艺人是否已经有头像（与服务端 noImageFilter 同口径：没有任何头像图源就是显示默认头像）。
+// 批量弹窗里再自己兜一次底，即使服务端过滤器没生效也只处理真正没头像的艺人。
+const hasAvatar = (a) =>
+  !!(
+    a?.smallImageUrl ||
+    a?.mediumImageUrl ||
+    a?.largeImageUrl ||
+    a?.uploadedImage
+  )
 
 const BatchAvatarDialog = ({ open, onClose, filterValues, noImageOnly }) => {
   const [loading, setLoading] = useState(false)
@@ -79,21 +96,38 @@ const BatchAvatarDialog = ({ open, onClose, filterValues, noImageOnly }) => {
     setLoading(true)
     setResults(null)
     try {
-      // 按当前列表过滤器取艺人：勾了「筛选无头像」就只取没头像的，否则取全部
-      const filterParam = encodeURIComponent(JSON.stringify(filterValues || {}))
-      const all = []
+      // 参数约定：后端走 deluan/rest，认的是 _start/_end/_sort/_order + 「拍平的过滤条件」，
+      // 不认 ra-data-simple-rest 那套 filter=/range=/sort=（那些会被当成普通过滤字段丢掉，
+      // 所以以前弹窗永远列出全部艺人）。这里跟列表页发的请求保持同一套约定。
+      const byId = new Map()
       const pageSize = 500
-      for (let page = 0; page < 10; page++) {
-        const start = page * pageSize
-        const res = await httpClient(
-          `${REST_URL}/artist?sort=["name"]&order=ASC&range=[${start},${start + pageSize - 1}]&filter=${filterParam}`,
-        )
+      for (let page = 0; page < 20; page++) {
+        const qs = new URLSearchParams()
+        qs.set('_start', String(page * pageSize))
+        qs.set('_end', String((page + 1) * pageSize))
+        qs.set('_sort', 'name')
+        qs.set('_order', 'ASC')
+        Object.entries(filterValues || {}).forEach(([key, value]) => {
+          if (value === undefined || value === null || value === '') return
+          if (Array.isArray(value)) {
+            value.forEach((v) => qs.append(key, String(v)))
+          } else {
+            qs.set(key, String(value))
+          }
+        })
+        const res = await httpClient(`${REST_URL}/artist?${qs.toString()}`)
         const batch = res.json || []
-        if (!Array.isArray(batch) || batch.length === 0) break
-        all.push(...batch)
-        if (batch.length < pageSize) break
+        const list = Array.isArray(batch) ? batch : []
+        if (list.length === 0) break
+        const before = byId.size
+        list.forEach((a) => a?.id && byId.set(a.id, a))
+        if (byId.size === before) break // 没有新数据就不用再翻页
+        if (list.length < pageSize) break
       }
-      setResults(all)
+      const all = [...byId.values()]
+      // 兼容层：服务端万一没筛（老版本），这里再按「没有头像」算一次，
+      // 保证「批量匹配无头像」永远不会去动已经有头像的艺人。
+      setResults(noImageOnly ? all.filter((a) => !hasAvatar(a)) : all)
     } catch (e) {
       console.error('Failed to load artists:', e)
       notify('加载艺人失败', 'warning')
