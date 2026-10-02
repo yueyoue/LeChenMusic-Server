@@ -15,6 +15,7 @@ import (
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/consts"
 	"github.com/navidrome/navidrome/core/publicurl"
+	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	"github.com/navidrome/navidrome/server/subsonic/responses"
@@ -219,8 +220,8 @@ func childFromMediaFile(ctx context.Context, mf model.MediaFile) responses.Child
 	child.CoverArt = mf.CoverArtID().String()
 	child.ContentType = mf.ContentType()
 
-	if ok && player.ReportRealPath {
-		child.Path = mf.AbsolutePath()
+	if ok && reportsRealPath(player) {
+		child.Path = realPath(mf)
 	} else {
 		child.Path = fakePath(mf)
 	}
@@ -314,6 +315,24 @@ func artistRefs(participants model.ParticipantList) []responses.ArtistID3Ref {
 			Name: p.Name,
 		}
 	})
+}
+
+// reportsRealPath tells whether this client receives real media paths instead of the
+// synthesized fakePath. The first-party LeChenMusic app needs them for its W/B 来源角标
+// (same standard as the web UI's libraryPath badge: openlist:// prefix = cloud), so it
+// always gets real paths; other clients follow the per-player report_real_path toggle.
+func reportsRealPath(p model.Player) bool {
+	return p.ReportRealPath || p.Client == "lechenmusic"
+}
+
+// realPath returns the media file's real path. Cloud libraries live on storage URIs
+// ("openlist://host/path"); filepath.Join collapses the "//" and would break the URI
+// scheme, so remote libraries are joined with a plain "/" instead.
+func realPath(mf model.MediaFile) string {
+	if storage.IsRemoteURI(mf.LibraryPath) {
+		return strings.TrimSuffix(mf.LibraryPath, "/") + "/" + strings.TrimPrefix(mf.Path, "/")
+	}
+	return mf.AbsolutePath()
 }
 
 func fakePath(mf model.MediaFile) string {

@@ -779,3 +779,29 @@ var _ = Describe("helpers", func() {
 		})
 	})
 })
+
+var _ = Describe("source paths (W/B 来源角标数据源)", func() {
+	Describe("reportsRealPath", func() {
+		It("给第一方客户端 lechenmusic 返回真实路径（W/B 角标依赖）", func() {
+			Expect(reportsRealPath(model.Player{Client: "lechenmusic"})).To(BeTrue())
+		})
+		It("其他客户端跟随 report_real_path 开关", func() {
+			Expect(reportsRealPath(model.Player{Client: "Subsonic"})).To(BeFalse())
+			Expect(reportsRealPath(model.Player{Client: "Subsonic", ReportRealPath: true})).To(BeTrue())
+		})
+	})
+
+	Describe("realPath", func() {
+		It("云库的 openlist:// 前缀必须完整保留（filepath.Join 会把 // 折叠成 /）", func() {
+			mf := model.MediaFile{
+				LibraryPath: "openlist://192.168.1.10:5244/fnos/音乐",
+				Path:        "鬼吹灯/01.mp3",
+			}
+			Expect(realPath(mf)).To(Equal("openlist://192.168.1.10:5244/fnos/音乐/鬼吹灯/01.mp3"))
+		})
+		It("本地库照旧拼绝对路径", func() {
+			mf := model.MediaFile{LibraryPath: "/music", Path: "album/01.mp3"}
+			Expect(realPath(mf)).To(Equal("/music/album/01.mp3"))
+		})
+	})
+})
