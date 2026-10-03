@@ -379,9 +379,15 @@ func (h *scrapeHandler) serveImage(w http.ResponseWriter, r *http.Request) {
 	// Try each extension
 	for _, ext := range []string{".jpg", ".jpeg", ".png", ".webp"} {
 		path := filepath.Join(dir, id+ext)
-		if _, err := os.Stat(path); err == nil {
-			w.Header().Set("Cache-Control", "public, max-age=86400")
-			http.ServeFile(w, r, path)
+		if info, err := os.Stat(path); err == nil {
+			data, readErr := os.ReadFile(path)
+			if readErr != nil {
+				http.Error(w, "Image not found", 404)
+				return
+			}
+			// Avatars are drawn small but stored as downloaded (often 200KB+); the artist
+			// list requests one per row, so these get the same thumbnail treatment as covers.
+			serveCoverBytes(w, r, filepath.Base(path), info.ModTime(), data)
 			return
 		}
 	}

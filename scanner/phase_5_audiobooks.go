@@ -31,6 +31,11 @@ func (p *phaseAudiobooks) producer() ppl.Producer[*model.Folder] {
 				if err := scanner.ScanLibrary(p.ctx, lib); err != nil {
 					log.Error(p.ctx, "Scanner: Audiobook scan failed", "library", lib.Name, err)
 				}
+				// The audiobook scanner is the only writer of these rows (it creates, updates
+				// and now also purges vanished books), so always ask for a library stats
+				// refresh: a quick scan would otherwise leave 专辑数/歌曲数 stale after a
+				// shelf moved away. The refresh is a handful of COUNT queries.
+				p.state.changesDetected.Store(true)
 			}
 		}
 		return nil

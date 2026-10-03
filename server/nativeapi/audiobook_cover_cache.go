@@ -7,13 +7,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
-	"mime"
 	"net/http"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/navidrome/navidrome/conf"
+	"github.com/navidrome/navidrome/core/artwork"
 	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/utils/cache"
@@ -39,6 +38,11 @@ const maxCachedCoverBytes = 10 << 20
 // coverCacheFolder is the LRU cache subfolder under the global cache dir (data/cache).
 const coverCacheFolder = "audiobook-covers"
 
+// coverCachePrefix versions the cache keys. It changed when the cache started storing
+// thumbnails instead of the originals: bumping it makes the pre-thumbnail entries
+// unreachable, so they age out of the LRU instead of being served at full size forever.
+const coverCachePrefix = "abcover-thumb-"
+
 // coverCacheItem implements cache.Item for a single audiobook cover image.
 type coverCacheItem struct {
 	keyStr string
@@ -55,7 +59,7 @@ func (i *coverCacheItem) Key() string { return i.keyStr }
 // stale hit; the old entry ages out via the LRU.
 func coverCacheKey(libPath, relCover string, mtime time.Time, size int64) string {
 	sum := sha256.Sum256(fmt.Appendf(nil, "lib\x00%s\x00%s\x00%d\x00%d", libPath, relCover, mtime.UnixMilli(), size))
-	return "abcover-" + hex.EncodeToString(sum[:])
+	return coverCachePrefix + hex.EncodeToString(sum[:])
 }
 
 // coverURLCacheKey builds the key for a proxied CoverUrl image. The day bucket gives
@@ -64,7 +68,7 @@ func coverCacheKey(libPath, relCover string, mtime time.Time, size int64) string
 func coverURLCacheKey(rawURL string) string {
 	bucket := time.Now().UTC().Truncate(24 * time.Hour).UnixMilli()
 	sum := sha256.Sum256(fmt.Appendf(nil, "url\x00%s\x00%d", rawURL, bucket))
-	return "abcover-" + hex.EncodeToString(sum[:])
+	return coverCachePrefix + hex.EncodeToString(sum[:])
 }
 
 // readCoverForCache fetches cover bytes on a cache miss. Library covers are read through
@@ -80,7 +84,9 @@ func readCoverForCache(ctx context.Context, item cache.Item) (io.Reader, error) 
 		if err != nil {
 			return nil, err
 		}
-		return bytes.NewReader(data), nil
+		// Store the thumbnail, not the original: the cache is what ends up on the wire.
+		out, _ := artwork.ThumbnailImage(data, "cover.jpg", maxCoverDimension)
+		return bytes.NewReader(out), nil
 	}
 
 	fsys, err := storage.FSFor(ctx, ci.libPath)
@@ -100,7 +106,9 @@ func readCoverForCache(ctx context.Context, item cache.Item) (io.Reader, error) 
 	if len(data) > maxCachedCoverBytes {
 		return nil, fmt.Errorf("audiobook cover %q exceeds %d bytes", ci.relCover, maxCachedCoverBytes)
 	}
-	return bytes.NewReader(data), nil
+	// Store the thumbnail, not the original: the cache is what ends up on the wire.
+	out, _ := artwork.ThumbnailImage(data, ci.relCover, maxCoverDimension)
+	return bytes.NewReader(out), nil
 }
 
 var (
@@ -119,9 +127,10 @@ func getCoverCache() cache.FileCache {
 	return coverCacheInst
 }
 
-// serveCachedCover streams a cover through the given disk cache. On a cache hit the
-// stream is seekable, so http.ServeContent gives Range + If-Modified-Since/304 support;
-// while the first fill is still streaming we fall back to a plain copy.
+// serveCachedCover streams a cover through the given disk cache. The cache holds
+// thumbnails (readCoverForCache downscales on fill), and serveCoverBytes re-checks on the
+// way out so entries written before that still get shrunk instead of going out at full
+// size. Range / If-Modified-Since / 304 all keep working via http.ServeContent.
 func serveCachedCover(w http.ResponseWriter, r *http.Request, cc cache.FileCache, item *coverCacheItem, name string, modTime time.Time) {
 	stream, err := cc.Get(r.Context(), item)
 	if err != nil {
@@ -131,15 +140,11 @@ func serveCachedCover(w http.ResponseWriter, r *http.Request, cc cache.FileCache
 	}
 	defer func() { _ = stream.Close() }()
 
-	w.Header().Set("Cache-Control", "public, max-age=3600")
-	if rs, ok := stream.Reader.(io.ReadSeeker); ok {
-		http.ServeContent(w, r, name, modTime, rs)
+	data, err := io.ReadAll(io.LimitReader(stream.Reader, maxCachedCoverBytes+1))
+	if err != nil || len(data) > maxCachedCoverBytes {
+		log.Debug(r.Context(), "[cloud] cover cache read failed", "key", item.Key(), err)
+		http.Error(w, "No cover found", 404)
 		return
 	}
-	if ext := filepath.Ext(name); ext != "" {
-		if ct := mime.TypeByExtension(ext); ct != "" {
-			w.Header().Set("Content-Type", ct)
-		}
-	}
-	_, _ = io.Copy(w, stream.Reader)
+	serveCoverBytes(w, r, name, modTime, data)
 }

@@ -106,10 +106,25 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 	repo := s.ds.Audiobook(ctx)
 	var scanned, created, updated int
 
+	// Books seen during this walk. Anything in the library that is not in here is gone
+	// from disk and gets purged below — otherwise moving a whole shelf to a cloud
+	// library leaves the old rows behind and the media library keeps reporting
+	// 专辑数/歌曲数 for content that no longer exists.
+	seen := map[string]bool{}
+	var walkErrors int
+	if _, listErr := fs.ReadDir(fsys, "."); listErr != nil {
+		// Unreadable root means unreachable storage (e.g. a cloud gateway that is down),
+		// NOT an empty library: purging here would wipe the whole library from the DB.
+		log.Warn(ctx, "Audiobook scanner: cannot list library root, skipping vanished-book cleanup",
+			"library", library.Name, listErr)
+		seen = nil
+	}
+
 	// fs.WalkDir walks the storage abstraction (io/fs), so every path below is
 	// library-relative and always uses "/" as separator — for local and cloud alike.
 	err = fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
+			walkErrors++
 			return nil
 		}
 		if !d.IsDir() {
@@ -141,6 +156,9 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 		// This directory is an audiobook
 		relPath := p
 		bookHash := audiobookHash(relPath)
+		if seen != nil {
+			seen[relPath] = true
+		}
 
 		// Check if already exists
 		existing, existErr := repo.GetAll(model.QueryOptions{
@@ -200,11 +218,51 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 
 	if err != nil {
 		log.Error(ctx, "Audiobook scanner: Walk error", "library", library.Name, err)
+		walkErrors++
+	}
+
+	// Only clean up when the walk was completely healthy: a partial listing must never
+	// be mistaken for "these books were deleted".
+	removed := 0
+	if seen != nil && walkErrors == 0 {
+		removed = s.purgeVanishedBooks(ctx, repo, library, seen)
+	} else {
+		log.Warn(ctx, "Audiobook scanner: skipped vanished-book cleanup",
+			"library", library.Name, "walkErrors", walkErrors)
 	}
 
 	log.Info(ctx, "Audiobook scanner: Scan complete", "library", library.Name, "source", source,
-		"scanned", scanned, "created", created, "updated", updated, "duration", time.Since(startTime))
+		"scanned", scanned, "created", created, "updated", updated, "removed", removed, "duration", time.Since(startTime))
 	return nil
+}
+
+// purgeVanishedBooks deletes books (and their chapters) that are still in the database but
+// no longer on disk. Without it, moving local audiobook folders to a cloud source leaves
+// the media library counting books that are long gone.
+func (s *AudiobookScanner) purgeVanishedBooks(ctx context.Context, repo model.AudiobookRepository, library model.Library, seen map[string]bool) int {
+	existing, err := repo.GetAll(model.QueryOptions{Filters: Eq{"library_id": library.ID}})
+	if err != nil {
+		log.Error(ctx, "Audiobook scanner: cannot list books for cleanup", "library", library.Name, err)
+		return 0
+	}
+	removed := 0
+	for _, book := range existing {
+		if seen[book.Path] {
+			continue
+		}
+		if err := repo.DeleteChapters(book.ID); err != nil {
+			log.Error(ctx, "Audiobook scanner: cannot delete chapters of vanished book", "book", book.Title, err)
+			continue
+		}
+		if err := repo.Delete(book.ID); err != nil {
+			log.Error(ctx, "Audiobook scanner: cannot delete vanished book", "book", book.Title, err)
+			continue
+		}
+		removed++
+		log.Info(ctx, "Audiobook scanner: removed vanished book",
+			"book", book.Title, "path", book.Path, "library", library.Name)
+	}
+	return removed
 }
 
 func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, fsys storage.MusicFS, library model.Library, relPath, bookHash string, skipTags bool) model.Audiobook {

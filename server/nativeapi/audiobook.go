@@ -1,7 +1,6 @@
 package nativeapi
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -555,8 +554,11 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 	// Local override cover (uploaded/scraped for books in cloud libraries, 评审 §4 P1-2)
 	// wins over the library copy.
 	if p := audiobookCoverOverride(book.ID); p != "" {
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-		http.ServeFile(w, r, p)
+		if data, readErr := os.ReadFile(p); readErr == nil {
+			serveCoverBytes(w, r, filepath.Base(p), time.Time{}, data)
+			return
+		}
+		http.Error(w, "No cover found", 404)
 		return
 	}
 	// Cover lookup goes through the storage abstraction so cloud libraries work too. On a
@@ -586,9 +588,17 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 			}, name, info.ModTime())
 			return
 		}
-		if err := storage.ServeFile(r.Context(), w, r, lib.Path, relCover); err != nil {
-			http.Error(w, "No cover found", 404)
+		// Local library: read the file and downscale on the way out — the originals can be
+		// 1.5MB and a category page asks for a hundred of them at once.
+		if f, openErr := fsys.Open(relCover); openErr == nil {
+			data, readErr := io.ReadAll(io.LimitReader(f, maxCachedCoverBytes+1))
+			_ = f.Close()
+			if readErr == nil && len(data) <= maxCachedCoverBytes {
+				serveCoverBytes(w, r, name, info.ModTime(), data)
+				return
+			}
 		}
+		http.Error(w, "No cover found", 404)
 		return
 	}
 	// [LeChenMusic-START:audiobook-embedded-cover]
@@ -598,8 +608,7 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 	// cover_url 远程兑底（文件自带的封面比网页抓的更准）。浏览器/客户端按 Cache-Control
 	// 缓存，重复请求不会重复解析标签。
 	if data, ext, err := audiobookcover.EmbeddedCover(fsys, book.Path); err == nil {
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-		http.ServeContent(w, r, "cover"+ext, time.Time{}, bytes.NewReader(data))
+		serveCoverBytes(w, r, "cover"+ext, time.Time{}, data)
 		return
 	}
 	// [LeChenMusic-END:audiobook-embedded-cover]
