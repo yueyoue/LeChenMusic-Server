@@ -61,7 +61,20 @@ jobs:
             echo "build=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if git diff --name-only "$BEFORE" "${{ github.sha }}" | grep -qvE '^(docs/|[^/]+\.md$)'; then
+          # force-push / 重推时 BEFORE 指向的 commit 可能已不在历史里，git diff 会失败。
+          # 此时必须默认构建：ff5262c 那次就是被误判成“仅文档改动”静默跳过了镜像发布，
+          # 导致 GHCR 的 :latest 一直停在旧版本，用户 docker compose pull 拉不到新版。
+          if ! CHANGED=$(git diff --name-only "$BEFORE" "${{ github.sha }}" 2>/dev/null); then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "Cannot diff $BEFORE..${{ github.sha }} (force-push?), building image to be safe"
+            exit 0
+          fi
+          if [ -z "$CHANGED" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            echo "Empty diff against $BEFORE, building image to be safe"
+            exit 0
+          fi
+          if printf '%s\n' "$CHANGED" | grep -qvE '^(docs/|[^/]+\.md$)'; then
             echo "build=true" >> "$GITHUB_OUTPUT"
           else
             echo "build=false" >> "$GITHUB_OUTPUT"
