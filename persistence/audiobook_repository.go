@@ -72,6 +72,38 @@ func (r *audiobookRepository) Delete(id string) error {
 	return r.delete(Eq{"id": id})
 }
 
+// DeleteWithRelations removes a book and all rows that reference it, in foreign-key-safe order.
+// audiobook_progress.chapter_id and audiobook_bookmark.chapter_id reference audiobook_chapter
+// WITHOUT ON DELETE CASCADE, so deleting chapters first fails on any book that has playback
+// progress or bookmarks and leaves the book behind. Order:
+// progress/bookmarks/favorites (by-book + by-chapter links) -> chapters -> book.
+func (r *audiobookRepository) DeleteWithRelations(audiobookID string) error {
+	// Clear the rows that reference this book. These must go before the chapters because their
+	// chapter_id points into audiobook_chapter with no cascade.
+	if _, err := r.executeSQL(Delete("audiobook_progress").Where(Eq{"audiobook_id": audiobookID})); err != nil {
+		return err
+	}
+	if _, err := r.executeSQL(Delete("audiobook_bookmark").Where(Eq{"audiobook_id": audiobookID})); err != nil {
+		return err
+	}
+	if _, err := r.executeSQL(Delete("audiobook_favorite").Where(Eq{"audiobook_id": audiobookID})); err != nil {
+		return err
+	}
+	// Orphaned rows whose chapter_id references one of this book's chapters but whose audiobook_id
+	// drifted would still block chapter deletion — clear them by chapter reference too.
+	chapterRefs := "chapter_id IN (SELECT id FROM audiobook_chapter WHERE audiobook_id = ?)"
+	if _, err := r.executeSQL(Delete("audiobook_progress").Where(Expr(chapterRefs, audiobookID))); err != nil {
+		return err
+	}
+	if _, err := r.executeSQL(Delete("audiobook_bookmark").Where(Expr(chapterRefs, audiobookID))); err != nil {
+		return err
+	}
+	if err := r.DeleteChapters(audiobookID); err != nil {
+		return err
+	}
+	return r.Delete(audiobookID)
+}
+
 // ─── Chapter CRUD ────────────────────────────────────────
 
 func (r *audiobookRepository) GetChapters(audiobookID string) (model.AudiobookChapters, error) {

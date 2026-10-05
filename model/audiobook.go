@@ -81,6 +81,12 @@ type AudiobookRepository interface {
 	Count(options ...QueryOptions) (int64, error)
 	Put(book *Audiobook) error
 	Delete(id string) error
+	// DeleteWithRelations removes a book and every row that references it, in foreign-key-safe
+	// order (progress/bookmarks/favorites → chapters → book). audiobook_progress.chapter_id and
+	// audiobook_bookmark.chapter_id reference audiobook_chapter WITHOUT ON DELETE CASCADE, so
+	// deleting chapters first would fail on any book that has playback progress or bookmarks and
+	// leave the book behind.
+	DeleteWithRelations(audiobookID string) error
 
 	GetChapters(audiobookID string) (AudiobookChapters, error)
 	GetChapter(id string) (*AudiobookChapter, error)

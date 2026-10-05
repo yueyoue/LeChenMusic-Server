@@ -3,6 +3,7 @@ package scanner
 import (
 	"context"
 	"crypto/md5"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -221,25 +222,33 @@ func (s *AudiobookScanner) ScanLibrary(ctx context.Context, library model.Librar
 		walkErrors++
 	}
 
-	// Only clean up when the walk was completely healthy: a partial listing must never
-	// be mistaken for "these books were deleted".
-	removed := 0
-	if seen != nil && walkErrors == 0 {
-		removed = s.purgeVanishedBooks(ctx, repo, library, seen)
-	} else {
-		log.Warn(ctx, "Audiobook scanner: skipped vanished-book cleanup",
-			"library", library.Name, "walkErrors", walkErrors)
-	}
+	// Clean up books whose folder is gone. Judgement is PER BOOK: a book is removed only when
+	// its directory is definitively missing (ENOENT). Any other error (permissions, unreachable
+	// gateway) keeps the book — a transient outage must never wipe the library. This no longer
+	// needs a perfectly clean walk: a single unreadable entry used to skip cleanup entirely (the
+	// old "walkErrors == 0" guard), so ghost books could never be removed.
+	removed := s.purgeVanishedBooks(ctx, fsys, repo, library, seen)
 
 	log.Info(ctx, "Audiobook scanner: Scan complete", "library", library.Name, "source", source,
-		"scanned", scanned, "created", created, "updated", updated, "removed", removed, "duration", time.Since(startTime))
+		"scanned", scanned, "created", created, "updated", updated, "removed", removed, "walkErrors", walkErrors, "duration", time.Since(startTime))
 	return nil
 }
 
-// purgeVanishedBooks deletes books (and their chapters) that are still in the database but
-// no longer on disk. Without it, moving local audiobook folders to a cloud source leaves
-// the media library counting books that are long gone.
-func (s *AudiobookScanner) purgeVanishedBooks(ctx context.Context, repo model.AudiobookRepository, library model.Library, seen map[string]bool) int {
+// bookDirMissing reports whether the book's folder is definitively gone (ENOENT). Any other
+// error (permissions, unreachable gateway) keeps the book: a transient outage must never be
+// mistaken for deletion.
+func bookDirMissing(fsys fs.FS, p string) bool {
+	_, err := fs.Stat(fsys, p)
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, fs.ErrNotExist)
+}
+
+// purgeVanishedBooks deletes books (and everything that references them) that are still in the
+// database but whose folder is gone. Without it, moving local audiobook folders to a cloud
+// source leaves the media library counting books that are long gone.
+func (s *AudiobookScanner) purgeVanishedBooks(ctx context.Context, fsys fs.FS, repo model.AudiobookRepository, library model.Library, seen map[string]bool) int {
 	existing, err := repo.GetAll(model.QueryOptions{Filters: Eq{"library_id": library.ID}})
 	if err != nil {
 		log.Error(ctx, "Audiobook scanner: cannot list books for cleanup", "library", library.Name, err)
@@ -247,14 +256,13 @@ func (s *AudiobookScanner) purgeVanishedBooks(ctx context.Context, repo model.Au
 	}
 	removed := 0
 	for _, book := range existing {
-		if seen[book.Path] {
-			continue
+		if seen != nil && seen[book.Path] {
+			continue // definitely present in this walk
 		}
-		if err := repo.DeleteChapters(book.ID); err != nil {
-			log.Error(ctx, "Audiobook scanner: cannot delete chapters of vanished book", "book", book.Title, err)
-			continue
+		if !bookDirMissing(fsys, book.Path) {
+			continue // folder still there, or unreachable -> keep
 		}
-		if err := repo.Delete(book.ID); err != nil {
+		if err := repo.DeleteWithRelations(book.ID); err != nil {
 			log.Error(ctx, "Audiobook scanner: cannot delete vanished book", "book", book.Title, err)
 			continue
 		}

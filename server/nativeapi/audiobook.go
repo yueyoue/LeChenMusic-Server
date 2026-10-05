@@ -2,6 +2,7 @@ package nativeapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -15,7 +16,6 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/conf"
-	"github.com/navidrome/navidrome/core/audiobookcover"
 	"github.com/navidrome/navidrome/core/cloudsource"
 	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
@@ -63,6 +63,7 @@ func (api *Router) addAudiobookRoute(r chi.Router) {
 		r.Post("/{id}/cover", h.uploadCover) // Upload cover image (file or URL)
 		r.Post("/{id}/rescan", h.rescan)
 		r.Post("/rescan-all", h.rescanAll)                        // Batch rescan all audiobooks
+		r.Post("/purge-missing", h.purgeMissing)                  // Immediately drop books whose folder is gone (admin)
 		r.Post("/narrator/{name}/avatar", h.uploadNarratorAvatar) // Upload narrator avatar
 		r.Get("/narrator/{name}/avatar", h.getNarratorAvatar)     // Serve narrator avatar
 	})
@@ -558,7 +559,7 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 			serveCoverBytes(w, r, filepath.Base(p), time.Time{}, data)
 			return
 		}
-		http.Error(w, "No cover found", 404)
+		noCover(w)
 		return
 	}
 	// Cover lookup goes through the storage abstraction so cloud libraries work too. On a
@@ -598,7 +599,7 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		http.Error(w, "No cover found", 404)
+		noCover(w)
 		return
 	}
 	// [LeChenMusic-START:audiobook-embedded-cover]
@@ -607,8 +608,12 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 	// 和只有音频的书，让 /cover 总能返回音频文件自己的封面。优先于刮削失败时留下的
 	// cover_url 远程兑底（文件自带的封面比网页抓的更准）。浏览器/客户端按 Cache-Control
 	// 缓存，重复请求不会重复解析标签。
-	if data, ext, err := audiobookcover.EmbeddedCover(fsys, book.Path); err == nil {
-		serveCoverBytes(w, r, "cover"+ext, time.Time{}, data)
+	if data, none, err := resolveCachedCover(r.Context(), getCoverCache(), &coverCacheItem{
+		keyStr:      embeddedCoverCacheKey(lib.Path, book.Path),
+		libPath:     lib.Path,
+		embeddedDir: book.Path,
+	}); err == nil && !none {
+		serveCoverBytes(w, r, "cover.jpg", time.Time{}, data)
 		return
 	}
 	// [LeChenMusic-END:audiobook-embedded-cover]
@@ -622,7 +627,7 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// [LeChenMusic-END:audiobook-cover-fallback]
-	http.Error(w, "No cover found", 404)
+	noCover(w)
 }
 
 // rescan rebuilds a book's chapter list from its folder. The folder is enumerated
@@ -994,6 +999,78 @@ func extFromContentType(contentType string) string {
 func writeJSON(w http.ResponseWriter, data any) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(data)
+}
+
+// purgeMissing removes audiobook rows whose folder no longer exists on disk / in the cloud —
+// immediately, without waiting for a scan. It is intentionally conservative: a book is removed
+// only when its directory is definitively missing (ENOENT); permission / network / gateway errors
+// keep the book (a transient outage must never wipe the library). dryRun=1 reports what would
+// happen without deleting. The response lists a per-book decision so admins can audit exactly why
+// each book was kept or removed.
+func (h *audiobookHandler) purgeMissing(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
+	dryRun := r.URL.Query().Get("dryRun") == "1"
+	ctx := r.Context()
+	books, err := h.ds.Audiobook(ctx).GetAll()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	type result struct {
+		ID     string `json:"id"`
+		Title  string `json:"title"`
+		Path   string `json:"path"`
+		Action string `json:"action"` // "deleted" | "would-delete" | "kept"
+		Reason string `json:"reason"`
+	}
+	mk := func(id, title, path, action, reason string) result {
+		return result{ID: id, Title: title, Path: path, Action: action, Reason: reason}
+	}
+	results := make([]result, 0, len(books))
+	fsCache := map[int]storage.MusicFS{}
+	deleted := 0
+	for _, book := range books {
+		fsys, ok := fsCache[book.LibraryID]
+		if !ok {
+			lib, lerr := h.ds.Library(ctx).Get(book.LibraryID)
+			if lerr != nil {
+				results = append(results, mk(book.ID, book.Title, book.Path, "kept", "library not found"))
+				continue
+			}
+			fsys, _ = storage.FSFor(ctx, lib.Path)
+			fsCache[book.LibraryID] = fsys
+		}
+		if fsys == nil {
+			results = append(results, mk(book.ID, book.Title, book.Path, "kept", "library storage not accessible"))
+			continue
+		}
+		_, serr := fs.Stat(fsys, book.Path)
+		switch {
+		case serr == nil:
+			results = append(results, mk(book.ID, book.Title, book.Path, "kept", "folder still present"))
+		case errors.Is(serr, fs.ErrNotExist):
+			if dryRun {
+				results = append(results, mk(book.ID, book.Title, book.Path, "would-delete", "folder missing"))
+				continue
+			}
+			if derr := h.ds.Audiobook(ctx).DeleteWithRelations(book.ID); derr != nil {
+				results = append(results, mk(book.ID, book.Title, book.Path, "kept", "delete failed: "+derr.Error()))
+				continue
+			}
+			deleted++
+			results = append(results, mk(book.ID, book.Title, book.Path, "deleted", "folder missing"))
+		default:
+			results = append(results, mk(book.ID, book.Title, book.Path, "kept", "unreachable: "+serr.Error()))
+		}
+	}
+	writeJSON(w, map[string]any{
+		"dryRun":  dryRun,
+		"total":   len(books),
+		"deleted": deleted,
+		"data":    results,
+	})
 }
 
 // [LeChenMusic-END:audiobook]

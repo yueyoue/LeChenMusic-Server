@@ -122,6 +122,28 @@ func (m *MockAudiobookRepo) Delete(id string) error {
 	return nil
 }
 
+// DeleteWithRelations mirrors the real repo's foreign-key-safe cascade: clear progress and
+// bookmarks that reference the book (their chapter_id would otherwise block chapter deletion),
+// then the chapters, then the book itself.
+func (m *MockAudiobookRepo) DeleteWithRelations(audiobookID string) error {
+	if m.Err {
+		return errors.New("error")
+	}
+	for k, p := range m.Progress {
+		if p.AudiobookID == audiobookID {
+			delete(m.Progress, k)
+		}
+	}
+	for k, b := range m.Bookmarks {
+		if b.AudiobookID == audiobookID {
+			delete(m.Bookmarks, k)
+		}
+	}
+	delete(m.Chapters, audiobookID)
+	delete(m.Books, audiobookID)
+	return nil
+}
+
 func (m *MockAudiobookRepo) GetChapters(audiobookID string) (model.AudiobookChapters, error) {
 	if m.Err {
 		return nil, errors.New("error")

@@ -135,6 +135,7 @@ const AudiobookCover = ({ book }) => {
       src={url}
       alt={book.title}
       className={classes.cover}
+      loading="lazy"
       onError={() => setImgError(true)}
     />
   )

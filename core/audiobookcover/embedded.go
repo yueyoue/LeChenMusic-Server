@@ -4,6 +4,7 @@
 package audiobookcover
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,6 +17,17 @@ import (
 	taglib "go.senan.xyz/taglib"
 )
 
+// ErrNoEmbeddedCover marks a confident "this book's audio carries no embedded cover art" result,
+// as opposed to a transient read / network failure. Callers use it to cache the negative result
+// instead of re-probing the audio files on every request (a cloud probe can take seconds).
+var ErrNoEmbeddedCover = errors.New("audiobook cover: no embedded image")
+
+// ErrNoAudio marks "the folder has no audio files", so no embedded art is possible at all.
+var ErrNoAudio = errors.New("audiobook cover: no audio files")
+
+// errNoImageInFile: the file was read fine but carries no picture (definitive for that file).
+var errNoImageInFile = errors.New("no embedded image in file")
+
 // EmbeddedCover extracts the cover art embedded in a book's audio files (ID3v2 APIC,
 // FLAC PICTURE, MP4 covr, …). It probes the folder's first audio files — the same
 // files the scanner reads the book's tags from — and prefers the front-cover picture.
@@ -27,20 +39,31 @@ import (
 func EmbeddedCover(fsys fs.FS, dirPath string) ([]byte, string, error) {
 	files, err := audioFiles(fsys, dirPath)
 	if err != nil {
+		if errors.Is(err, ErrNoAudio) {
+			// No audio files at all → no embedded art is possible. Confident negative.
+			return nil, "", fmt.Errorf("%w in %s", ErrNoEmbeddedCover, dirPath)
+		}
 		return nil, "", err
 	}
 	if len(files) > maxCoverProbe {
 		files = files[:maxCoverProbe]
 	}
-	lastErr := fmt.Errorf("audiobook cover: no embedded image in %s", dirPath)
+	var transient error
 	for _, filePath := range files {
 		data, ext, err := embeddedCoverFromFile(fsys, filePath)
 		if err == nil {
 			return data, ext, nil
 		}
-		lastErr = err
+		if !errors.Is(err, errNoImageInFile) {
+			// Could not even read this file's tags (network / partial read): remember it so the
+			// caller knows this is NOT a confident "no cover" and should not cache the negative.
+			transient = err
+		}
 	}
-	return nil, "", lastErr
+	if transient != nil {
+		return nil, "", transient
+	}
+	return nil, "", fmt.Errorf("%w in %s", ErrNoEmbeddedCover, dirPath)
 }
 
 // maxCoverProbe bounds how many audio files are probed for embedded art. Covers are
@@ -70,7 +93,7 @@ func embeddedCoverFromFile(fsys fs.FS, filePath string) ([]byte, string, error) 
 
 	images := tf.Properties().Images
 	if len(images) == 0 {
-		return nil, "", fmt.Errorf("audiobook cover: no embedded image in %s", filePath)
+		return nil, "", fmt.Errorf("%s: %w", filePath, errNoImageInFile)
 	}
 	data, err := tf.Image(bestImageIndex(images))
 	if err != nil || len(data) == 0 {
@@ -96,7 +119,7 @@ func audioFiles(fsys fs.FS, dirPath string) ([]string, error) {
 		}
 	}
 	if len(names) == 0 {
-		return nil, fmt.Errorf("audiobook cover: no audio files in %s", dirPath)
+		return nil, fmt.Errorf("%s: %w", dirPath, ErrNoAudio)
 	}
 	sort.Strings(names)
 	for i := range names {

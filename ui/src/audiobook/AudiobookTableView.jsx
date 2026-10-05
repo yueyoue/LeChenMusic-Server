@@ -70,6 +70,7 @@ const Thumb = ({ book }) => {
       src={coverUrl(book)}
       alt=""
       className={classes.thumb}
+      loading="lazy"
       onError={() => setImgError(true)}
     />
   )
