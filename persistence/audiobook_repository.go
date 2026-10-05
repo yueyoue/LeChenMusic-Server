@@ -48,6 +48,11 @@ func (r *audiobookRepository) Get(id string) (*model.Audiobook, error) {
 func (r *audiobookRepository) GetAll(options ...model.QueryOptions) (model.Audiobooks, error) {
 	sel := r.newSelect(options...).Columns("audiobook.*", "library.path as library_path").
 		LeftJoin("library on audiobook.library_id = library.id")
+	// 默认按入库时间倒序（最新入库在前）；调用方显式指定排序时不覆盖。
+	// APP 端「有声小说/相声/评书/儿童」等分类依赖这个顺序展示新入库的书目。
+	if len(options) == 0 || options[0].Sort == "" {
+		sel = sel.OrderBy("audiobook.created_at DESC")
+	}
 	res := model.Audiobooks{}
 	err := r.queryAll(sel, &res)
 	return res, err
