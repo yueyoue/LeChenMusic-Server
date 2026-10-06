@@ -74,6 +74,7 @@ type audiobookHandler struct {
 }
 
 func (h *audiobookHandler) list(w http.ResponseWriter, r *http.Request) {
+	WarmBookCovers(h.ds) // kick off background cover pre-warm (no-op after the first call)
 	repo := h.ds.Audiobook(r.Context())
 	books, err := repo.GetAll()
 	if err != nil {
@@ -562,72 +563,27 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 		noCover(w)
 		return
 	}
-	// Cover lookup goes through the storage abstraction so cloud libraries work too. On a
-	// cloud source this costs at most one cached directory listing, and the cover itself is
-	// served from the local disk cache (评审 §4.14 P2-1) so repeat loads don't touch the
-	// gateway at all. Local libraries keep the direct ServeFile path (unchanged).
-	fsys, err := storage.FSFor(r.Context(), lib.Path)
+	// Resolve the whole cover chain (library cover file -> embedded audio art -> scraped CoverUrl)
+	// ONCE per book and cache it locally; every later request is a pure disk read. This is what
+	// makes a shelf of cloud covers load like local files -- the previous code ran a per-request
+	// directory listing against the gateway just to find the cover file, so even an already-cached
+	// image still cost a round-trip. Keyed on the book row (rotates on rescan) so a swapped cover
+	// is picked up on the next scan.
+	data, none, err := resolveCachedCover(r.Context(), getCoverCache(), &coverCacheItem{
+		keyStr:   bookCoverCacheKey(book.ID, book.UpdatedAt),
+		bookDir:  book.Path,
+		libPath:  lib.Path,
+		coverURL: book.CoverUrl,
+	})
 	if err != nil {
-		http.Error(w, "Library not accessible", 500)
+		noCover(w) // transient resolve failure (gateway unreachable): not cached, client retries
 		return
 	}
-	isCloud := storage.IsRemoteURI(lib.Path)
-	for _, name := range audiobookCoverNames {
-		relCover := fspath.Join(book.Path, name)
-		info, err := fs.Stat(fsys, relCover)
-		if err != nil {
-			continue
-		}
-		w.Header().Set("Cache-Control", "public, max-age=3600")
-		if isCloud {
-			// Cached on disk: key includes the source fingerprint, so a replaced cover
-			// is picked up automatically (no manual invalidation).
-			serveCachedCover(w, r, getCoverCache(), &coverCacheItem{
-				keyStr:   coverCacheKey(lib.Path, relCover, info.ModTime(), info.Size()),
-				libPath:  lib.Path,
-				relCover: relCover,
-			}, name, info.ModTime())
-			return
-		}
-		// Local library: read the file and downscale on the way out — the originals can be
-		// 1.5MB and a category page asks for a hundred of them at once.
-		if f, openErr := fsys.Open(relCover); openErr == nil {
-			data, readErr := io.ReadAll(io.LimitReader(f, maxCachedCoverBytes+1))
-			_ = f.Close()
-			if readErr == nil && len(data) <= maxCachedCoverBytes {
-				serveCoverBytes(w, r, name, info.ModTime(), data)
-				return
-			}
-		}
+	if none {
 		noCover(w)
 		return
 	}
-	// [LeChenMusic-START:audiobook-embedded-cover]
-	// 书目录没有封面文件时，识别音频文件本身内嵌的封面（ID3v2 APIC/FLAC PICTURE/MP4 covr…）。
-	// 新入库的书在扫描时已把内嵌封面落盘（scanner → book.CoverPath），这里兜底老数据
-	// 和只有音频的书，让 /cover 总能返回音频文件自己的封面。优先于刮削失败时留下的
-	// cover_url 远程兑底（文件自带的封面比网页抓的更准）。浏览器/客户端按 Cache-Control
-	// 缓存，重复请求不会重复解析标签。
-	if data, none, err := resolveCachedCover(r.Context(), getCoverCache(), &coverCacheItem{
-		keyStr:      embeddedCoverCacheKey(lib.Path, book.Path),
-		libPath:     lib.Path,
-		embeddedDir: book.Path,
-	}); err == nil && !none {
-		serveCoverBytes(w, r, "cover.jpg", time.Time{}, data)
-		return
-	}
-	// [LeChenMusic-END:audiobook-embedded-cover]
-	// [LeChenMusic-START:audiobook-cover-fallback]
-	// 本地没有封面文件时，从数据库中的cover_url代理获取（结果同样走磁盘缓存）
-	if book.CoverUrl != "" {
-		serveCachedCover(w, r, getCoverCache(), &coverCacheItem{
-			keyStr:   coverURLCacheKey(book.CoverUrl),
-			coverURL: book.CoverUrl,
-		}, "cover.jpg", time.Time{})
-		return
-	}
-	// [LeChenMusic-END:audiobook-cover-fallback]
-	noCover(w)
+	serveCoverBytes(w, r, "cover.jpg", time.Time{}, data)
 }
 
 // rescan rebuilds a book's chapter list from its folder. The folder is enumerated

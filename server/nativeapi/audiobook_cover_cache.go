@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
+	fspath "path"
 	"sync"
 	"time"
 
@@ -17,6 +19,7 @@ import (
 	"github.com/navidrome/navidrome/core/audiobookcover"
 	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
+	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/utils/cache"
 )
 
@@ -50,6 +53,11 @@ const coverCachePrefix = "abcover-thumb-"
 // things that made cover loads crawl; a hard ceiling keeps requests moving.
 const embeddedProbeTimeout = 10 * time.Second
 
+// coverResolveTimeout bounds a full per-book cover resolution (cover-file lookup + embedded
+// probe + remote fetch) that runs once on a cache miss. After that every request is a local disk
+// read — the cloud gateway is never touched again for that book until the cache entry rotates.
+const coverResolveTimeout = 15 * time.Second
+
 // noCoverSentinel is stored in the cache to mean "this book definitively has no embedded cover".
 // It is not a valid image, so it can never collide with real cover bytes.
 var noCoverSentinel = []byte("__LECHEN_NOCOVER__")
@@ -60,10 +68,11 @@ func isNoCoverSentinel(b []byte) bool { return bytes.Equal(b, noCoverSentinel) }
 type coverCacheItem struct {
 	keyStr string
 
-	libPath    string // storage URI of the library (empty when fetching from coverURL)
-	relCover   string // library-relative cover path
-	coverURL   string // remote image URL (the scraped CoverUrl fallback)
+	libPath     string // storage URI of the library (empty when fetching from coverURL)
+	relCover    string // library-relative cover path
+	coverURL    string // remote image URL (the scraped CoverUrl fallback)
 	embeddedDir string // library-relative book folder to probe for embedded art (fallback)
+	bookDir     string // full per-book resolution: cover file > embedded art > CoverUrl > none
 }
 
 func (i *coverCacheItem) Key() string { return i.keyStr }
@@ -96,6 +105,102 @@ func embeddedCoverCacheKey(libPath, bookPath string) string {
 	return coverCachePrefix + hex.EncodeToString(sum[:])
 }
 
+// bookCoverCacheKey is the stable key for a book's fully-resolved cover. updatedAt rotates the
+// key whenever the book row changes (e.g. after a rescan), so a swapped cover is picked up on the
+// next scan while every request in between is a pure local-disk hit.
+func bookCoverCacheKey(bookID string, updatedAt time.Time) string {
+	sum := sha256.Sum256(fmt.Appendf(nil, "book\x00%s\x00%d", bookID, updatedAt.UnixMilli()))
+	return coverCachePrefix + hex.EncodeToString(sum[:])
+}
+
+// readFullBookCover resolves a book's cover ONCE (library cover file -> embedded audio art ->
+// scraped CoverUrl) and returns thumbnail bytes, or the no-cover sentinel when the book
+// confidently has none. A confident result is cached so repeat requests never re-hit the gateway;
+// a transient read/timeout error is returned as-is and simply retried next time.
+func readFullBookCover(ctx context.Context, ci *coverCacheItem) (io.Reader, error) {
+	tctx, cancel := context.WithTimeout(ctx, coverResolveTimeout)
+	defer cancel()
+
+	var transient error
+
+	// Library cover file, then art embedded in the audio — both read through the storage
+	// abstraction (a bounded Range read on a cloud source).
+	fsys, ferr := storage.FSFor(tctx, ci.libPath)
+	if ferr != nil {
+		transient = ferr
+	} else {
+		for _, name := range audiobookCoverNames {
+			relCover := fspath.Join(ci.bookDir, name)
+			if _, serr := fs.Stat(fsys, relCover); serr != nil {
+				continue // absent (or unreadable): try the next candidate
+			}
+			if f, oerr := fsys.Open(relCover); oerr == nil {
+				data, _ := io.ReadAll(io.LimitReader(f, maxCachedCoverBytes+1))
+				_ = f.Close()
+				if len(data) > 0 && len(data) <= maxCachedCoverBytes {
+					out, _ := artwork.ThumbnailImage(data, name, maxCoverDimension)
+					return bytes.NewReader(out), nil
+				}
+			}
+		}
+		if data, ext, err := audiobookcover.EmbeddedCover(fsys, ci.bookDir); err == nil {
+			out, _ := artwork.ThumbnailImage(data, "cover"+ext, maxCoverDimension)
+			return bytes.NewReader(out), nil
+		} else if !errors.Is(err, audiobookcover.ErrNoEmbeddedCover) {
+			transient = err // read/timeout problem — do NOT cache a wrong "no cover"
+		}
+	}
+
+	// Scraped remote cover (fallback when the library itself has no art).
+	if ci.coverURL != "" {
+		data, _, err := fetchRemoteImage(tctx, ci.coverURL)
+		if err != nil {
+			transient = err
+		} else {
+			out, _ := artwork.ThumbnailImage(data, "cover.jpg", maxCoverDimension)
+			return bytes.NewReader(out), nil
+		}
+	}
+
+	if transient != nil {
+		return nil, transient
+	}
+	return bytes.NewReader(noCoverSentinel), nil // confidently no cover -> cache the negative
+}
+
+var coverWarmOnce sync.Once
+
+// WarmBookCovers pre-resolves every book's cover into the local disk cache in the background, so a
+// full shelf loads like local files with no per-request cloud round-trip. This is the difference
+// between "fast after you scroll past once" and "fast immediately": without it the very first view
+// of each cover still pays one gateway resolve. Throttled to stay polite to the drive's rate limit.
+func WarmBookCovers(ds model.DataStore) {
+	coverWarmOnce.Do(func() {
+		go func() {
+			ctx := context.Background()
+			books, err := ds.Audiobook(ctx).GetAll()
+			if err != nil {
+				log.Warn(ctx, "[cover-warm] cannot list books", err)
+				return
+			}
+			for _, b := range books {
+				lib, lerr := ds.Library(ctx).Get(b.LibraryID)
+				if lerr != nil {
+					continue
+				}
+				_, _, _ = resolveCachedCover(ctx, getCoverCache(), &coverCacheItem{
+					keyStr:   bookCoverCacheKey(b.ID, b.UpdatedAt),
+					bookDir:  b.Path,
+					libPath:  lib.Path,
+					coverURL: b.CoverUrl,
+				})
+				time.Sleep(50 * time.Millisecond)
+			}
+			log.Info(ctx, "[cover-warm] pre-cached covers", "books", len(books))
+		}()
+	})
+}
+
 // readCoverForCache fetches cover bytes on a cache miss. Library covers are read through
 // the storage abstraction (a lazy, bounded Range read on a cloud source); remote images
 // go through the SSRF-guarded fetcher.
@@ -104,6 +209,12 @@ func readCoverForCache(ctx context.Context, item cache.Item) (io.Reader, error) 
 	if !ok {
 		return nil, fmt.Errorf("audiobook cover cache: unexpected item type %T", item)
 	}
+	// Full per-book resolution (cover file -> embedded art -> CoverUrl -> none). Runs once on a
+	// cache miss; every later request for the book is served from local disk with no cloud call.
+	if ci.bookDir != "" {
+		return readFullBookCover(ctx, ci)
+	}
+
 	if ci.coverURL != "" {
 		data, _, err := fetchRemoteImage(ctx, ci.coverURL)
 		if err != nil {
