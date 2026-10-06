@@ -37,7 +37,23 @@ var errNoImageInFile = errors.New("no embedded image in file")
 // (openlist://…) behave the same: a cloud source only pulls the byte ranges taglib
 // actually needs (lazy Range reads, never the whole file).
 func EmbeddedCover(fsys fs.FS, dirPath string) ([]byte, string, error) {
-	files, err := audioFiles(fsys, dirPath)
+	entries, err := fs.ReadDir(fsys, dirPath)
+	if err != nil {
+		return nil, "", fmt.Errorf("audiobook cover: cannot read dir %s: %w", dirPath, err)
+	}
+	return EmbeddedCoverFromEntries(fsys, dirPath, entries)
+}
+
+// EmbeddedCoverFromEntries is EmbeddedCover with the book folder already listed. Callers that just
+// did a ReadDir of the same folder (to look for a cover file, say) hand the entries over instead of
+// paying for a second listing.
+//
+// This matters a lot on a cloud source: the gateway client paces its API calls (roughly one per two
+// seconds), so every listing is real wall-clock time. A cover resolve used to cost a listing plus a
+// handful of Stats plus the audio probe — comfortably more than the resolve timeout, which meant the
+// answer never arrived, nothing got cached, and the same slow walk was repeated for every request.
+func EmbeddedCoverFromEntries(fsys fs.FS, dirPath string, entries []fs.DirEntry) ([]byte, string, error) {
+	files, err := audioFilesFromEntries(dirPath, entries)
 	if err != nil {
 		if errors.Is(err, ErrNoAudio) {
 			// No audio files at all → no embedded art is possible. Confident negative.
@@ -102,13 +118,26 @@ func embeddedCoverFromFile(fsys fs.FS, filePath string) ([]byte, string, error) 
 	return data, imageExt(data), nil
 }
 
-// audioFiles returns the library-relative paths of the audio files in dirPath,
-// in name order — the same order chapters are numbered in.
-func audioFiles(fsys fs.FS, dirPath string) ([]string, error) {
-	entries, err := fs.ReadDir(fsys, dirPath)
-	if err != nil {
-		return nil, fmt.Errorf("audiobook cover: cannot read dir %s: %w", dirPath, err)
+// CoverNameIn returns the cover file present in an already-listed book folder, honouring the
+// CoverNames priority order (cover.jpg wins over folder.png). The listing is reused so probing for a
+// cover file costs zero extra round trips against a cloud gateway.
+func CoverNameIn(entries []fs.DirEntry) (string, bool) {
+	present := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		if !e.IsDir() {
+			present[e.Name()] = true
+		}
 	}
+	for _, name := range CoverNames {
+		if present[name] {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// audioFilesFromEntries filters an already-read directory listing down to the chapter files.
+func audioFilesFromEntries(dirPath string, entries []fs.DirEntry) ([]string, error) {
 	var names []string
 	for _, e := range entries {
 		if e.IsDir() {

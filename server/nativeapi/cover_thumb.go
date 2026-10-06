@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -57,6 +58,17 @@ func coverETag(b []byte) string {
 // re-request every missing cover on every draw — exactly what made cover loads crawl. A moderate
 // TTL stops the hammering while still letting a cover added later show up soon after.
 func noCover(w http.ResponseWriter) {
-	w.Header().Set("Cache-Control", "public, max-age=600")
+	noCoverIn(w, coverNoCoverTTL)
+}
+
+// noCoverIn writes a 404 cached for maxAge. The cover resolver picks the TTL per outcome: a
+// confidently coverless book may be cached for minutes, a book whose walk is still running only for
+// a couple of seconds so the client comes back and picks the real cover up.
+func noCoverIn(w http.ResponseWriter, maxAge time.Duration) {
+	secs := int(maxAge.Seconds())
+	if secs < 0 {
+		secs = 0
+	}
+	w.Header().Set("Cache-Control", fmt.Sprintf("public, max-age=%d", secs))
 	http.Error(w, "No cover found", http.StatusNotFound)
 }

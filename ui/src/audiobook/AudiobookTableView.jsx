@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React from 'react'
 import {
   Paper,
   Table,
@@ -11,7 +11,7 @@ import {
   makeStyles,
 } from '@material-ui/core'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
-import { OverflowTooltip, SourceTag } from '../common'
+import { OverflowTooltip, SourceTag, CoverImage } from '../common'
 
 const useStyles = makeStyles((theme) => ({
   row: {
@@ -57,21 +57,16 @@ const formatDuration = (seconds) => {
 
 const Thumb = ({ book }) => {
   const classes = useStyles()
-  const [imgError, setImgError] = useState(false)
-  if (imgError) {
-    return (
-      <div className={classes.thumbPlaceholder}>
-        <MenuBookIcon style={{ fontSize: 18, opacity: 0.6, color: '#fff' }} />
-      </div>
-    )
-  }
   return (
-    <img
+    <CoverImage
       src={coverUrl(book)}
       alt=""
       className={classes.thumb}
-      loading="lazy"
-      onError={() => setImgError(true)}
+      fallback={
+        <div className={classes.thumbPlaceholder}>
+          <MenuBookIcon style={{ fontSize: 18, opacity: 0.6, color: '#fff' }} />
+        </div>
+      }
     />
   )
 }

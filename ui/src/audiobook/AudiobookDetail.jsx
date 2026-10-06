@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import {
-  Typography, Box, Card, CardContent, CardMedia, makeStyles, IconButton,
+  Typography, Box, Card, CardContent, makeStyles, IconButton,
   Chip, Button, LinearProgress, Tooltip, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, Collapse, useMediaQuery,
 } from '@material-ui/core'
@@ -17,7 +17,7 @@ import FavoriteIcon from '@material-ui/icons/Favorite'
 import FavoriteBorderIcon from '@material-ui/icons/FavoriteBorder'
 import RefreshIcon from '@material-ui/icons/Refresh'
 import ScrapeDialog from '../scraper/ScrapeDialog'
-import { SourceTag } from '../common'
+import { SourceTag, CoverImage } from '../common'
 import { playTracks, addTracks } from '../actions'
 
 // 模块级纯函数（只读 localStorage），保证引用稳定、不进 useEffect 依赖
@@ -285,10 +285,17 @@ const AudiobookDetail = ({ id, onBack }) => {
     const fetchData = async () => {
       try {
         const headers = getAuthHeaders()
-        const [bookRes, progressRes] = await Promise.all([
-          fetch(`/api/audiobook/${id}`, { headers }),
-          fetch(`/api/audiobook/${id}/progress`, { headers }),
-        ])
+        // priority: 'high' —— 书目详情是本页的阻塞数据，必须排在整屏封面图片前面。
+        // 浏览器对同一个 http 源只有约 6 条连接，封面请求把它们占满后，
+        // 这两个 JSON 就只能排队；「Loading...」等的就是这个队列，而不是服务端。
+        const bookPromise = fetch(`/api/audiobook/${id}`, { headers, priority: 'high' })
+        // 进度不是首屏必需：拿得慢不改错，也绝不能挡住正文渲染。
+        const progressPromise = fetch(`/api/audiobook/${id}/progress`, {
+          headers,
+          priority: 'low',
+        }).catch(() => null)
+
+        const bookRes = await bookPromise
         if (bookRes.ok) {
           const data = await bookRes.json()
           if (data.data) {
@@ -297,13 +304,15 @@ const AudiobookDetail = ({ id, onBack }) => {
             setIsStarred(!!data.data.book?.starred)
           }
         }
-        if (progressRes.ok) {
+        setLoading(false)
+
+        const progressRes = await progressPromise
+        if (progressRes && progressRes.ok) {
           const pData = await progressRes.json()
           setProgress(pData.data)
         }
       } catch (err) {
         console.error('Failed to load audiobook:', err)
-      } finally {
         setLoading(false)
       }
     }
@@ -478,12 +487,15 @@ const AudiobookDetail = ({ id, onBack }) => {
           {/* Cover */}
           <div className={classes.coverParent}>
             {imageUrl ? (
-              <CardMedia
-                component="img"
+              <CoverImage
                 src={imageUrl}
+                alt={book.title}
                 className={classes.cover}
-                title={book.title}
-                onError={(e) => { e.target.style.display = 'none' }}
+                fallback={
+                  <Box className={classes.coverPlaceholder}>
+                    <MenuBookIcon style={{ fontSize: 48, opacity: 0.3 }} />
+                  </Box>
+                }
               />
             ) : (
               <Box className={classes.coverPlaceholder}>

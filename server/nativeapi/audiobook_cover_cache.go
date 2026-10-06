@@ -17,6 +17,7 @@ import (
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/core/artwork"
 	"github.com/navidrome/navidrome/core/audiobookcover"
+	"github.com/navidrome/navidrome/core/cloudsource"
 	"github.com/navidrome/navidrome/core/storage"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
@@ -56,7 +57,13 @@ const embeddedProbeTimeout = 10 * time.Second
 // coverResolveTimeout bounds a full per-book cover resolution (cover-file lookup + embedded
 // probe + remote fetch) that runs once on a cache miss. After that every request is a local disk
 // read — the cloud gateway is never touched again for that book until the cache entry rotates.
-const coverResolveTimeout = 15 * time.Second
+//
+// It is generous on purpose: the walk now runs in the background (the request path answers from the
+// cache and never waits for it), so the only thing a tight deadline bought was *failing* the walk —
+// and a failed walk caches nothing, which meant the same slow gateway round trip was paid again on
+// the next request. Letting it finish is what makes the result — including a confident "no cover" —
+// land in the cache exactly once.
+const coverResolveTimeout = 30 * time.Second
 
 // noCoverSentinel is stored in the cache to mean "this book definitively has no embedded cover".
 // It is not a valid image, so it can never collide with real cover bytes.
@@ -73,6 +80,12 @@ type coverCacheItem struct {
 	coverURL    string // remote image URL (the scraped CoverUrl fallback)
 	embeddedDir string // library-relative book folder to probe for embedded art (fallback)
 	bookDir     string // full per-book resolution: cover file > embedded art > CoverUrl > none
+
+	// probeEmbedded says the audio files still have to be opened and inspected for embedded art.
+	// It is false whenever the scanner already did exactly that at ingestion (see
+	// scanner.probeEmbeddedAtScan): opening a chapter costs several throttled gateway reads, so
+	// repeating an answer the book row already carries is the most expensive way to learn nothing.
+	probeEmbedded bool
 }
 
 func (i *coverCacheItem) Key() string { return i.keyStr }
@@ -123,31 +136,39 @@ func readFullBookCover(ctx context.Context, ci *coverCacheItem) (io.Reader, erro
 
 	var transient error
 
-	// Library cover file, then art embedded in the audio — both read through the storage
-	// abstraction (a bounded Range read on a cloud source).
+	// ONE listing of the book folder answers both "is there a cover file here?" and "which audio
+	// files could carry embedded art?". The old code ran six fs.Stat calls plus a ReadDir against the
+	// gateway before it could decide anything, and every one of those calls is paced at roughly one
+	// per two seconds on a cloud source. The walk routinely outlived the resolve timeout below, the
+	// error was (correctly) treated as transient, and therefore nothing was cached -- so the NEXT
+	// request paid the whole walk again, forever. That is what made a shelf of cloud covers crawl.
 	fsys, ferr := storage.FSFor(tctx, ci.libPath)
 	if ferr != nil {
 		transient = ferr
 	} else {
-		for _, name := range audiobookCoverNames {
-			relCover := fspath.Join(ci.bookDir, name)
-			if _, serr := fs.Stat(fsys, relCover); serr != nil {
-				continue // absent (or unreadable): try the next candidate
-			}
-			if f, oerr := fsys.Open(relCover); oerr == nil {
-				data, _ := io.ReadAll(io.LimitReader(f, maxCachedCoverBytes+1))
-				_ = f.Close()
-				if len(data) > 0 && len(data) <= maxCachedCoverBytes {
-					out, _ := artwork.ThumbnailImage(data, name, maxCoverDimension)
-					return bytes.NewReader(out), nil
+		entries, derr := fs.ReadDir(fsys, ci.bookDir)
+		if derr != nil {
+			transient = derr
+		} else {
+			if name, ok := audiobookcover.CoverNameIn(entries); ok {
+				relCover := fspath.Join(ci.bookDir, name)
+				if f, oerr := fsys.Open(relCover); oerr == nil {
+					data, _ := io.ReadAll(io.LimitReader(f, maxCachedCoverBytes+1))
+					_ = f.Close()
+					if len(data) > 0 && len(data) <= maxCachedCoverBytes {
+						out, _ := artwork.ThumbnailImage(data, name, maxCoverDimension)
+						return bytes.NewReader(out), nil
+					}
 				}
 			}
-		}
-		if data, ext, err := audiobookcover.EmbeddedCover(fsys, ci.bookDir); err == nil {
-			out, _ := artwork.ThumbnailImage(data, "cover"+ext, maxCoverDimension)
-			return bytes.NewReader(out), nil
-		} else if !errors.Is(err, audiobookcover.ErrNoEmbeddedCover) {
-			transient = err // read/timeout problem — do NOT cache a wrong "no cover"
+			if ci.probeEmbedded {
+				if data, ext, err := audiobookcover.EmbeddedCoverFromEntries(fsys, ci.bookDir, entries); err == nil {
+					out, _ := artwork.ThumbnailImage(data, "cover"+ext, maxCoverDimension)
+					return bytes.NewReader(out), nil
+				} else if !errors.Is(err, audiobookcover.ErrNoEmbeddedCover) {
+					transient = err // read/timeout problem — do NOT cache a wrong "no cover"
+				}
+			}
 		}
 	}
 
@@ -170,10 +191,30 @@ func readFullBookCover(ctx context.Context, ci *coverCacheItem) (io.Reader, erro
 
 var coverWarmOnce sync.Once
 
+// probeEmbeddedArt reports whether a cover walk still has to open a book's audio files and look for
+// embedded art.
+//
+// It must for a local library — reading local files is free and always fresh — and for a cloud
+// gateway running TagMode=filename fast mode, where the scanner never reads file content and an
+// empty book.CoverPath only rules out a cover *file*.
+//
+// It must NOT for a cloud library the scanner already inspects at ingestion: opening a single
+// chapter costs several rate-limited gateway reads (the openlist client paces API calls at roughly
+// one per two seconds), so re-discovering a conclusion the scanner recorded in the book row is the
+// most expensive way to learn nothing. What the scanner found is picked up again on the next rescan.
+func probeEmbeddedArt(libPath string) bool {
+	if !storage.IsRemoteURI(libPath) {
+		return true
+	}
+	return cloudsource.TagModeForLibrary(libPath) == "filename"
+}
+
 // WarmBookCovers pre-resolves every book's cover into the local disk cache in the background, so a
 // full shelf loads like local files with no per-request cloud round-trip. This is the difference
 // between "fast after you scroll past once" and "fast immediately": without it the very first view
-// of each cover still pays one gateway resolve. Throttled to stay polite to the drive's rate limit.
+// of each cover still pays one gateway resolve. It walks one book at a time through the shared
+// resolver, so it stays polite to the drive's rate limit and never duplicates work a live request
+// has already started.
 func WarmBookCovers(ds model.DataStore) {
 	coverWarmOnce.Do(func() {
 		go func() {
@@ -188,13 +229,16 @@ func WarmBookCovers(ds model.DataStore) {
 				if lerr != nil {
 					continue
 				}
-				_, _, _ = resolveCachedCover(ctx, getCoverCache(), &coverCacheItem{
-					keyStr:   bookCoverCacheKey(b.ID, b.UpdatedAt),
-					bookDir:  b.Path,
-					libPath:  lib.Path,
-					coverURL: b.CoverUrl,
+				item := &coverCacheItem{
+					keyStr:        bookCoverCacheKey(b.ID, b.UpdatedAt),
+					bookDir:       b.Path,
+					libPath:       lib.Path,
+					coverURL:      b.CoverUrl,
+					probeEmbedded: probeEmbeddedArt(lib.Path),
+				}
+				coverResolverInst.walkAndWait(item.Key(), func() ([]byte, bool, error) {
+					return resolveCachedCover(ctx, getCoverCache(), item)
 				})
-				time.Sleep(50 * time.Millisecond)
 			}
 			log.Info(ctx, "[cover-warm] pre-cached covers", "books", len(books))
 		}()

@@ -1,6 +1,7 @@
 package nativeapi
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -34,11 +35,6 @@ import (
 var audiobookAudioExts = map[string]bool{
 	".mp3": true, ".m4a": true, ".m4b": true, ".flac": true,
 	".ogg": true, ".wav": true, ".opus": true, ".wma": true, ".aac": true,
-}
-
-var audiobookCoverNames = []string{
-	"cover.jpg", "cover.jpeg", "cover.png",
-	"folder.jpg", "folder.jpeg", "folder.png",
 }
 
 func (api *Router) addAudiobookRoute(r chi.Router) {
@@ -308,7 +304,7 @@ func (h *audiobookHandler) get(w http.ResponseWriter, r *http.Request) {
 	var progress *model.AudiobookProgress
 	if ok {
 		starredAt, starredErr := repo.GetStarredAt(usr.ID, id)
-		log.Info(r.Context(), "GetStarredAt result", "userID", usr.ID, "bookID", id, "starredAt", starredAt, "error", starredErr)
+		log.Debug(r.Context(), "GetStarredAt result", "userID", usr.ID, "bookID", id, "starredAt", starredAt, "error", starredErr)
 		if starredAt != "" {
 			book.Starred = starredAt
 		}
@@ -616,21 +612,27 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 	// directory listing against the gateway just to find the cover file, so even an already-cached
 	// image still cost a round-trip. Keyed on the book row (rotates on rescan) so a swapped cover
 	// is picked up on the next scan.
-	data, none, err := resolveCachedCover(r.Context(), getCoverCache(), &coverCacheItem{
-		keyStr:   bookCoverCacheKey(book.ID, book.UpdatedAt),
-		bookDir:  book.Path,
-		libPath:  lib.Path,
-		coverURL: book.CoverUrl,
+	item := &coverCacheItem{
+		keyStr:        bookCoverCacheKey(book.ID, book.UpdatedAt),
+		bookDir:       book.Path,
+		libPath:       lib.Path,
+		coverURL:      book.CoverUrl,
+		probeEmbedded: probeEmbeddedArt(lib.Path),
+	}
+	// The walk behind that cache can cost seconds against a cloud gateway, so it runs as a
+	// background job this handler never waits on (see cover_resolver.go). Waiting is what used to
+	// let a shelf of covers occupy every browser connection and stall the audiobook detail page
+	// behind them.
+	res := coverResolverInst.resolve(r.Context(), item.Key(), coverServeBudget, func() ([]byte, bool, error) {
+		return resolveCachedCover(context.Background(), getCoverCache(), item)
 	})
-	if err != nil {
-		noCover(w) // transient resolve failure (gateway unreachable): not cached, client retries
+	if res.ready && res.err == nil && !res.none {
+		serveCoverSized(w, r, "cover.jpg", time.Time{}, res.data, dim)
 		return
 	}
-	if none {
-		noCover(w)
-		return
-	}
-	serveCoverSized(w, r, "cover.jpg", time.Time{}, data, dim)
+	// Confidently coverless, failed, or still walking: the resolver says how long this miss may be
+	// cached, so a slow book settles into instant answers instead of a slow walk per request.
+	noCoverIn(w, res.retryIn)
 }
 
 // rescan rebuilds a book's chapter list from its folder. The folder is enumerated

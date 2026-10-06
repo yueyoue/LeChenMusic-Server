@@ -10,7 +10,7 @@ import SearchIcon from '@material-ui/icons/Search'
 import ScrapeDialog from '../scraper/ScrapeDialog'
 import { useLocation } from 'react-router-dom'
 import { useSelector } from 'react-redux'
-import { OverflowTooltip, SourceTag } from '../common'
+import { OverflowTooltip, SourceTag, CoverImage } from '../common'
 import AudiobookViewToggler from './AudiobookViewToggler'
 import AudiobookTableView from './AudiobookTableView'
 
@@ -118,25 +118,19 @@ const AudiobookCover = ({ book }) => {
   const classes = useStyles()
   const token = localStorage.getItem('token')
   const url = `/api/audiobook/${book.id}/cover?token=${token || ''}`
-  const [imgError, setImgError] = useState(false)
 
-  // 服务端 /cover 会解析音频文件内嵌封面（即使没有 coverPath/coverUrl），
-  // 所以一律先请求图片，加载失败才回退占位图。
-  if (imgError) {
-    return (
-      <div className={classes.coverPlaceholder}>
-        <MenuBookIcon style={{ fontSize: 32, opacity: 0.5, color: '#fff' }} />
-      </div>
-    )
-  }
-
+  // 服务端 /cover 会解析音频文件内嵌封面（即使没有 coverPath/coverUrl），解析是后台做的：
+  // 没解析好时先回 404，所以加载失败不代表没封面，CoverImage 会退避重试几次再回退占位图。
   return (
-    <img
+    <CoverImage
       src={url}
       alt={book.title}
       className={classes.cover}
-      loading="lazy"
-      onError={() => setImgError(true)}
+      fallback={
+        <div className={classes.coverPlaceholder}>
+          <MenuBookIcon style={{ fontSize: 32, opacity: 0.5, color: '#fff' }} />
+        </div>
+      }
     />
   )
 }

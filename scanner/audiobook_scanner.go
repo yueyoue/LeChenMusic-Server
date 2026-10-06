@@ -33,8 +33,6 @@ import (
 // 与 server/nativeapi（上传/刮削/出图）同源。
 var audiobookAudioExts = audiobookcover.AudioExts
 
-var audiobookCoverNames = audiobookcover.CoverNames
-
 var genreKeywords = map[string]string{
 	"有声书":  "有声读物",
 	"有声读物": "有声读物",
@@ -327,12 +325,14 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, fsys stor
 		UpdatedAt:   time.Now(),
 	}
 
+	// 一次列目录同时回答两件事：书目录里有没有封面文件、哪些音频文件可能内嵌封面。
+	// 以前是逐个 fs.Stat 六个候选封面名再列一次目录；网盘源上每个 Stat 都是一次被限速的
+	// API 调用（约 2s/次），光找封面文件就能耗掉十几秒。
 	coverPath := ""
-	for _, coverName := range audiobookCoverNames {
-		coverFile := path.Join(relPath, coverName)
-		if _, err := fs.Stat(fsys, coverFile); err == nil {
-			coverPath = coverFile
-			break
+	entries, listErr := fs.ReadDir(fsys, relPath)
+	if listErr == nil {
+		if name, ok := audiobookcover.CoverNameIn(entries); ok {
+			coverPath = path.Join(relPath, name)
 		}
 	}
 	// [LeChenMusic-START:audiobook-embedded-cover]
@@ -340,8 +340,8 @@ func (s *AudiobookScanner) createAudiobookFromDir(ctx context.Context, fsys stor
 	// 提取后按上传/刮削同款规则落盘（本地可写库写进书目录，云库/只读库写本地覆盖目录），
 	// 入库即把音频文件的封面图片信息记录进 book.CoverPath。
 	// 快速模式（TagMode=filename）同样跳过：提取内嵌封面就是内容读取。
-	if coverPath == "" && !skipTags {
-		if data, ext, err := audiobookcover.EmbeddedCover(fsys, relPath); err == nil {
+	if coverPath == "" && !skipTags && listErr == nil {
+		if data, ext, err := audiobookcover.EmbeddedCoverFromEntries(fsys, relPath, entries); err == nil {
 			if relCover, saveErr := audiobookcover.SaveCover(&book, &library, data, ext); saveErr == nil {
 				coverPath = relCover
 				log.Debug(ctx, "Audiobook scanner: recognized cover embedded in audio files", "book", title, "cover", relCover)
