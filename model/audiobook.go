@@ -77,6 +77,9 @@ type AudiobookChapters []AudiobookChapter
 
 type AudiobookRepository interface {
 	Get(id string) (*Audiobook, error)
+	// GetMany returns the books with the given IDs (library path enriched) in one query.
+	// Batch endpoints (recent-progress 等) 用它替代逐本 Get，避免 N+1。
+	GetMany(ids []string) (Audiobooks, error)
 	GetAll(options ...QueryOptions) (Audiobooks, error)
 	Count(options ...QueryOptions) (int64, error)
 	Put(book *Audiobook) error
@@ -89,6 +92,9 @@ type AudiobookRepository interface {
 	DeleteWithRelations(audiobookID string) error
 
 	GetChapters(audiobookID string) (AudiobookChapters, error)
+	// ChapterCounts returns chapter counts for the given books in one GROUP BY query,
+	// so batch endpoints never load whole chapter rows just to count them.
+	ChapterCounts(ids []string) (map[string]int, error)
 	GetChapter(id string) (*AudiobookChapter, error)
 	PutChapter(chapter *AudiobookChapter) error
 	DeleteChapters(audiobookID string) error
@@ -107,6 +113,9 @@ type AudiobookRepository interface {
 	Unstar(userID, audiobookID string) error
 	IsStarred(userID, audiobookID string) (bool, error)
 	GetStarredAt(userID, audiobookID string) (string, error)
+	// GetStarredAtMap returns the starred timestamps of every starred book of a user in one
+	// query (替代 starred 列表里逐本 GetStarredAt 的 N+1)。
+	GetStarredAtMap(userID string) (map[string]string, error)
 	GetStarred(userID string) (Audiobooks, error)
 }
 

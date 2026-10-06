@@ -45,6 +45,20 @@ func (r *audiobookRepository) Get(id string) (*model.Audiobook, error) {
 	return &res, err
 }
 
+// GetMany returns the books with the given IDs (library path enriched) in ONE query.
+// Batch endpoints used to loop Get() per book — with N books in "继续收听" that was N
+// round trips and hundreds of milliseconds inside SQLite for what is a single IN query.
+func (r *audiobookRepository) GetMany(ids []string) (model.Audiobooks, error) {
+	if len(ids) == 0 {
+		return model.Audiobooks{}, nil
+	}
+	sel := r.newSelect().Where(Eq{"audiobook.id": ids}).Columns("audiobook.*", "library.path as library_path").
+		LeftJoin("library on audiobook.library_id = library.id")
+	res := model.Audiobooks{}
+	err := r.queryAll(sel, &res)
+	return res, err
+}
+
 func (r *audiobookRepository) GetAll(options ...model.QueryOptions) (model.Audiobooks, error) {
 	sel := r.newSelect(options...).Columns("audiobook.*", "library.path as library_path").
 		LeftJoin("library on audiobook.library_id = library.id")
@@ -119,6 +133,31 @@ func (r *audiobookRepository) GetChapters(audiobookID string) (model.AudiobookCh
 	res := model.AudiobookChapters{}
 	err := r.queryAll(sel, &res)
 	return res, err
+}
+
+// ChapterCounts returns chapter counts for many books in ONE GROUP BY query. Batch
+// endpoints used to call GetChapters per book just to count rows — a 600-chapter book
+// pulled 600 rows into memory every time the home screen asked for "继续收听".
+func (r *audiobookRepository) ChapterCounts(ids []string) (map[string]int, error) {
+	out := make(map[string]int, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	sel := StatementBuilder.PlaceholderFormat(Question).
+		Select("audiobook_id", "COUNT(*) as cnt").From("audiobook_chapter").
+		Where(Eq{"audiobook_id": ids}).
+		GroupBy("audiobook_id")
+	var rows []struct {
+		AudiobookID string `db:"audiobook_id"`
+		Cnt         int    `db:"cnt"`
+	}
+	if err := r.queryAll(sel, &rows); err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		out[row.AudiobookID] = row.Cnt
+	}
+	return out, nil
 }
 
 func (r *audiobookRepository) GetChapter(id string) (*model.AudiobookChapter, error) {
@@ -350,6 +389,26 @@ func (r *audiobookRepository) GetStarredAt(userID, audiobookID string) (string, 
 		return "", err
 	}
 	return result.CreatedAt, nil
+}
+
+// GetStarredAtMap returns the starred timestamps of every starred book of a user in ONE
+// query. The starred-list endpoint used to loop GetStarredAt per book (N+1).
+func (r *audiobookRepository) GetStarredAtMap(userID string) (map[string]string, error) {
+	sel := StatementBuilder.PlaceholderFormat(Question).Select("audiobook_id", "created_at").
+		From("audiobook_favorite").
+		Where(Eq{"user_id": userID})
+	var rows []struct {
+		AudiobookID string `db:"audiobook_id"`
+		CreatedAt   string `db:"created_at"`
+	}
+	if err := r.queryAll(sel, &rows); err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(rows))
+	for _, row := range rows {
+		out[row.AudiobookID] = row.CreatedAt
+	}
+	return out, nil
 }
 
 func (r *audiobookRepository) GetStarred(userID string) (model.Audiobooks, error) {

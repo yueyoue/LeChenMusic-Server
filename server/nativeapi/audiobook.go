@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	fspath "path"
@@ -134,24 +135,40 @@ func (h *audiobookHandler) recentProgress(w http.ResponseWriter, r *http.Request
 		writeJSON(w, map[string]any{"data": []any{}})
 		return
 	}
+	// 批量取回书目 + 章节数（两条查询）。原实现逐本 Get + GetChapters，
+	// 还把整章列表读进内存只为数个数——20 本在读就是 40 次查询 + 上万行读取，
+	// 进入有声书首页光这一个接口就要 400ms+，是"进入有声书卡"的服务端主因。
+	ids := make([]string, 0, len(progressList))
+	for _, p := range progressList {
+		ids = append(ids, p.AudiobookID)
+	}
+	books, err := repo.GetMany(ids)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	counts, _ := repo.ChapterCounts(ids)
+	byID := make(map[string]*model.Audiobook, len(books))
+	for i := range books {
+		byID[books[i].ID] = &books[i]
+	}
 	type bookWithProgress struct {
 		model.Audiobook
 		Progress *model.AudiobookProgress `json:"progress"`
 	}
-	var result []bookWithProgress
+	result := make([]bookWithProgress, 0, len(progressList))
 	for _, p := range progressList {
-		book, err := repo.Get(p.AudiobookID)
-		if err != nil {
-			continue
+		book, found := byID[p.AudiobookID]
+		if !found {
+			continue // 书目已被清理（等价于旧实现的逐本 miss）
 		}
-		chapters, _ := repo.GetChapters(book.ID)
-		if chapters == nil {
-			chapters = model.AudiobookChapters{}
+		b := *book
+		if c, ok := counts[b.ID]; ok {
+			b.ChapterCount = c
 		}
-		book.ChapterCount = len(chapters)
 		pCopy := p
 		result = append(result, bookWithProgress{
-			Audiobook: *book,
+			Audiobook: b,
 			Progress:  &pCopy,
 		})
 	}
@@ -265,10 +282,10 @@ func (h *audiobookHandler) starred(w http.ResponseWriter, r *http.Request) {
 	if books == nil {
 		books = model.Audiobooks{}
 	}
-	// Populate starred timestamp for each book
+	// Populate starred timestamps in one query (was one GetStarredAt per book: N+1)
+	starredAtMap, _ := repo.GetStarredAtMap(usr.ID)
 	for i := range books {
-		starredAt, _ := repo.GetStarredAt(usr.ID, books[i].ID)
-		if starredAt != "" {
+		if starredAt, ok := starredAtMap[books[i].ID]; ok && starredAt != "" {
 			books[i].Starred = starredAt
 		}
 	}
@@ -342,9 +359,29 @@ func (h *audiobookHandler) stream(w http.ResponseWriter, r *http.Request) {
 	// exactly like a local one: 302 direct link when available, relay otherwise.
 	relPath := fspath.Join(book.Path, chapter.Path)
 	if err := storage.ServeFile(r.Context(), w, r, lib.Path, relPath); err != nil {
+		// 存储网关无响应/超时不能伪装成 404：返回 504 + 明确文案，
+		// APP 端才能给出"资源失效/超时"提示，而不是一直转圈假死。
+		if isTimeoutError(err) {
+			http.Error(w, "资源读取超时：存储网关无响应", http.StatusGatewayTimeout)
+			return
+		}
 		http.Error(w, "Not found", 404)
 		return
 	}
+}
+
+// isTimeoutError reports whether err is a network timeout (dead cloud gateway etc.), so the
+// stream endpoint can answer 504 instead of a misleading 404.
+func isTimeoutError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded")
 }
 
 func (h *audiobookHandler) getProgress(w http.ResponseWriter, r *http.Request) {

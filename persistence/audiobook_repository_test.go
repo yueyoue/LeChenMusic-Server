@@ -94,4 +94,37 @@ var _ = Describe("AudiobookRepository", func() {
 			Expect(titles).To(ContainElements("书A", "书B"))
 		})
 	})
+
+	Describe("Batch queries", func() {
+		It("GetMany returns the requested books with LibraryPath filled in", func() {
+			a := newBook("批量A")
+			b := newBook("批量B")
+
+			many, err := repo.GetMany([]string{a.ID, b.ID})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(many).To(HaveLen(2))
+			for _, bk := range many {
+				Expect(bk.LibraryPath).To(Equal("/audiobooks-test"))
+			}
+		})
+
+		It("ChapterCounts counts chapters without loading them", func() {
+			a := newBook("章节数A")
+			Expect(repo.PutChapter(&model.AudiobookChapter{AudiobookID: a.ID, Title: "001", ChapterNumber: 1, Path: "001.mp3"})).To(Succeed())
+			Expect(repo.PutChapter(&model.AudiobookChapter{AudiobookID: a.ID, Title: "002", ChapterNumber: 2, Path: "002.mp3"})).To(Succeed())
+
+			counts, err := repo.ChapterCounts([]string{a.ID})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(counts[a.ID]).To(Equal(2))
+		})
+
+		It("GetStarredAtMap returns starred timestamps in one query", func() {
+			a := newBook("收藏A")
+			Expect(repo.Star("userid", a.ID)).To(Succeed())
+
+			m, err := repo.GetStarredAtMap("userid")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(m[a.ID]).ToNot(BeEmpty())
+		})
+	})
 })

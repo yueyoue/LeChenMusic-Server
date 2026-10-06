@@ -301,3 +301,48 @@ func (m *MockAudiobookRepo) GetStarred(userID string) (model.Audiobooks, error) 
 	sort.Slice(out, func(i, j int) bool { return out[i].Title < out[j].Title })
 	return out, nil
 }
+
+// GetStarredAtMap: batch variant of GetStarredAt (starred list endpoint).
+func (m *MockAudiobookRepo) GetStarredAtMap(userID string) (map[string]string, error) {
+	if m.Err {
+		return nil, errors.New("error")
+	}
+	out := make(map[string]string)
+	for _, b := range m.Books {
+		if b.Starred != "" {
+			out[b.ID] = b.Starred
+		}
+	}
+	return out, nil
+}
+
+// GetMany: batch variant of Get (recent-progress endpoint).
+func (m *MockAudiobookRepo) GetMany(ids []string) (model.Audiobooks, error) {
+	if m.Err {
+		return nil, errors.New("error")
+	}
+	want := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		want[id] = true
+	}
+	var out model.Audiobooks
+	for _, b := range m.Books {
+		if want[b.ID] {
+			out = append(out, *b)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+// ChapterCounts: batch chapter counting (recent-progress endpoint).
+func (m *MockAudiobookRepo) ChapterCounts(ids []string) (map[string]int, error) {
+	if m.Err {
+		return nil, errors.New("error")
+	}
+	out := make(map[string]int, len(ids))
+	for _, id := range ids {
+		out[id] = len(m.Chapters[id])
+	}
+	return out, nil
+}
