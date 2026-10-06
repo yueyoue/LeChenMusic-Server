@@ -24,7 +24,16 @@ const maxCoverDimension = 640
 // serveCoverBytes writes cover bytes to the response, downscaling oversized originals on
 // the way out. Small images pass through untouched (no needless re-encode).
 func serveCoverBytes(w http.ResponseWriter, r *http.Request, name string, modTime time.Time, data []byte) {
-	out, contentType := artwork.ThumbnailImage(data, name, maxCoverDimension)
+	serveCoverSized(w, r, name, modTime, data, maxCoverDimension)
+}
+
+// serveCoverSized is serveCoverBytes with an explicit thumbnail size (the cover ?dim= param,
+// used by the APP to pull ~3x smaller shelf covers on slow connections).
+func serveCoverSized(w http.ResponseWriter, r *http.Request, name string, modTime time.Time, data []byte, dim int) {
+	if dim < 64 {
+		dim = maxCoverDimension
+	}
+	out, contentType := artwork.ThumbnailImage(data, name, dim)
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Header().Set("Content-Type", contentType)
 	etag := coverETag(out)

@@ -1,6 +1,8 @@
 package nativeapi
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	fspath "path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -85,7 +88,7 @@ func (h *audiobookHandler) list(w http.ResponseWriter, r *http.Request) {
 	if books == nil {
 		books = model.Audiobooks{}
 	}
-	writeJSON(w, map[string]any{"data": books})
+	writeCachedJSON(w, r, map[string]any{"data": books}, cacheMaxAgeVolatile)
 }
 
 func (h *audiobookHandler) listWithProgress(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +123,7 @@ func (h *audiobookHandler) listWithProgress(w http.ResponseWriter, r *http.Reque
 			Progress:  progressMap[b.ID],
 		})
 	}
-	writeJSON(w, map[string]any{"data": result})
+	writeCachedJSON(w, r, map[string]any{"data": result}, cacheMaxAgeVolatile)
 }
 
 func (h *audiobookHandler) recentProgress(w http.ResponseWriter, r *http.Request) {
@@ -132,7 +135,7 @@ func (h *audiobookHandler) recentProgress(w http.ResponseWriter, r *http.Request
 	repo := h.ds.Audiobook(r.Context())
 	progressList, _ := repo.GetUserProgress(usr.ID)
 	if len(progressList) == 0 {
-		writeJSON(w, map[string]any{"data": []any{}})
+		writeCachedJSON(w, r, map[string]any{"data": []any{}}, cacheMaxAgeVolatile)
 		return
 	}
 	// 批量取回书目 + 章节数（两条查询）。原实现逐本 Get + GetChapters，
@@ -172,13 +175,13 @@ func (h *audiobookHandler) recentProgress(w http.ResponseWriter, r *http.Request
 			Progress:  &pCopy,
 		})
 	}
-	writeJSON(w, map[string]any{"data": result})
+	writeCachedJSON(w, r, map[string]any{"data": result}, cacheMaxAgeVolatile)
 }
 
 func (h *audiobookHandler) search(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query().Get("q")
 	if query == "" {
-		writeJSON(w, map[string]any{"data": []any{}})
+		writeCachedJSON(w, r, map[string]any{"data": []any{}}, cacheMaxAgeVolatile)
 		return
 	}
 	repo := h.ds.Audiobook(r.Context())
@@ -197,7 +200,7 @@ func (h *audiobookHandler) search(w http.ResponseWriter, r *http.Request) {
 			results = append(results, b)
 		}
 	}
-	writeJSON(w, map[string]any{"data": results})
+	writeCachedJSON(w, r, map[string]any{"data": results}, cacheMaxAgeVolatile)
 }
 
 func (h *audiobookHandler) genres(w http.ResponseWriter, r *http.Request) {
@@ -223,7 +226,7 @@ func (h *audiobookHandler) genres(w http.ResponseWriter, r *http.Request) {
 	for name, count := range genreMap {
 		genres = append(genres, gi{Name: name, Count: count})
 	}
-	writeJSON(w, map[string]any{"data": genres})
+	writeCachedJSON(w, r, map[string]any{"data": genres}, cacheMaxAgeStable)
 }
 
 func (h *audiobookHandler) narrators(w http.ResponseWriter, r *http.Request) {
@@ -247,7 +250,7 @@ func (h *audiobookHandler) narrators(w http.ResponseWriter, r *http.Request) {
 	for name, count := range nm {
 		narrators = append(narrators, ni{Name: name, Count: count})
 	}
-	writeJSON(w, map[string]any{"data": narrators})
+	writeCachedJSON(w, r, map[string]any{"data": narrators}, cacheMaxAgeStable)
 }
 
 func (h *audiobookHandler) narratorDetail(w http.ResponseWriter, r *http.Request) {
@@ -264,7 +267,7 @@ func (h *audiobookHandler) narratorDetail(w http.ResponseWriter, r *http.Request
 			works = append(works, b)
 		}
 	}
-	writeJSON(w, map[string]any{"data": map[string]any{"name": name, "works": works}})
+	writeCachedJSON(w, r, map[string]any{"data": map[string]any{"name": name, "works": works}}, cacheMaxAgeStable)
 }
 
 func (h *audiobookHandler) starred(w http.ResponseWriter, r *http.Request) {
@@ -289,7 +292,7 @@ func (h *audiobookHandler) starred(w http.ResponseWriter, r *http.Request) {
 			books[i].Starred = starredAt
 		}
 	}
-	writeJSON(w, map[string]any{"data": books})
+	writeCachedJSON(w, r, map[string]any{"data": books}, cacheMaxAgeVolatile)
 }
 
 func (h *audiobookHandler) get(w http.ResponseWriter, r *http.Request) {
@@ -318,7 +321,7 @@ func (h *audiobookHandler) get(w http.ResponseWriter, r *http.Request) {
 	if chapters == nil {
 		chapters = model.AudiobookChapters{}
 	}
-	writeJSON(w, map[string]any{"data": map[string]any{"book": book, "chapters": chapters, "progress": progress}})
+	writeCachedJSON(w, r, map[string]any{"data": map[string]any{"book": book, "chapters": chapters, "progress": progress}}, cacheMaxAgeVolatile)
 }
 
 func (h *audiobookHandler) chapters(w http.ResponseWriter, r *http.Request) {
@@ -332,7 +335,7 @@ func (h *audiobookHandler) chapters(w http.ResponseWriter, r *http.Request) {
 	if chapters == nil {
 		chapters = model.AudiobookChapters{}
 	}
-	writeJSON(w, map[string]any{"data": chapters})
+	writeCachedJSON(w, r, map[string]any{"data": chapters}, cacheMaxAgeStable)
 }
 
 func (h *audiobookHandler) stream(w http.ResponseWriter, r *http.Request) {
@@ -579,6 +582,13 @@ func (h *audiobookHandler) updateMetadata(w http.ResponseWriter, r *http.Request
 
 func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 	bookID := chi.URLParam(r, "id")
+	// ?dim= 缩略图边长：APP 列表页可请求小图（约省 2/3 流量），不传保持 640 兼容 WEB 管理端。
+	dim := maxCoverDimension
+	if v := r.URL.Query().Get("dim"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 64 && n <= 1024 {
+			dim = n
+		}
+	}
 	repo := h.ds.Audiobook(r.Context())
 	book, err := repo.Get(bookID)
 	if err != nil {
@@ -594,7 +604,7 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 	// wins over the library copy.
 	if p := audiobookCoverOverride(book.ID); p != "" {
 		if data, readErr := os.ReadFile(p); readErr == nil {
-			serveCoverBytes(w, r, filepath.Base(p), time.Time{}, data)
+			serveCoverSized(w, r, filepath.Base(p), time.Time{}, data, dim)
 			return
 		}
 		noCover(w)
@@ -620,7 +630,7 @@ func (h *audiobookHandler) cover(w http.ResponseWriter, r *http.Request) {
 		noCover(w)
 		return
 	}
-	serveCoverBytes(w, r, "cover.jpg", time.Time{}, data)
+	serveCoverSized(w, r, "cover.jpg", time.Time{}, data, dim)
 }
 
 // rescan rebuilds a book's chapter list from its folder. The folder is enumerated
@@ -987,6 +997,35 @@ func extFromContentType(contentType string) string {
 	default:
 		return ".jpg"
 	}
+}
+
+const (
+	cacheMaxAgeVolatile = 15 // 含进度等易变数据
+	cacheMaxAgeStable   = 60 // 章节/分类/演播者等基本不变
+)
+
+// writeCachedJSON serves a JSON payload with client caching (short freshness + ETag
+// revalidation).
+//
+// 为什么加缓存：进入有声书首页/详情每次都要重新拉数据，在慢网络上整包 JSON 的传输
+// 就是"Loading 转圈"的主要时间。给这些只读接口加上短新鲜期后，短时间内重复进入
+// 直接命中客户端缓存（零网络），过期后带 If-None-Match 走 304，不再重复传整包 JSON。
+func writeCachedJSON(w http.ResponseWriter, r *http.Request, data any, maxAgeSeconds int) {
+	buf, err := json.Marshal(data)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	sum := sha256.Sum256(buf)
+	etag := "W/\"" + hex.EncodeToString(sum[:8]) + "\""
+	w.Header().Set("Cache-Control", fmt.Sprintf("private, max-age=%d, must-revalidate", maxAgeSeconds))
+	w.Header().Set("ETag", etag)
+	if strings.Contains(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(buf)
 }
 
 func writeJSON(w http.ResponseWriter, data any) {
