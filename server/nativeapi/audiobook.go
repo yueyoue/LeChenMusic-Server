@@ -383,6 +383,29 @@ func isTimeoutError(err error) bool {
 	return strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline exceeded")
 }
 
+// audiobookLooksFinished reports whether this playback position means the WHOLE book has been
+// played: it is in the book's last chapter and the position is at (or past) the end of that chapter.
+//
+// This is the fallback for clients that do not report `completed` themselves (older APP builds,
+// third-party clients). Without it a finished book sits in "继续收听" forever, because nothing ever
+// sets the flag. Returning to an earlier chapter immediately un-finishes the book again.
+func audiobookLooksFinished(repo model.AudiobookRepository, bookID, chapterID string, reqChapterNumber, position int) bool {
+	chapter, err := repo.GetChapter(chapterID)
+	if err != nil || chapter.Duration <= 0 {
+		return false // 时长未知（快速模式不读标签）：不瞎猜
+	}
+	last := reqChapterNumber
+	if chapter.ChapterNumber > last {
+		last = chapter.ChapterNumber
+	}
+	book, err := repo.Get(bookID)
+	if err != nil || book.ChapterCount <= 0 || last < book.ChapterCount {
+		return false
+	}
+	// 5 秒容差：最后一章自然播完时上报位置可能比 duration 略小。
+	return position >= chapter.Duration-5
+}
+
 func (h *audiobookHandler) getProgress(w http.ResponseWriter, r *http.Request) {
 	bookID := chi.URLParam(r, "id")
 	usr, ok := request.UserFrom(r.Context())
@@ -415,10 +438,21 @@ func (h *audiobookHandler) saveProgress(w http.ResponseWriter, r *http.Request) 
 		PlaybackSpeed float64 `json:"playbackSpeed"`
 		SkipIntro     int     `json:"skipIntro"`
 		SkipOutro     int     `json:"skipOutro"`
+		// Completed 是可选的：指针区分“客户端没说”和“客户端说了 false”。
+		// 不带就按位置推断，带了就以客户端为准。
+		Completed *bool `json:"completed"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", 400)
 		return
+	}
+	// 「已听完」= 书已经全部播放完。继续收听列表要把这些书踢出去，所以这个标记必须
+	// 真的被写进库：旧实现根本没接收 completed 字段，列里那句 !completed 过滤永远不生效。
+	completed := false
+	if req.Completed != nil {
+		completed = *req.Completed
+	} else {
+		completed = audiobookLooksFinished(repo, bookID, req.ChapterID, req.ChapterNumber, req.Position)
 	}
 	progress := &model.AudiobookProgress{
 		UserID:        usr.ID,
@@ -429,6 +463,7 @@ func (h *audiobookHandler) saveProgress(w http.ResponseWriter, r *http.Request) 
 		PlaybackSpeed: req.PlaybackSpeed,
 		SkipIntro:     req.SkipIntro,
 		SkipOutro:     req.SkipOutro,
+		Completed:     completed,
 	}
 	if err := repo.SaveProgress(progress); err != nil {
 		http.Error(w, err.Error(), 500)

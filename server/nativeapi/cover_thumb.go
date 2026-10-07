@@ -35,7 +35,11 @@ func serveCoverSized(w http.ResponseWriter, r *http.Request, name string, modTim
 		dim = maxCoverDimension
 	}
 	out, contentType := artwork.ThumbnailImage(data, name, dim)
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	// 与 Subsonic getCoverArt 同款的长期缓存（media_retrieval.go）。手机端图片库（Coil）
+	// 按 HTTP 缓存头决定要不要用磁盘副本：以前这里是 max-age=3600，
+	// 于是 APP 挂机超过一小时再打开，整屏封面就全部回源重下——“图片加载慢”的主因。
+	// 封面几乎不会变；真要换封面时重扫描会更新 ETag，APP 重装/清缓存即可拿到新图。
+	w.Header().Set("Cache-Control", "public, max-age=315360000")
 	w.Header().Set("Content-Type", contentType)
 	etag := coverETag(out)
 	w.Header().Set("ETag", etag)
