@@ -82,11 +82,13 @@ func (r *libraryRepository) Put(l *model.Library) error {
 	}
 
 	var err error
+	isNew := false
 	l.UpdatedAt = time.Now()
 	if l.ID == 0 {
 		// Insert with autoassigned ID
 		l.CreatedAt = time.Now()
 		err = r.db.Model(l).Insert()
+		isNew = err == nil
 	} else {
 		// Try to update first
 		cols := map[string]any{
@@ -108,6 +110,7 @@ func (r *libraryRepository) Put(l *model.Library) error {
 			l.CreatedAt = time.Now()
 			l.UpdatedAt = time.Now()
 			err = r.db.Model(l).Insert()
+			isNew = err == nil
 		}
 	}
 	if err != nil {
@@ -125,6 +128,20 @@ ON CONFLICT (user_id, library_id) DO NOTHING;`,
 	)
 	if _, err = r.executeSQL(sql); err != nil {
 		return fmt.Errorf("failed to assign library to admin users: %w", err)
+	}
+
+	// 新建媒体库（尤其是网盘库）要同步发给所有存量用户（default_new_users 的库），
+	// 否则老用户的 user_library 里没有新库，服务端按库过滤后新库内容对他们完全
+	// 不可见——这就是“网盘音乐搜不到”在普通账号上的根因（管理员走特权路径才看得到）。
+	// 仅在新建时补发；之后管理员在用户管理里收回的授权不会被库编辑冲掉。
+	if isNew && l.DefaultNewUsers {
+		assignAll := Expr(`
+INSERT INTO user_library (user_id, library_id)
+SELECT u.id, ? FROM user u
+ON CONFLICT (user_id, library_id) DO NOTHING`, l.ID)
+		if _, err := r.executeSQL(assignAll); err != nil {
+			return fmt.Errorf("failed to assign new library to existing users: %w", err)
+		}
 	}
 
 	libLock.Lock()
