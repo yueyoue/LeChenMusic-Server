@@ -96,6 +96,14 @@ type Source interface {
 	GetLyrics(ctx context.Context, song SongRef) (string, error)
 }
 
+// GetDefaultSource returns the primary download source (currently hicn).
+func GetDefaultSource() Source {
+	if s, ok := Get("hicn"); ok {
+		return s
+	}
+	return nil
+}
+
 // Registry holds all registered download sources.
 var sources = make(map[string]Source)
 

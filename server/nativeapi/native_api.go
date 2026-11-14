@@ -101,6 +101,7 @@ func (api *Router) routes() http.Handler {
 		api.addAudiobookRoute(r)      // [LeChenMusic] audiobook routes
 		api.addUserStatsRoute(r)     // [LeChenMusic] user stats & device tracking
 		api.addScrapeRoute(r)         // [LeChenMusic] scraper routes
+		api.addOnlineRoute(r)         // [LeChenMusic] online search & download routes
 		api.addDuplicateSongsRoute(r) // [LeChenMusic] duplicate songs detection
 		api.addAIPlaylistRoute(r)     // [LeChenMusic] AI playlist routes
 		api.addErrorLogRoute(r)  // [LeChenMusic] error log route

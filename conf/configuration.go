@@ -109,6 +109,7 @@ type configOptions struct {
 	Prometheus                      prometheusOptions          `json:",omitzero"`
 	Scanner                         scannerOptions             `json:",omitzero"`
 	OpenList                        map[string]OpenListOptions `json:",omitzero"`
+	OnlineDownload                  onlineDownloadOptions     `json:",omitzero"`
 	Jukebox                         jukeboxOptions             `json:",omitzero"`
 	Backup                          backupOptions              `json:",omitzero"`
 	PID                             pidOptions                 `json:",omitzero"`
@@ -193,6 +194,15 @@ type OpenListOptions struct {
 	TagMode string
 
 	DisableRedirect bool // set to true to never 302 to the drive's CDN (always proxy through this server)
+}
+
+// onlineDownloadOptions configures the "search & download missing songs" feature.
+type onlineDownloadOptions struct {
+	Enabled    bool   // master switch
+	Permission string // "open" | "admin-or-approved" | "quota"
+	DailyQuota int    // max downloads per user per day (0 = unlimited), used when Permission == "quota"
+	Quality    string // "" = FLAC-preferred chain; or "flac/2000", "mp3/320", "mp3/128"
+	LibPath    string // "" = MusicFolder
 }
 
 type scannerOptions struct {
@@ -905,6 +915,11 @@ func setViperDefaults() {
 	viper.SetDefault("scanner.enabled", true)
 	viper.SetDefault("scanner.schedule", "0")
 	viper.SetDefault("scanner.extractor", consts.DefaultScannerExtractor)
+	viper.SetDefault("onlinedownload.enabled", true)
+	viper.SetDefault("onlinedownload.permission", "admin-or-approved")
+	viper.SetDefault("onlinedownload.dailyquota", 0)
+	viper.SetDefault("onlinedownload.quality", "")
+	viper.SetDefault("onlinedownload.libpath", "")
 	viper.SetDefault("scanner.watcherwait", consts.DefaultWatcherWait)
 	viper.SetDefault("scanner.scanonstartup", true)
 	viper.SetDefault("scanner.artistjoiner", consts.ArtistJoiner)
