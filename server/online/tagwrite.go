@@ -2,6 +2,7 @@ package online
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"github.com/bogem/id3v2/v2"
 	"github.com/go-flac/flacpicture"
 	"github.com/go-flac/go-flac"
+	"github.com/navidrome/navidrome/log"
 )
 
 // EmbeddedMeta is the metadata written INTO the audio file itself.
@@ -115,12 +117,15 @@ func writeFLACMetadata(path string, meta EmbeddedMeta) error {
 	blocks = append(blocks, &flac.MetaDataBlock{Type: flac.VorbisComment, Data: encodeVorbisComment(tags)})
 
 	if len(meta.Cover) > 0 {
-		pic, err := flacpicture.NewFromImageData(flacpicture.PictureTypeCoverFront, "Cover", meta.Cover, meta.CoverMIME)
+		pic, err := flacpicture.NewFromImageData(flacpicture.PictureTypeFrontCover, "Cover", meta.Cover, meta.CoverMIME)
 		if err != nil {
-			return fmt.Errorf("online: build flac picture: %w", err)
+			// FLAC picture blocks require a decodable jpeg/png. Skip the cover
+			// instead of failing the whole ingest.
+			log.Warn(context.Background(), "online: skipping undecodable FLAC cover", "mime", meta.CoverMIME, err)
+		} else {
+			picBlock := pic.Marshal()
+			blocks = append(blocks, &picBlock)
 		}
-		picBlock := pic.Marshal()
-		blocks = append(blocks, &picBlock)
 	}
 
 	f.Meta = blocks

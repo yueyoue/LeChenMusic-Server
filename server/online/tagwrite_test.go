@@ -3,6 +3,9 @@ package online
 import (
 	"bytes"
 	"encoding/binary"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +16,18 @@ import (
 	"github.com/go-flac/flacpicture"
 	"github.com/go-flac/go-flac"
 )
+
+// testPNG builds a tiny but fully decodable PNG image.
+func testPNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
 
 // minimalFlac builds a syntactically valid FLAC file: header + STREAMINFO.
 func minimalFlac(t *testing.T) []byte {
@@ -25,6 +40,9 @@ func minimalFlac(t *testing.T) []byte {
 	binary.BigEndian.PutUint16(streamInfo[0:2], 16)   // min block size
 	binary.BigEndian.PutUint16(streamInfo[2:4], 4096) // max block size
 	buf.Write(streamInfo)
+	// Minimal frame sync code so the stream reader is satisfied
+	// (real downloaded files always carry audio frames).
+	buf.Write([]byte{0xFF, 0xF8})
 	return buf.Bytes()
 }
 
@@ -50,11 +68,13 @@ func decodeVorbisComment(t *testing.T, data []byte) map[string]string {
 	vendor := make([]byte, u32)
 	_, mustErr := io.ReadFull(r, vendor)
 	must(mustErr)
-	must(binary.Read(r, binary.LittleEndian, &u32))
+	var count uint32
+	must(binary.Read(r, binary.LittleEndian, &count))
 	res := map[string]string{}
-	for i := uint32(0); i < u32; i++ {
-		must(binary.Read(r, binary.LittleEndian, &u32))
-		entry := make([]byte, u32)
+	for i := uint32(0); i < count; i++ {
+		var l uint32
+		must(binary.Read(r, binary.LittleEndian, &l))
+		entry := make([]byte, l)
 		_, mustErr := io.ReadFull(r, entry)
 		must(mustErr)
 		k, v, _ := strings.Cut(string(entry), "=")
@@ -69,7 +89,7 @@ func TestWriteFLACMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cover := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x01, 0x02} // fake jpeg
+	cover := testPNG(t)
 	lyrics := "[00:01.00] 今天我\n[00:05.00] 寒夜里看雪飘过"
 	meta := EmbeddedMeta{
 		Title:     "海阔天空",
@@ -77,7 +97,7 @@ func TestWriteFLACMetadata(t *testing.T) {
 		Album:     "乐与怒",
 		Year:      "1993",
 		Cover:     cover,
-		CoverMIME: "image/jpeg",
+		CoverMIME: "image/png",
 		Lyrics:    lyrics,
 	}
 	if err := WriteEmbeddedMetadata(path, meta); err != nil {
@@ -150,13 +170,13 @@ func TestWriteMP3Metadata(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cover := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x01, 0x02}
+	cover := testPNG(t)
 	meta := EmbeddedMeta{
 		Title:     "海阔天空",
 		Artist:    "BEYOND",
 		Album:     "乐与怒",
 		Cover:     cover,
-		CoverMIME: "image/jpeg",
+		CoverMIME: "image/png",
 		Lyrics:    "[00:01.00] 今天我",
 	}
 	if err := WriteEmbeddedMetadata(path, meta); err != nil {
@@ -197,5 +217,26 @@ func TestWriteMetadataUnsupportedFormat(t *testing.T) {
 	}
 	if err := WriteEmbeddedMetadata(path, EmbeddedMeta{Title: "x"}); err == nil {
 		t.Fatal("expected error for unsupported format")
+	}
+}
+
+func TestWriteFLACMetadataSkipsUndecodableCover(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "song.flac")
+	if err := os.WriteFile(path, minimalFlac(t), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Fake jpeg bytes cannot be decoded; the write must still succeed without a picture.
+	meta := EmbeddedMeta{Title: "x", Artist: "y", Cover: []byte{0xFF, 0xD8, 0x00}, CoverMIME: "image/jpeg"}
+	if err := WriteEmbeddedMetadata(path, meta); err != nil {
+		t.Fatalf("expected lenient cover handling, got: %v", err)
+	}
+	f, err := flac.ParseFile(path)
+	if err != nil {
+		t.Fatalf("re-parse flac: %v", err)
+	}
+	for _, b := range f.Meta {
+		if b.Type == flac.Picture {
+			t.Error("picture block should have been skipped")
+		}
 	}
 }

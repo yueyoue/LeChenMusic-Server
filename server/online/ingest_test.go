@@ -45,9 +45,9 @@ func TestSanitizeFilename(t *testing.T) {
 }
 
 func TestIngestorProcessEndToEnd(t *testing.T) {
-	cover := []byte{0xFF, 0xD8, 0xFF, 0xE0, 0x02, 0x03}
+	cover := testPNG(t)
 	coverSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Content-Type", "image/png")
 		_, _ = w.Write(cover)
 	}))
 	t.Cleanup(coverSrv.Close)

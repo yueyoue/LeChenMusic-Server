@@ -9,6 +9,7 @@ require (
 	github.com/Masterminds/squirrel v1.5.4
 	github.com/andybalholm/cascadia v1.3.4
 	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/bogem/id3v2/v2 v2.1.4
 	github.com/deluan/rest v0.0.0-20211102003136-6260bc399cbf
 	github.com/deluan/sanitize v0.0.0-20241120162836-fdfd8fdfaa55
 	github.com/dexterlb/mpvipc v0.0.0-20241005113212-7cdefca0e933
@@ -24,6 +25,8 @@ require (
 	github.com/go-chi/cors v1.2.2
 	github.com/go-chi/httprate v0.15.0
 	github.com/go-chi/jwtauth/v5 v5.4.0
+	github.com/go-flac/flacpicture v0.3.0
+	github.com/go-flac/go-flac v1.0.0
 	github.com/go-viper/encoding/ini v0.1.1
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/gohugoio/hashstructure v0.6.0
