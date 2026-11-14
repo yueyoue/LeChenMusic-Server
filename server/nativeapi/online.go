@@ -36,6 +36,7 @@ func (api *Router) addOnlineRoute(r chi.Router) {
 		r.Get("/tasks", h.listTasks)
 		r.Post("/tasks/{id}/retry", h.retryTask)
 		r.Delete("/tasks/{id}", h.deleteTask)
+		h.adminRoutes(r) // M5: /downloads*, /logs* (admin-only)
 	})
 }
 
@@ -61,6 +62,17 @@ func newOnlineHandler(ds model.DataStore, pls playlistsvc.Playlists) *onlineHand
 
 	manager := onlinesvc.NewManager(ds.DownloadTask(ctx), filepath.Join(conf.Server.DataFolder.String(), "downloads", "tmp"), ingest.Process)
 	if ds.DownloadTask(ctx) != nil {
+		manager.OnSettled(func(ctx context.Context, task *model.DownloadTask, err error) {
+			action := model.OpLogDownloadDone
+			success := true
+			detail := ""
+			if err != nil {
+				action = model.OpLogDownloadFailed
+				success = false
+				detail = err.Error()
+			}
+			writeOnlineOpLog(ctx, ds, task.UserID, action, task.SongName, task.Artist, detail, success)
+		})
 		manager.Start(ctx)
 	} else {
 		log.Warn(ctx, "online: download task repository unavailable, download worker not started")
@@ -236,8 +248,33 @@ func (h *onlineHandler) download(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	log.Info(ctx, "Online download queued", "user", user.UserName, "song", req.Name, "artist", req.Artist)
+	writeOnlineOpLog(ctx, h.ds, user.ID, model.OpLogDownloadQueued, req.Name, req.Artist, "", true)
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, task)
+}
+
+// writeOnlineOpLog records one online-download operation (best-effort).
+func writeOnlineOpLog(ctx context.Context, ds model.DataStore, userID, action, song, artist, detail string, success bool) {
+	repo := ds.OnlineOpLog(ctx)
+	if repo == nil {
+		return
+	}
+	userName := userID
+	if u, err := ds.User(ctx).Get(userID); err == nil && u != nil {
+		userName = u.UserName
+	}
+	entry := &model.OnlineOpLog{
+		UserID:   userID,
+		UserName: userName,
+		Action:   action,
+		SongName: song,
+		Artist:   artist,
+		Detail:   detail,
+		Success:  success,
+	}
+	if err := repo.Add(entry); err != nil {
+		log.Warn(ctx, "online: could not write op log", "action", action, err)
+	}
 }
 
 // listTasks: GET /api/online/tasks?mine=1

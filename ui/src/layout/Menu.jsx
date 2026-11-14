@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { useSelector } from 'react-redux'
 import { Divider, makeStyles } from '@material-ui/core'
 import clsx from 'clsx'
-import { useTranslate, MenuItemLink, getResources } from 'react-admin'
+import { useTranslate, MenuItemLink, getResources, usePermissions } from 'react-admin'
 import ViewListIcon from '@material-ui/icons/ViewList'
 import AlbumIcon from '@material-ui/icons/Album'
 import MenuBookIcon from '@material-ui/icons/MenuBook'
@@ -54,6 +54,7 @@ const Menu = ({ dense = false }) => {
   const queue = useSelector((state) => state.player?.queue)
   const classes = useStyles({ addPadding: queue.length > 0 })
   const resources = useSelector(getResources)
+  const { permissions } = usePermissions()
 
   const [state, setState] = useState({
     menuAlbumList: true,
@@ -152,6 +153,24 @@ const Menu = ({ dense = false }) => {
         sidebarIsOpen={open}
         dense={dense}
       />
+      <MenuItemLink
+        to="/online-search"
+        activeClassName={classes.active}
+        primaryText="🎵 在线搜歌"
+        leftIcon={<span style={{ fontSize: 16 }}>🔍</span>}
+        sidebarIsOpen={open}
+        dense={dense}
+      />
+      {permissions === 'admin' && (
+        <MenuItemLink
+          to="/online-downloads"
+          activeClassName={classes.active}
+          primaryText="📥 下载管理"
+          leftIcon={<span style={{ fontSize: 16 }}>📥</span>}
+          sidebarIsOpen={open}
+          dense={dense}
+        />
+      )}
       <SubMenu
         handleToggle={() => handleToggle('menuAudiobook')}
         isOpen={state.menuAudiobook}

@@ -13,12 +13,16 @@ import ErrorLogPage from './error-log/ErrorLogPage'
 import BackupPage from './backup/BackupList'
 import CloudSourcePage from './cloudsource/CloudSourcePage'
 import UserStatsPage from './stats/UserStatsPage'
+import OnlineSearchPage from './online/OnlineSearchPage'
+import DownloadManagePage from './online/DownloadManagePage'
 
 const routes = [
   <Route exact path="/personal" render={() => <Personal />} key={'personal'} />,
   <Route exact path="/favorites" render={() => <FavoritesPage />} key={'favorites'} />,
   <Route exact path="/ai-playlist" render={() => <AIPlaylistPage />} key={'ai-playlist'} />,
   <Route exact path="/error-log" render={() => <ErrorLogPage />} key={'error-log'} />,
+  <Route exact path="/online-search" render={() => <OnlineSearchPage />} key={'online-search'} />,
+  <Route exact path="/online-downloads" render={() => <DownloadManagePage />} key={'online-downloads'} />,
   <Route exact path="/audiobook" render={() => <AudiobookList />} key={'audiobook'} />,
   <Route exact path="/audiobook/starred" render={() => <AudiobookList />} key={'audiobook-starred'} />,
   <Route exact path="/audiobook/:id" render={({ match }) => <AudiobookDetail id={match.params.id} />} key={'audiobook-detail'} />,

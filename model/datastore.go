@@ -44,6 +44,7 @@ type DataStore interface {
 	PlayLog(ctx context.Context) PlayLogRepository
 	UserDevice(ctx context.Context) UserDeviceRepository
 	DownloadTask(ctx context.Context) DownloadTaskRepository
+	OnlineOpLog(ctx context.Context) OnlineOpLogRepository
 
 	Resource(ctx context.Context, model any) ResourceRepository
 

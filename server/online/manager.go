@@ -20,6 +20,10 @@ import (
 // (Implemented in M3; until then the default keeps the file as-is.)
 type PostProcessor func(ctx context.Context, task *model.DownloadTask, tmpPath string) (string, error)
 
+// SettledObserver is notified after a task reaches a terminal state
+// (done or failed), so callers can e.g. write operation logs (M5).
+type SettledObserver func(ctx context.Context, task *model.DownloadTask, err error)
+
 // Manager owns the download task queue: it persists tasks, processes them with
 // a single worker goroutine (configurable later), reports progress and cleans
 // up temp files on failure.
@@ -28,6 +32,7 @@ type Manager struct {
 	tmpDir    string
 	processor PostProcessor
 	client    *http.Client
+	settled   SettledObserver
 
 	queue chan string
 	wg    sync.WaitGroup
@@ -67,6 +72,9 @@ func (m *Manager) Start(ctx context.Context) {
 
 // Wait blocks until the worker has stopped (for tests/shutdown).
 func (m *Manager) Wait() { m.wg.Wait() }
+
+// OnSettled registers an observer invoked when a task finishes (done or failed).
+func (m *Manager) OnSettled(fn SettledObserver) { m.settled = fn }
 
 // Enqueue persists a new task and schedules it.
 func (m *Manager) Enqueue(task *model.DownloadTask) error {
@@ -129,14 +137,20 @@ func (m *Manager) process(ctx context.Context, taskID string) {
 	if task.Status != model.DownloadStatusQueued {
 		return
 	}
-	if err := m.run(ctx, task); err != nil {
+	// Keep the run error in its own variable: `if err := ...` would shadow the
+	// outer err and the settled observer would always see nil (M5 log bug).
+	runErr := m.run(ctx, task)
+	if runErr != nil {
 		task.Status = model.DownloadStatusFailed
-		task.Error = err.Error()
+		task.Error = runErr.Error()
 		task.FinishedAt = time.Now()
 		if updateErr := m.tasks.Update(task); updateErr != nil {
 			log.Error(ctx, "Could not mark download task as failed", "task", taskID, updateErr)
 		}
-		log.Warn(ctx, "Download task failed", "task", taskID, "song", task.SongName, err)
+		log.Warn(ctx, "Download task failed", "task", taskID, "song", task.SongName, runErr)
+	}
+	if m.settled != nil {
+		m.settled(ctx, task, runErr)
 	}
 }
 

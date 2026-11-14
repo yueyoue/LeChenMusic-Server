@@ -105,6 +105,10 @@ func (s *SQLStore) DownloadTask(ctx context.Context) model.DownloadTaskRepositor
 	return NewDownloadTaskRepository(ctx, s.getDBXBuilder())
 }
 
+func (s *SQLStore) OnlineOpLog(ctx context.Context) model.OnlineOpLogRepository {
+	return NewOnlineOpLogRepository(ctx, s.getDBXBuilder())
+}
+
 func (s *SQLStore) Scrobble(ctx context.Context) model.ScrobbleRepository {
 	return NewScrobbleRepository(ctx, s.getDBXBuilder())
 }
