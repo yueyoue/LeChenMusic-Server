@@ -43,6 +43,7 @@ type DataStore interface {
 	Audiobook(ctx context.Context) AudiobookRepository
 	PlayLog(ctx context.Context) PlayLogRepository
 	UserDevice(ctx context.Context) UserDeviceRepository
+	DownloadTask(ctx context.Context) DownloadTaskRepository
 
 	Resource(ctx context.Context, model any) ResourceRepository
 

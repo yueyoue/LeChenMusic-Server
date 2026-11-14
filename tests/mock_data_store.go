@@ -23,6 +23,7 @@ type MockDataStore struct {
 	MockedPlayQueue      model.PlayQueueRepository
 	MockedPlayLog        model.PlayLogRepository
 	MockedUserDevice     model.UserDeviceRepository
+	MockedDownloadTask   model.DownloadTaskRepository
 	MockedShare          model.ShareRepository
 	MockedTranscoding    model.TranscodingRepository
 	MockedUserProps      model.UserPropsRepository
@@ -276,6 +277,16 @@ func (db *MockDataStore) UserDevice(ctx context.Context) model.UserDeviceReposit
 	}
 	if db.RealDS != nil {
 		return db.RealDS.UserDevice(ctx)
+	}
+	return nil
+}
+
+func (db *MockDataStore) DownloadTask(ctx context.Context) model.DownloadTaskRepository {
+	if db.MockedDownloadTask != nil {
+		return db.MockedDownloadTask
+	}
+	if db.RealDS != nil {
+		return db.RealDS.DownloadTask(ctx)
 	}
 	return nil
 }

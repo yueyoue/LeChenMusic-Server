@@ -101,6 +101,10 @@ func (s *SQLStore) UserDevice(ctx context.Context) model.UserDeviceRepository {
 	return NewUserDeviceRepository(ctx, s.getDBXBuilder())
 }
 
+func (s *SQLStore) DownloadTask(ctx context.Context) model.DownloadTaskRepository {
+	return NewDownloadTaskRepository(ctx, s.getDBXBuilder())
+}
+
 func (s *SQLStore) Scrobble(ctx context.Context) model.ScrobbleRepository {
 	return NewScrobbleRepository(ctx, s.getDBXBuilder())
 }
