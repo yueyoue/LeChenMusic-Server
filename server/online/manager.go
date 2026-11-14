@@ -322,4 +322,3 @@ func (p *progressReader) Read(b []byte) (int, error) {
 	}
 	return n, err
 }
-
