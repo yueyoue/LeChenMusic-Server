@@ -59,7 +59,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 // parseQueries 把多行输入解析为 [{name, artist}]。
 // 每行格式：`歌名 - 歌手` / `歌名-歌手` / `歌名 歌手` / 只有歌名。
-export const parseQueries = (text) => {
+const parseQueries = (text) => {
   return text
     .split(/\r?\n/)
     .map((line) => line.trim())
