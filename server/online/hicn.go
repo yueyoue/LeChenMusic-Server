@@ -94,6 +94,7 @@ type hicnSong struct {
 	Name      string      `json:"name"`
 	Artist    string      `json:"artist"`
 	AlbumName string      `json:"album_name"`
+	AlbumID   string      `json:"album_id"`
 	PicURL    string      `json:"pic_url"`
 	Duration  string      `json:"duration"` // seconds, stringly typed upstream
 	Minfo     []hicnMinfo `json:"minfo"`
@@ -175,6 +176,7 @@ func (s *hicnSource) normalizeSong(hs hicnSong) Song {
 		Name:      hs.Name,
 		Artist:    hs.Artist,
 		AlbumName: hs.AlbumName,
+		AlbumID:   numericID(hs.AlbumID),
 		CoverURL:  hs.PicURL,
 		Duration:  duration,
 		Qualities: qualities,

@@ -11,9 +11,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/Masterminds/squirrel"
 	"github.com/go-chi/chi/v5"
 	playlistsvc "github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/log"
@@ -208,12 +208,6 @@ func (ah *onlineAdminHandler) verifyDownload(w http.ResponseWriter, r *http.Requ
 
 // ---- delete ----
 
-type deleteResponse struct {
-	DeletedFile bool     `json:"deletedFile"`
-	DeletedDB   int      `json:"deletedDb"`
-	Warnings    []string `json:"warnings,omitempty"`
-}
-
 // deleteDownload: DELETE /api/online/downloads/{id}
 // Removes the downloaded song: audio file + library record(s) + task record.
 // The operation log keeps the audit trail.
@@ -224,34 +218,10 @@ func (ah *onlineAdminHandler) deleteDownload(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	resp := deleteResponse{}
-
-	if fileExists(task.FilePath) {
-		if err := os.Remove(task.FilePath); err != nil {
-			http.Error(w, "could not delete file: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		resp.DeletedFile = true
-	}
-
-	for _, mf := range ah.findMediaFiles(ctx, task) {
-		if err := ah.ds.MediaFile(ctx).Delete(mf.ID); err != nil {
-			log.Warn(ctx, "online admin: could not delete media file record", "id", mf.ID, err)
-			resp.Warnings = append(resp.Warnings, "删除曲库记录失败: "+mf.ID)
-			continue
-		}
-		resp.DeletedDB++
-	}
-
-	if err := ah.ds.DownloadTask(ctx).Delete(task.ID); err != nil {
-		log.Warn(ctx, "online admin: could not delete task record", "task", task.ID, err)
-		resp.Warnings = append(resp.Warnings, "删除任务记录失败")
-	}
-
-	if resp.DeletedFile || resp.DeletedDB > 0 {
-		// Library entries vanished from disk/DB: refresh so the song stops
-		// showing up (best-effort, asynchronous).
-		triggerLibraryScan(ctx, ah.ds, ah.pls)
+	resp, err := deleteDownloadedArtifacts(ctx, ah.ds, ah.pls, task, downloadLibraryRoots(ah.ingest.LibraryRoot()))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	ah.recordOp(ctx, model.OpLogDelete, task, resp.DeletedFile || resp.DeletedDB > 0, strings.Join(resp.Warnings, "; "))
@@ -429,32 +399,11 @@ func (ah *onlineAdminHandler) loadUserNames(ctx context.Context) map[string]stri
 	return names
 }
 
-// findMediaFiles locates library records for the task's file: exact absolute
-// path match, with a basename pre-filter to keep the scan cheap.
+// findMediaFiles locates library records for the task's file. Kept as a method
+// for callers inside the admin handler; the shared implementation lives in
+// online_delete.go so the user-facing task API can reuse it.
 func (ah *onlineAdminHandler) findMediaFiles(ctx context.Context, task *model.DownloadTask) model.MediaFiles {
-	if task.FilePath == "" {
-		return nil
-	}
-	repo := ah.ds.MediaFile(ctx)
-	if repo == nil {
-		return nil
-	}
-	base := filepath.Base(task.FilePath)
-	mfs, err := repo.GetAll(model.QueryOptions{
-		Filters: squirrel.Like{"path": "%" + base},
-		Max:     100,
-	})
-	if err != nil {
-		log.Warn(ctx, "online admin: media file lookup failed", "path", task.FilePath, err)
-		return nil
-	}
-	var out model.MediaFiles
-	for _, mf := range mfs {
-		if sameFilePath(mf.AbsolutePath(), task.FilePath) {
-			out = append(out, mf)
-		}
-	}
-	return out
+	return findMediaFilesForTask(ctx, ah.ds, task)
 }
 
 // recordOp appends an entry to the persistent operation log (best-effort).
@@ -572,15 +521,45 @@ func decodeOptionalJSON(r *http.Request, dst any) error {
 }
 
 // triggerLibraryScan refreshes library metadata after a file changed on disk.
-// It is a no-op when the playlists service is unavailable (e.g. tests) or when
-// a scan is already running.
+// It is a no-op when the playlists service is unavailable (e.g. tests).
 func triggerLibraryScan(ctx context.Context, ds model.DataStore, pls playlistsvc.Playlists) {
-	if ds == nil || pls == nil || scanner.IsScanning() {
+	triggerLibraryScanWhenIdle(ctx, ds, pls)
+}
+
+var (
+	pendingScanMu      sync.Mutex
+	pendingScanRunning bool
+)
+
+// triggerLibraryScanWhenIdle runs one library scan as soon as no other scan is
+// in progress. A scan only re-reads newer files, so a song written while a scan
+// is running would otherwise stay invisible until the next scheduled scan —
+// which also broke the "already downloaded" gate (the song looked missing and
+// could be downloaded again). Concurrent requests are coalesced into one scan.
+func triggerLibraryScanWhenIdle(ctx context.Context, ds model.DataStore, pls playlistsvc.Playlists) {
+	if ds == nil || pls == nil {
 		return
 	}
+	pendingScanMu.Lock()
+	if pendingScanRunning {
+		pendingScanMu.Unlock()
+		return
+	}
+	pendingScanRunning = true
+	pendingScanMu.Unlock()
+
 	go func() {
+		defer func() {
+			pendingScanMu.Lock()
+			pendingScanRunning = false
+			pendingScanMu.Unlock()
+		}()
+		// Wait for the scan that is already running (bounded: 10 minutes).
+		for i := 0; i < 600 && scanner.IsScanning(); i++ {
+			time.Sleep(time.Second)
+		}
 		if _, err := scanner.CallScan(context.Background(), ds, pls, false, nil); err != nil {
-			log.Warn(ctx, "online admin: could not trigger library scan", err)
+			log.Warn(ctx, "online: could not trigger library scan", err)
 		}
 	}()
 }

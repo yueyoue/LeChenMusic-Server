@@ -399,6 +399,12 @@ const SongScrapePage = () => {
                     <Typography className={classes.fieldLabel}>
                       入库标题：{dialog.result.info?.title || '-'}
                     </Typography>
+                    <Typography className={classes.fieldLabel}>
+                      专辑艺术家：{dialog.result.info?.albumArtist || '-'}
+                    </Typography>
+                    <Typography className={classes.fieldLabel}>
+                      年份：{dialog.result.info?.year || '-'}
+                    </Typography>
                   </Box>
                 </Box>
               )}

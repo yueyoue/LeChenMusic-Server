@@ -19,8 +19,9 @@ import (
 type EmbeddedMeta struct {
 	Title       string
 	Artist      string
+	AlbumArtist string // album artist: keeps multi-artist albums in one album
 	Album       string
-	Year        string
+	Year        string // year or full release date (YYYY-MM-DD)
 	TrackNumber int
 	Cover       []byte
 	CoverMIME   string
@@ -53,6 +54,10 @@ func writeMP3Metadata(path string, meta EmbeddedMeta) error {
 
 	tag.AddTextFrame(tag.CommonID("Title"), id3v2.EncodingUTF8, meta.Title)
 	tag.AddTextFrame(tag.CommonID("Artist"), id3v2.EncodingUTF8, meta.Artist)
+	// TPE2 = album artist; TPE1 above stays the track artist.
+	if meta.AlbumArtist != "" {
+		tag.AddTextFrame(tag.CommonID("Band/Orchestra/Accompaniment"), id3v2.EncodingUTF8, meta.AlbumArtist)
+	}
 	if meta.Album != "" {
 		tag.AddTextFrame(tag.CommonID("Album/Movie/Show title"), id3v2.EncodingUTF8, meta.Album)
 	}
@@ -101,6 +106,9 @@ func writeFLACMetadata(path string, meta EmbeddedMeta) error {
 	tags := [][2]string{
 		{"TITLE", meta.Title},
 		{"ARTIST", meta.Artist},
+	}
+	if meta.AlbumArtist != "" {
+		tags = append(tags, [2]string{"ALBUMARTIST", meta.AlbumArtist})
 	}
 	if meta.Album != "" {
 		tags = append(tags, [2]string{"ALBUM", meta.Album})

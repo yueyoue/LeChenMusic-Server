@@ -81,3 +81,35 @@ func NormalizeArtist(artist string) string {
 	}
 	return strings.Join(out, " / ")
 }
+
+// albumArtistSeparators splits album credits only on unambiguous separators:
+// unlike artistSeparators it never splits on "x"/"X", which would mangle album
+// artists such as "X JAPAN" or "Texas".
+var albumArtistSeparators = regexp.MustCompile(`\s*([&、,，;；/|×])\s*`)
+
+// NormalizeAlbumArtist cleans an album-level artist credit: "•" becomes the
+// library joiner, multi-artist credits are rejoined with " / " (the separator
+// the scanner splits on) and duplicates are dropped.
+func NormalizeAlbumArtist(artist string) string {
+	a := strings.TrimSpace(artist)
+	if a == "" {
+		return a
+	}
+	a = strings.ReplaceAll(a, "•", "&")
+
+	parts := albumArtistSeparators.Split(a, -1)
+	seen := make(map[string]bool, len(parts))
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	if len(out) == 0 {
+		return strings.TrimSpace(artist)
+	}
+	return strings.Join(out, " / ")
+}

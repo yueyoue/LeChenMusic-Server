@@ -40,6 +40,7 @@ type Song struct {
 	Name      string          `json:"name"`
 	Artist    string          `json:"artist"`
 	AlbumName string          `json:"albumName,omitempty"`
+	AlbumID   string          `json:"albumId,omitempty"` // upstream album id, used to resolve album artist + release date
 	CoverURL  string          `json:"coverUrl,omitempty"`
 	Duration  int             `json:"duration"` // seconds
 	Qualities []QualityOption `json:"qualities,omitempty"`

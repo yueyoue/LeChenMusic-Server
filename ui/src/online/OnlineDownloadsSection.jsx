@@ -12,6 +12,7 @@ import BuildIcon from '@material-ui/icons/Build'
 import VisibilityIcon from '@material-ui/icons/Visibility'
 import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
+import { confirmDeleteText, deleteResultText } from './downloadDelete'
 
 // 「下载管理」区（仅管理员）：下载记录、刮削验证、重新刮削、删除下载歌曲。
 
@@ -118,14 +119,14 @@ const OnlineDownloadsSection = () => {
   }
 
   const handleDelete = async (item) => {
-    if (!window.confirm(`确定删除下载的歌曲《${item.songName} - ${item.artist}》？\n将同时删除音频文件、曲库记录与任务记录。`)) return
+    if (!window.confirm(confirmDeleteText(item))) return
     setError('')
     try {
-      await httpClient(`${REST_URL}/online/downloads/${item.id}`, { method: 'DELETE' })
-      setToast(`《${item.songName}》已删除`)
+      const res = await httpClient(`${REST_URL}/online/downloads/${item.id}`, { method: 'DELETE' })
+      setToast(deleteResultText(res.json, item))
       fetchDownloads()
     } catch (e) {
-      setError('删除失败：' + (e.message || ''))
+      setError('删除失败：' + (e.body || e.message || ''))
     }
   }
 
@@ -275,6 +276,7 @@ const OnlineDownloadsSection = () => {
                   <Box className={classes.verifyMain}>
                     <Field label="文件内嵌标题" value={verify.metadata?.title || '（空）'} />
                     <Field label="文件内嵌歌手" value={verify.metadata?.artist || '（空）'} />
+                    <Field label="专辑艺术家" value={verify.metadata?.albumArtist || '-'} />
                     <Field label="文件内嵌专辑" value={verify.metadata?.album || '（空）'} />
                     <Field label="年份" value={verify.metadata?.year || '-'} />
                     <Field label="音轨号" value={verify.metadata?.trackNumber || '-'} />

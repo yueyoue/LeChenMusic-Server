@@ -49,10 +49,15 @@ func (ing *Ingestor) Rescrape(ctx context.Context, task *model.DownloadTask, req
 	meta := EmbeddedMeta{
 		Title:       CleanSongTitle(firstNonEmpty(req.Title, current.Title, task.SongName)),
 		Artist:      NormalizeArtist(firstNonEmpty(req.Artist, current.Artist, task.Artist)),
+		AlbumArtist: current.AlbumArtist,
 		Album:       firstNonEmpty(req.Album, current.Album, task.AlbumName),
 		Year:        current.Year,
 		TrackNumber: current.TrackNumber,
 	}
+
+	// Album artist + release year come from the upstream album page; this is
+	// what fixes records ingested before those fields were collected.
+	applyAlbumInfo(&meta, ing.albumInfoFor(ctx, task.AlbumID, task.SongID, meta.Title, meta.Artist))
 
 	result := &RescrapeResult{}
 
@@ -94,6 +99,7 @@ func (ing *Ingestor) Rescrape(ctx context.Context, task *model.DownloadTask, req
 		info = &EmbeddedInfo{
 			Title:       meta.Title,
 			Artist:      meta.Artist,
+			AlbumArtist: meta.AlbumArtist,
 			Album:       meta.Album,
 			Year:        meta.Year,
 			TrackNumber: meta.TrackNumber,

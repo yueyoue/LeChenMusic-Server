@@ -22,6 +22,7 @@ type DownloadTask struct {
 	SongName         string    `structs:"song_name"         json:"songName"          db:"song_name"`
 	Artist           string    `structs:"artist"            json:"artist"            db:"artist"`
 	AlbumName        string    `structs:"album_name"        json:"albumName"         db:"album_name"`
+	AlbumID          string    `structs:"album_id"          json:"albumId"           db:"album_id"` // upstream album id: resolves album artist + release year
 	CoverURL         string    `structs:"cover_url"         json:"coverUrl"          db:"cover_url"`
 	RequestedQuality string    `structs:"quality"           json:"quality"           db:"quality"` // e.g. "flac/2000"; empty = default chain
 	ActualFormat     string    `structs:"actual_format"     json:"actualFormat"      db:"actual_format"`

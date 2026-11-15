@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import {
   Typography, Box, Card, CardContent, makeStyles, Button,
   Tooltip, Chip, TextField, Switch, FormControlLabel, MenuItem, LinearProgress,
@@ -84,9 +84,18 @@ const parseQueries = (text) => {
 
 const songKey = (song) => `${song.source}-${song.id}`
 
-// 默认选中：优先未收录的首个结果，否则（模糊模式）选首个，再否则不选
+// react-admin 的 fetchJson 把响应正文放在 error.body，message 只有状态文本
+const errorText = (e) => {
+  const raw = (e && (e.body || e.message)) || ''
+  if (typeof raw === 'string') return raw.trim() || '请求失败'
+  if (raw && typeof raw === 'object') return raw.error || raw.message || JSON.stringify(raw)
+  return '请求失败'
+}
+
+// 默认选中：优先未收录且未在下载中的首个结果，否则（模糊模式）选首个可下载的，再否则不选
 const defaultPick = (songs, fuzzy) => {
-  const s = songs.find((x) => !x.inLibrary) || (fuzzy ? songs[0] : null)
+  const idle = songs.filter((x) => !x.downloading)
+  const s = idle.find((x) => !x.inLibrary) || (fuzzy ? idle[0] : null)
   return s ? songKey(s) : null
 }
 
@@ -104,6 +113,25 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
   //   pick = 选中版本的 `${source}-${id}`（批量下载时使用）；expanded = 是否展开全部结果
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
+  // 下载权限（服务端 settings 接口）：非管理员在「仅管理员可下载」模式下禁用下载按钮
+  const [access, setAccess] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const loadAccess = async () => {
+      try {
+        const res = await httpClient(`${REST_URL}/online/settings`)
+        if (!cancelled) setAccess(res.json || null)
+      } catch (e) {
+        // 读取失败不阻塞搜索；下载时后端仍会校验
+        if (!cancelled) setAccess(null)
+      }
+    }
+    loadAccess()
+    return () => { cancelled = true }
+  }, [])
+
+  const canDownload = !access || access.canDownload !== false
 
   const handleSearch = async () => {
     const queries = parseQueries(text)
@@ -153,6 +181,7 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
         name: song.name,
         artist: song.artist,
         album: song.albumName,
+        albumId: song.albumId,
         coverUrl: song.coverUrl,
         quality,
         fuzzy,
@@ -162,14 +191,35 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
     })
   }
 
+  // 局部更新某一行的状态（下载中标记、失败回退等）
+  const patchSong = (song, patch) => {
+    setGroups((gs) => gs.map((g) => ({
+      ...g,
+      songs: (g.songs || []).map((s) => (songKey(s) === songKey(song) ? { ...s, ...patch } : s)),
+    })))
+  }
+
+  // 已在队列中的版本：本地立即标记，避免连点重复提交（服务端也有去重拦截）
+  const markPending = (song) => patchSong(song, { downloading: true })
+
   const handleDownload = async (song) => {
+    if (song.downloading) return
     setError('')
+    markPending(song)
     try {
       await downloadOne(song)
       setToast(`《${song.name}》已加入下载队列`)
       if (onTasksChanged) setTimeout(onTasksChanged, 600)
     } catch (e) {
-      setError('下载失败：' + (e.message || ''))
+      const msg = errorText(e)
+      if (e && e.status === 409) {
+        // 已在曲库/已在下载：不再允许点击，提示用户到下载管理处理
+        patchSong(song, { inLibrary: true, downloading: false })
+        setError(msg)
+      } else {
+        setError('下载失败：' + msg)
+        patchSong(song, { downloading: false })
+      }
     }
   }
 
@@ -184,41 +234,88 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
   // 批量下载：每组下载「选中版本」（单选按钮指定，默认自动选未收录的首个）
   const handleDownloadAll = async () => {
     const picks = []
-    let skipped = 0
+    let skippedLibrary = 0
+    let skippedPending = 0
+    let noPick = 0
     groups.forEach((g) => {
       const pick = (g.songs || []).find((s) => songKey(s) === g.pick)
-      if (pick) picks.push({ pick, query: g.query })
-      else skipped += 1
+      if (!pick) {
+        noPick += 1
+        return
+      }
+      // 已在下载队列里的不再重复提交
+      if (pick.downloading) {
+        skippedPending += 1
+        return
+      }
+      // 已在曲库的版本（非模糊模式）服务端也会拒绝，这里提前跳过
+      if (pick.inLibrary && !fuzzy) {
+        skippedLibrary += 1
+        return
+      }
+      picks.push({ pick })
     })
     if (picks.length === 0) {
-      setError(skipped > 0 ? '所选歌曲均已在曲库（可开启模糊匹配下载其他版本，或点选其他版本）' : '请先搜索歌曲')
+      if (skippedPending > 0) setError(`${skippedPending} 首已在下载队列中，无需重复下载`)
+      else if (skippedLibrary > 0) setError('所选歌曲均已在曲库（可开启模糊匹配下载其他版本，或点选其他版本）')
+      else if (noPick > 0) setError('所选歌曲均已在曲库，批量下载已跳过')
+      else setError('请先搜索歌曲')
       return
     }
     setDownloading(true)
     setError('')
     let ok = 0
+    const failures = []
     try {
       for (let i = 0; i < picks.length; i += 1) {
+        const song = picks[i].pick
+        markPending(song)
         try {
-          await downloadOne(picks[i].pick)
+          await downloadOne(song)
           ok += 1
         } catch (e) {
           // 单首失败不中断批量，继续后面的
+          const msg = errorText(e)
+          failures.push(`《${song.name}》：${msg}`)
+          patchSong(song, e && e.status === 409 ? { inLibrary: true, downloading: false } : { downloading: false })
         }
         if (i < picks.length - 1) await sleep(jitter())
       }
-      const skippedNote = skipped > 0 ? `，${skipped} 首已在曲库跳过` : ''
+      const notes = []
+      if (skippedLibrary > 0) notes.push(`${skippedLibrary} 首已在曲库跳过`)
+      if (skippedPending > 0) notes.push(`${skippedPending} 首已在下载队列跳过`)
+      if (noPick > 0) notes.push(`${noPick} 组未选版本跳过`)
+      const skippedNote = notes.length ? `，${notes.join('，')}` : ''
       setToast(`批量下载完成：${ok}/${picks.length} 首已加入队列${skippedNote}`)
+      if (failures.length > 0) {
+        const head = failures.slice(0, 3).join('；')
+        const more = failures.length > 3 ? `；等共 ${failures.length} 首失败` : ''
+        setError(`部分歌曲未加入队列：${head}${more}`)
+      }
       if (onTasksChanged) setTimeout(onTasksChanged, 600)
     } finally {
       setDownloading(false)
     }
   }
 
+  // 下载按钮禁用原因（作为 Tooltip 文案）
+  const downloadBlockReason = (song) => {
+    if (!canDownload) return '当前账号没有下载权限'
+    if (song.downloading) return '已加入下载队列，可到「下载任务」查看进度'
+    if (song.inLibrary && !fuzzy) return '曲库已有这首歌，需开启模糊匹配才能下载其他版本'
+    return '加入下载队列'
+  }
+
   return (
     <>
       {toast && <Alert severity="success" style={{ marginBottom: 12 }} onClose={() => setToast('')}>{toast}</Alert>}
       {error && <Alert severity="error" style={{ marginBottom: 12 }} onClose={() => setError('')}>{error}</Alert>}
+      {!canDownload && (
+        <Alert severity="info" style={{ marginBottom: 12 }}>
+          当前下载权限为「仅管理员可下载」，普通用户只能搜索查看。
+          如需开放，请由管理员在「权限设置」中调整。
+        </Alert>
+      )}
 
       <Card className={classes.formCard} elevation={1}>
         <CardContent>
@@ -248,7 +345,7 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
               {searching ? '搜索中…' : '搜索'}
             </Button>
             <Button variant="contained" color="secondary" startIcon={<GetAppIcon />}
-              onClick={handleDownloadAll} disabled={searching || downloading || groups.length === 0}>
+              onClick={handleDownloadAll} disabled={searching || downloading || groups.length === 0 || !canDownload}>
               {downloading ? '批量下载中…' : '批量下载'}
             </Button>
             <Typography className={classes.batchNote}>
@@ -317,16 +414,22 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
                       {song.inLibrary && (
                         <Chip size="small" color="primary" label="已在曲库" className={classes.chip} />
                       )}
-                      {g.pick === songKey(song) && (
+                      {song.downloading && (
+                        <Chip size="small" label="已加入下载队列" className={classes.chip}
+                          style={{ background: '#1e90ff', color: '#fff' }} />
+                      )}
+                      {g.pick === songKey(song) && !song.downloading && (
                         <Chip size="small" color="secondary" label="将下载" className={classes.chip} />
                       )}
                     </Box>
                   </Box>
-                  <Tooltip title={song.inLibrary && !fuzzy ? '曲库已存在，需开启模糊匹配' : '加入下载队列'}>
+                  <Tooltip title={downloadBlockReason(song)}>
                     <span>
                       <Button variant="contained" size="small" color="primary" startIcon={<GetAppIcon />}
-                        disabled={downloading}
-                        onClick={() => handleDownload(song)}>下载</Button>
+                        disabled={downloading || !canDownload || song.downloading || (song.inLibrary && !fuzzy)}
+                        onClick={() => handleDownload(song)}>
+                        {song.downloading ? '已下载' : '下载'}
+                      </Button>
                     </span>
                   </Tooltip>
                 </Box>

@@ -9,6 +9,7 @@ import ErrorIcon from '@material-ui/icons/Error'
 import { Alert } from '@material-ui/lab'
 import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
+import { confirmDeleteText, deleteResultText } from './downloadDelete'
 
 // 「下载任务」区：队列/进行中/完成/失败的任务，3s 轮询进度。
 
@@ -100,11 +101,16 @@ const OnlineTasksSection = ({ onActiveCount }) => {
   }
 
   const handleDelete = async (task) => {
+    // 删除会连 NAS 上的音频文件一起删掉，必须先确认
+    if (!window.confirm(confirmDeleteText(task))) return
+    setError('')
     try {
-      await httpClient(`${REST_URL}/online/tasks/${task.id}`, { method: 'DELETE' })
+      const res = await httpClient(`${REST_URL}/online/tasks/${task.id}`, { method: 'DELETE' })
+      setToast(deleteResultText(res.json, task))
+      doneIds.current.delete(task.id)
       fetchTasks()
     } catch (e) {
-      setError('删除失败：' + (e.message || ''))
+      setError('删除失败：' + (e.body || e.message || ''))
     }
   }
 

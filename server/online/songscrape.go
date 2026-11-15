@@ -54,15 +54,18 @@ func (ing *Ingestor) ScrapeSong(ctx context.Context, filePath string, req SongSc
 	meta := EmbeddedMeta{
 		Title:       title,
 		Artist:      artist,
+		AlbumArtist: current.AlbumArtist,
 		Album:       album,
 		Year:        current.Year,
 		TrackNumber: current.TrackNumber,
 	}
 
+	albumID, songID := "", ""
 	if ing.lyrics != nil {
 		if match := ing.bestMatch(ctx, title, artist); match != nil {
 			result.Matched = true
 			result.Match = match
+			albumID, songID = match.AlbumID, match.ID
 			if meta.Album == "" && match.AlbumName != "" {
 				meta.Album = match.AlbumName
 			}
@@ -81,6 +84,10 @@ func (ing *Ingestor) ScrapeSong(ctx context.Context, filePath string, req SongSc
 		}
 	}
 
+	// Album artist + release year only exist at album level; fill them from the
+	// upstream album page when the file (or the song-level match) lacks them.
+	applyAlbumInfo(&meta, ing.albumInfoFor(ctx, albumID, songID, title, artist))
+
 	if len(meta.Cover) == 0 {
 		meta.Cover, meta.CoverMIME = current.Cover, current.CoverMIME
 	}
@@ -97,6 +104,7 @@ func (ing *Ingestor) ScrapeSong(ctx context.Context, filePath string, req SongSc
 		info = &EmbeddedInfo{
 			Title:       meta.Title,
 			Artist:      meta.Artist,
+			AlbumArtist: meta.AlbumArtist,
 			Album:       meta.Album,
 			Year:        meta.Year,
 			TrackNumber: meta.TrackNumber,

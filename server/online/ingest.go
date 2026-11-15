@@ -78,6 +78,7 @@ type Ingestor struct {
 	libRoot     string
 	lyrics      Source // optional lyrics provider (usually the download source)
 	matcher     LibraryMatcher
+	albumInfo   AlbumInfoProvider // optional album-level enrichment (album artist + year)
 	coverClient *http.Client
 	onIngested  func(ctx context.Context, finalPath string) // optional, e.g. trigger library scan
 }
@@ -96,6 +97,16 @@ func NewIngestor(libRoot string, lyricsSource Source, matcher LibraryMatcher) *I
 // (used to trigger the media library scan).
 func (ing *Ingestor) OnIngested(fn func(ctx context.Context, finalPath string)) {
 	ing.onIngested = fn
+}
+
+// LibraryRoot exposes the directory downloaded songs are moved into, so callers
+// can tell whether a task's file really lives inside the download library
+// before deleting it from disk.
+func (ing *Ingestor) LibraryRoot() string {
+	if ing == nil {
+		return ""
+	}
+	return ing.libRoot
 }
 
 // Exists exposes the dedup check (exact normalized match against the library).
@@ -124,6 +135,9 @@ func (ing *Ingestor) Process(ctx context.Context, task *model.DownloadTask, tmpP
 		Artist: NormalizeArtist(task.Artist),
 		Album:  task.AlbumName,
 	}
+	// Album artist + release year are album-level facts: search results only
+	// carry the track artist, so resolve them from the upstream album page.
+	applyAlbumInfo(&meta, ing.albumInfoFor(ctx, task.AlbumID, task.SongID, task.SongName, task.Artist))
 	if meta.Album == "" {
 		meta.Album = "Unknown Album"
 	}

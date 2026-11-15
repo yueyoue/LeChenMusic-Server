@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Masterminds/squirrel"
@@ -16,7 +17,6 @@ import (
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
-	"github.com/navidrome/navidrome/scanner"
 	onlinesvc "github.com/navidrome/navidrome/server/online"
 )
 
@@ -36,6 +36,8 @@ func (api *Router) addOnlineRoute(r chi.Router) {
 		r.Get("/tasks", h.listTasks)
 		r.Post("/tasks/{id}/retry", h.retryTask)
 		r.Delete("/tasks/{id}", h.deleteTask)
+		r.Get("/settings", h.getSettings)
+		r.With(adminOnlyMiddleware).Put("/settings", h.updateSettings)
 		h.adminRoutes(r) // M5: /downloads*, /logs* (admin-only)
 	})
 }
@@ -48,16 +50,10 @@ func newOnlineHandler(ds model.DataStore, pls playlistsvc.Playlists) *onlineHand
 		libPath = conf.Server.MusicFolder
 	}
 	matcher := newLibraryMatcher(ds)
-	ingest := onlinesvc.NewIngestor(libPath, onlinesvc.GetDefaultSource(), matcher)
+	ingest := onlinesvc.NewIngestor(libPath, onlinesvc.GetDefaultSource(), matcher).
+		WithAlbumInfo(onlinesvc.NewKuwoAlbumInfo(""))
 	ingest.OnIngested(func(ctx context.Context, _ string) {
-		if scanner.IsScanning() {
-			return
-		}
-		go func() {
-			if _, err := scanner.CallScan(context.Background(), ds, pls, false, nil); err != nil {
-				log.Warn(ctx, "online: could not trigger library scan", err)
-			}
-		}()
+		triggerLibraryScanWhenIdle(ctx, ds, pls)
 	})
 
 	manager := onlinesvc.NewManager(ds.DownloadTask(ctx), filepath.Join(conf.Server.DataFolder.String(), "downloads", "tmp"), ingest.Process)
@@ -112,7 +108,8 @@ func newLibraryMatcher(ds model.DataStore) onlinesvc.MatcherFunc {
 
 type onlineSong struct {
 	onlinesvc.Song
-	InLibrary bool `json:"inLibrary"`
+	InLibrary   bool `json:"inLibrary"`
+	Downloading bool `json:"downloading"` // a download task is queued/running for this song
 }
 
 type onlineSearchResponse struct {
@@ -127,11 +124,128 @@ type onlineDownloadRequest struct {
 	Name     string `json:"name"`
 	Artist   string `json:"artist"`
 	Album    string `json:"album"`
+	AlbumID  string `json:"albumId"` // upstream album id: album artist + release year
 	CoverURL string `json:"coverUrl"`
 	Quality  string `json:"quality"` // e.g. "flac/2000"; empty = default
 	Fuzzy    bool   `json:"fuzzy"`   // allow downloading other versions even if a match exists
 	Time     int64  `json:"time"`
 	Sign     string `json:"sign"`
+}
+
+// ---- download dedup ----
+
+// Download states used by the dedup gate.
+const (
+	downloadStateActive = "active" // queued/resolving/downloading/tagging
+	downloadStateDone   = "done"   // finished and the audio file is on disk
+)
+
+// downloadGateMu serializes the "check for duplicates, then enqueue" sequence in
+// the download handler. Without it two concurrent clicks could both pass the
+// duplicate check before either task exists.
+var downloadGateMu sync.Mutex
+
+// isActiveDownload reports whether the task is still in flight.
+func isActiveDownload(status string) bool {
+	switch status {
+	case model.DownloadStatusQueued, model.DownloadStatusResolving,
+		model.DownloadStatusDownloading, model.DownloadStatusTagging:
+		return true
+	}
+	return false
+}
+
+// downloadIndex answers "is this song already downloaded or being downloaded?"
+// from the persistent task table. Using the task table (in addition to the
+// library) closes the gap where a freshly downloaded file exists on disk but the
+// library scan has not indexed it yet: before, that window allowed the same song
+// to be downloaded again by simply clicking the button twice.
+type downloadIndex struct {
+	activeBySong map[string]bool // "source|songId"
+	doneBySong   map[string]bool
+	activeByKey  map[string]bool // normalized "title|artist"
+	doneByKey    map[string]bool
+}
+
+func buildDownloadIndex(tasks model.DownloadTasks) downloadIndex {
+	idx := downloadIndex{
+		activeBySong: map[string]bool{},
+		doneBySong:   map[string]bool{},
+		activeByKey:  map[string]bool{},
+		doneByKey:    map[string]bool{},
+	}
+	for i := range tasks {
+		t := tasks[i]
+		active := isActiveDownload(t.Status)
+		// A finished task only counts while its file still exists: once the song
+		// is deleted ("不在库") it must be downloadable again.
+		done := t.Status == model.DownloadStatusDone && fileExists(t.FilePath)
+		if !active && !done {
+			continue
+		}
+		if t.SongID != "" {
+			songKey := t.Source + "|" + t.SongID
+			if active {
+				idx.activeBySong[songKey] = true
+			} else {
+				idx.doneBySong[songKey] = true
+			}
+		}
+		if key := onlinesvc.NormalizeSongKey(t.SongName, t.Artist); key != "|" {
+			if active {
+				idx.activeByKey[key] = true
+			} else {
+				idx.doneByKey[key] = true
+			}
+		}
+	}
+	return idx
+}
+
+// state returns the download state for one upstream song, matched both by its
+// upstream identity (source + song id) and by its normalized title/artist.
+func (idx downloadIndex) state(source, songID, name, artist string) (songState, keyState string) {
+	if songID != "" {
+		songKey := source + "|" + songID
+		switch {
+		case idx.activeBySong[songKey]:
+			songState = downloadStateActive
+		case idx.doneBySong[songKey]:
+			songState = downloadStateDone
+		}
+	}
+	if key := onlinesvc.NormalizeSongKey(name, artist); key != "|" {
+		switch {
+		case idx.activeByKey[key]:
+			keyState = downloadStateActive
+		case idx.doneByKey[key]:
+			keyState = downloadStateDone
+		}
+	}
+	return songState, keyState
+}
+
+// loadDownloadIndex reads all tasks (no error surfacing: a lookup failure must
+// never block a download, the library check still applies).
+func (h *onlineHandler) loadDownloadIndex(ctx context.Context) downloadIndex {
+	repo := h.ds.DownloadTask(ctx)
+	if repo == nil {
+		return buildDownloadIndex(nil)
+	}
+	tasks, err := repo.GetAll()
+	if err != nil {
+		log.Warn(ctx, "online: could not load download tasks for dedup", err)
+		return buildDownloadIndex(nil)
+	}
+	return buildDownloadIndex(tasks)
+}
+
+// duplicateMessage renders the 409 reason for an already downloaded song.
+func duplicateMessage(state string) string {
+	if state == downloadStateActive {
+		return "该歌曲正在下载中，请稍候（完成后即可播放）"
+	}
+	return "该歌曲已下载过，请勿重复下载（如需重新下载请先在下载管理中删除）"
 }
 
 // ---- handlers ----
@@ -167,13 +281,23 @@ func (h *onlineHandler) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	idx := h.loadDownloadIndex(ctx)
 	resp := onlineSearchResponse{Songs: make([]onlineSong, 0, len(result.Songs)), Total: result.Total}
 	for _, song := range result.Songs {
 		inLibrary, err := h.ingest.Exists(ctx, song.Name, song.Artist)
 		if err != nil {
 			log.Warn(ctx, "online: dedup check failed", "song", song.Name, err)
 		}
-		resp.Songs = append(resp.Songs, onlineSong{Song: song, InLibrary: inLibrary})
+		songState, keyState := idx.state(song.Source, song.ID, song.Name, song.Artist)
+		// A finished download whose file is still on disk counts as "in library"
+		// even before the scan indexed it.
+		downloaded := songState == downloadStateDone || keyState == downloadStateDone
+		downloading := songState == downloadStateActive || keyState == downloadStateActive
+		resp.Songs = append(resp.Songs, onlineSong{
+			Song:        song,
+			InLibrary:   inLibrary || downloaded,
+			Downloading: downloading,
+		})
 	}
 	writeJSON(w, resp)
 }
@@ -213,14 +337,35 @@ func (h *onlineHandler) download(w http.ResponseWriter, r *http.Request) {
 		return // response already written
 	}
 
+	// Serialize check-and-enqueue so two rapid clicks (or the app retrying) cannot
+	// both slip past the dedup gate before the first task is stored.
+	downloadGateMu.Lock()
+	defer downloadGateMu.Unlock()
+
+	// Dedup gate #1: the same upstream song (source + song id) may never be
+	// queued twice, even with fuzzy matching on.
+	idx := h.loadDownloadIndex(ctx)
+	songState, keyState := idx.state(req.Source, req.SongID, req.Name, req.Artist)
+	if songState != "" {
+		http.Error(w, duplicateMessage(songState), http.StatusConflict)
+		return
+	}
+	// Dedup gate #2: a song with the same title+artist that is already being
+	// downloaded is a duplicate click, not a new version.
+	if keyState == downloadStateActive {
+		http.Error(w, duplicateMessage(keyState), http.StatusConflict)
+		return
+	}
+	// Dedup gate #3: library / finished-download check. Fuzzy matching keeps its
+	// documented meaning (download another version on purpose).
 	if !req.Fuzzy {
 		exists, err := h.ingest.Exists(ctx, req.Name, req.Artist)
 		if err != nil {
 			http.Error(w, "dedup check failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		if exists {
-			http.Error(w, "song already exists in library (enable fuzzy matching to download anyway)", http.StatusConflict)
+		if exists || keyState == downloadStateDone {
+			http.Error(w, duplicateMessage(downloadStateDone), http.StatusConflict)
 			return
 		}
 	}
@@ -242,6 +387,7 @@ func (h *onlineHandler) download(w http.ResponseWriter, r *http.Request) {
 		SongName:         req.Name,
 		Artist:           req.Artist,
 		AlbumName:        req.Album,
+		AlbumID:          onlinesvc.NormalizeAlbumID(req.AlbumID),
 		CoverURL:         req.CoverURL,
 		RequestedQuality: quality,
 		UpstreamTime:     req.Time,
@@ -321,6 +467,9 @@ func (h *onlineHandler) retryTask(w http.ResponseWriter, r *http.Request) {
 }
 
 // deleteTask: DELETE /api/online/tasks/{id}
+// Deletes the download record together with the song: the audio file on the NAS
+// and the library entry it created (same semantics as the admin download
+// management API, so the mobile app behaves like the web console).
 func (h *onlineHandler) deleteTask(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	task, ok := h.ownedTask(w, r)
@@ -333,11 +482,17 @@ func (h *onlineHandler) deleteTask(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "task is still running", http.StatusConflict)
 		return
 	}
-	if err := h.ds.DownloadTask(ctx).Delete(task.ID); err != nil {
-		http.Error(w, "could not delete task", http.StatusInternalServerError)
+	resp, err := deleteDownloadedArtifacts(ctx, h.ds, h.playlists, task, downloadLibraryRoots(h.ingest.LibraryRoot()))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	writeJSON(w, map[string]string{"status": "deleted"})
+	writeOnlineOpLog(ctx, h.ds, task.UserID, model.OpLogDelete, task.SongName, task.Artist,
+		strings.Join(resp.Warnings, "; "), resp.DeletedFile || resp.DeletedDB > 0)
+	writeJSON(w, struct {
+		Status string `json:"status"`
+		deleteResponse
+	}{Status: "deleted", deleteResponse: resp})
 }
 
 // ---- helpers ----
@@ -353,33 +508,101 @@ func (h *onlineHandler) sourceByName(name string) onlinesvc.Source {
 	return src
 }
 
-// checkDownloadPermission enforces the configured permission mode and daily
-// quota. It writes an error response and returns non-nil when access is denied.
+// ---- download permission settings ----
+
+// onlineSettingsResponse is what both the web UI and the mobile app read to
+// know whether the current user is allowed to download right now.
+type onlineSettingsResponse struct {
+	onlinesvc.Settings
+	onlinesvc.Access
+}
+
+// getSettings: GET /api/online/settings
+// Available to every logged-in user: the response carries the effective
+// permission mode plus the caller's own access decision.
+func (h *onlineHandler) getSettings(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	writeJSON(w, h.settingsResponse(ctx, user))
+}
+
+// updateSettings: PUT /api/online/settings (admin only)
+// Body: {"permission":"open|admin-or-approved|quota","dailyQuota":<int>}
+func (h *onlineHandler) updateSettings(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	user, ok := request.UserFrom(ctx)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var req struct {
+		Permission string `json:"permission"`
+		DailyQuota *int   `json:"dailyQuota"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if !onlinesvc.ValidPermission(req.Permission) {
+		http.Error(w, "invalid permission mode", http.StatusBadRequest)
+		return
+	}
+	next := onlinesvc.LoadSettings(ctx, h.ds)
+	next.Permission = req.Permission
+	if req.DailyQuota != nil {
+		if *req.DailyQuota < 0 || *req.DailyQuota > 1000 {
+			http.Error(w, "dailyQuota must be between 0 and 1000", http.StatusBadRequest)
+			return
+		}
+		next.DailyQuota = *req.DailyQuota
+	}
+	saved, err := onlinesvc.SaveSettings(ctx, h.ds, next)
+	if err != nil {
+		log.Error(ctx, "online: could not save download settings", err)
+		http.Error(w, "could not save settings: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	log.Info(ctx, "Online download permission updated", "user", user.UserName, "permission", saved.Permission, "dailyQuota", saved.DailyQuota)
+	writeJSON(w, h.settingsResponse(ctx, user))
+}
+
+func (h *onlineHandler) settingsResponse(ctx context.Context, user model.User) onlineSettingsResponse {
+	settings := onlinesvc.LoadSettings(ctx, h.ds)
+	used := 0
+	if settings.Permission == onlinesvc.PermissionQuota {
+		if n, err := h.countTodaysDownloads(ctx, user.ID); err == nil {
+			used = n
+		}
+	}
+	return onlineSettingsResponse{Settings: settings, Access: settings.CheckAccess(user.IsAdmin, used)}
+}
+
+// checkDownloadPermission enforces the runtime permission mode and daily quota.
+// It writes an error response and returns non-nil when access is denied.
 func (h *onlineHandler) checkDownloadPermission(ctx context.Context, user model.User, w http.ResponseWriter) error {
-	switch conf.Server.OnlineDownload.Permission {
-	case "open":
-		return nil
-	case "quota":
-		quota := conf.Server.OnlineDownload.DailyQuota
-		if quota > 0 {
-			count, err := h.countTodaysDownloads(ctx, user.ID)
-			if err != nil {
-				http.Error(w, "quota check failed", http.StatusInternalServerError)
-				return err
-			}
-			if count >= quota {
-				http.Error(w, "daily download quota reached", http.StatusTooManyRequests)
-				return errDailyQuota
-			}
+	settings := onlinesvc.LoadSettings(ctx, h.ds)
+	used := 0
+	if settings.Permission == onlinesvc.PermissionQuota {
+		count, err := h.countTodaysDownloads(ctx, user.ID)
+		if err != nil {
+			http.Error(w, "quota check failed", http.StatusInternalServerError)
+			return err
 		}
-		return nil
-	default: // "admin-or-approved"
-		if !user.IsAdmin {
-			http.Error(w, "only administrators can download (permission mode: admin-or-approved)", http.StatusForbidden)
-			return errNotAdmin
-		}
+		used = count
+	}
+	if settings.CheckAccess(user.IsAdmin, used).CanDownload {
 		return nil
 	}
+	if settings.Permission == onlinesvc.PermissionQuota {
+		http.Error(w, "daily download quota reached", http.StatusTooManyRequests)
+		return errDailyQuota
+	}
+	http.Error(w, "only administrators can download (permission mode: admin-or-approved)", http.StatusForbidden)
+	return errNotAdmin
 }
 
 var (

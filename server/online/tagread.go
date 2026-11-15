@@ -18,6 +18,7 @@ import (
 type EmbeddedInfo struct {
 	Title       string `json:"title"`
 	Artist      string `json:"artist"`
+	AlbumArtist string `json:"albumArtist,omitempty"`
 	Album       string `json:"album"`
 	Year        string `json:"year"`
 	TrackNumber int    `json:"trackNumber"`
@@ -60,8 +61,14 @@ func readMP3Metadata(path string) (*EmbeddedInfo, error) {
 	if f := firstTextFrame(tag, tag.CommonID("Album/Movie/Show title")); f != "" {
 		info.Album = f
 	}
-	if f := firstTextFrame(tag, tag.CommonID("Year")); f != "" {
-		info.Year = f
+	if f := firstTextFrame(tag, tag.CommonID("Band/Orchestra/Accompaniment")); f != "" {
+		info.AlbumArtist = f
+	}
+	// Year may live in the version-specific frame (TYER in v2.3, TDRC in v2.4)
+	// or in a release/original time frame written by another tagger.
+	info.Year = firstTextFrame(tag, tag.CommonID("Year"))
+	if info.Year == "" {
+		info.Year = firstAnyTextFrame(tag, "TDRL", "TYER", "TDRC", "TDOR")
 	}
 	if f := firstTextFrame(tag, tag.CommonID("Track number/Position in set")); f != "" {
 		var n int
@@ -98,6 +105,18 @@ func firstTextFrame(tag *id3v2.Tag, id string) string {
 	return ""
 }
 
+// firstAnyTextFrame returns the first non-empty text frame among the given ids.
+// Taggers disagree on where the year lives (v2.4 TDRC, v2.3 TYER, MusicBrainz
+// TDRL/TDOR), so read-back checks them all.
+func firstAnyTextFrame(tag *id3v2.Tag, ids ...string) string {
+	for _, id := range ids {
+		if v := firstTextFrame(tag, id); v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // readFLACMetadata reads Vorbis Comment tags + PICTURE cover + LYRICS.
 func readFLACMetadata(path string) (*EmbeddedInfo, error) {
 	f, err := flac.ParseFile(path)
@@ -111,8 +130,9 @@ func readFLACMetadata(path string) (*EmbeddedInfo, error) {
 			tags := decodeVorbisComments(b.Data)
 			info.Title = tags["TITLE"]
 			info.Artist = tags["ARTIST"]
+			info.AlbumArtist = firstNonEmpty(tags["ALBUMARTIST"], tags["ALBUM ARTIST"], tags["ALBUM_ARTIST"])
 			info.Album = tags["ALBUM"]
-			info.Year = tags["DATE"]
+			info.Year = firstNonEmpty(tags["DATE"], tags["YEAR"], tags["ORIGINALDATE"])
 			if t := tags["TRACKNUMBER"]; t != "" {
 				var n int
 				if _, err := fmt.Sscanf(t, "%d", &n); err == nil {

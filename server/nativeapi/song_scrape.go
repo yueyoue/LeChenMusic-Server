@@ -24,7 +24,8 @@ func newSongScrapeIngestor() *onlinesvc.Ingestor {
 	if libPath == "" {
 		libPath = conf.Server.MusicFolder
 	}
-	return onlinesvc.NewIngestor(libPath, onlinesvc.GetDefaultSource(), nil)
+	return onlinesvc.NewIngestor(libPath, onlinesvc.GetDefaultSource(), nil).
+		WithAlbumInfo(onlinesvc.NewKuwoAlbumInfo(""))
 }
 
 // scrapeSong: POST /api/scrape/song/{id}/scrape
