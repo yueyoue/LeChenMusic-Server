@@ -3,7 +3,7 @@ import {
   Typography, Box, makeStyles, Button, IconButton,
   Tooltip, Chip, TextField, Checkbox, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Paper, Dialog, DialogTitle,
-  DialogContent, DialogActions, LinearProgress,
+  DialogContent, DialogActions, LinearProgress, Collapse,
 } from '@material-ui/core'
 import { Alert } from '@material-ui/lab'
 import MusicNoteIcon from '@material-ui/icons/MusicNote'
