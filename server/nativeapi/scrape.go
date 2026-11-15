@@ -14,13 +14,15 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/conf"
+	playlistsvc "github.com/navidrome/navidrome/core/playlists"
 	"github.com/navidrome/navidrome/log"
 	"github.com/navidrome/navidrome/model"
+	onlinesvc "github.com/navidrome/navidrome/server/online"
 	"github.com/navidrome/navidrome/server/scraper"
 )
 
 func (api *Router) addScrapeRoute(r chi.Router) {
-	h := &scrapeHandler{ds: api.ds}
+	h := &scrapeHandler{ds: api.ds, pls: api.playlists, ingest: newSongScrapeIngestor()}
 	r.Route("/scrape", func(r chi.Router) {
 		r.Get("/audiobook", h.searchAudiobooks)
 		r.Get("/audiobook/detail", h.getAudiobookDetail)
@@ -30,13 +32,17 @@ func (api *Router) addScrapeRoute(r chi.Router) {
 		r.Post("/artist/{id}/avatar", h.applyArtistAvatar)
 		r.Post("/batch", h.batchScrape)
 		r.Post("/artist/cleanup", h.cleanupArtistNames)
+		// M5.2: scrape metadata of any library song (single or batch via loop)
+		r.Post("/song/{id}/scrape", h.scrapeSong)
 		// Serve saved images (narrator avatars, etc.)
 		r.Get("/image/{type}/{id}", h.serveImage)
 	})
 }
 
 type scrapeHandler struct {
-	ds model.DataStore
+	ds     model.DataStore
+	pls    playlistsvc.Playlists
+	ingest *onlinesvc.Ingestor
 }
 
 func (h *scrapeHandler) getSources(w http.ResponseWriter, r *http.Request) {
@@ -127,8 +133,8 @@ func (h *scrapeHandler) applyScrape(w http.ResponseWriter, r *http.Request) {
 		Description *string `json:"description"`
 		Genre       *string `json:"genre"`
 		CoverURL    *string `json:"coverUrl"`
-		Source      string  `json:"source"`      // 刮削源名称，用于封面URL失效时重新获取
-		SourceID    string  `json:"sourceId"`    // 刮削源上的ID
+		Source      string  `json:"source"`   // 刮削源名称，用于封面URL失效时重新获取
+		SourceID    string  `json:"sourceId"` // 刮削源上的ID
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request", 400)
@@ -411,8 +417,8 @@ func (h *scrapeHandler) batchScrape(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	type batchItem struct {
-		BookID  string                           `json:"bookId"`
-		Title   string                           `json:"title"`
+		BookID  string                            `json:"bookId"`
+		Title   string                            `json:"title"`
 		Results map[string][]scraper.ScrapeResult `json:"results"`
 	}
 	var results []batchItem
