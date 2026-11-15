@@ -400,8 +400,10 @@ func (h *onlineHandler) download(w http.ResponseWriter, r *http.Request) {
 	}
 	log.Info(ctx, "Online download queued", "user", user.UserName, "song", req.Name, "artist", req.Artist)
 	writeOnlineOpLog(ctx, h.ds, user.ID, model.OpLogDownloadQueued, req.Name, req.Artist, "", true)
-	w.WriteHeader(http.StatusCreated)
-	writeJSON(w, task)
+	// Content-Type must be set before the status code: WriteHeader commits the
+	// headers, so setting it afterwards leaves the JSON body labelled
+	// text/plain and the Android app rejects the (successful) response.
+	writeJSONStatus(w, http.StatusCreated, task)
 }
 
 // writeOnlineOpLog records one online-download operation (best-effort).

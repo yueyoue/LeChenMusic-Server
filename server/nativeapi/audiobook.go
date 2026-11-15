@@ -1070,6 +1070,19 @@ func writeJSON(w http.ResponseWriter, data any) {
 	json.NewEncoder(w).Encode(data)
 }
 
+// writeJSONStatus writes data as JSON with an explicit status code.
+//
+// It must be used instead of calling w.WriteHeader(...) followed by writeJSON(...):
+// once WriteHeader runs the response headers are committed, so the later
+// Content-Type assignment is dropped and Go's content sniffer labels the JSON
+// body as "text/plain; charset=utf-8". Clients that validate the media type
+// (the Android app does) then reject an otherwise successful response.
+func writeJSONStatus(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
 // purgeMissing removes audiobook rows whose folder no longer exists on disk / in the cloud —
 // immediately, without waiting for a scan. It is intentionally conservative: a book is removed
 // only when its directory is definitively missing (ENOENT); permission / network / gateway errors

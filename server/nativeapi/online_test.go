@@ -503,3 +503,45 @@ func TestOnlineDeleteTaskRemovesFileFromDisk(t *testing.T) {
 		t.Error("task record should be deleted even when the file is already gone")
 	}
 }
+
+// Regression: the 201 response of POST /api/online/download must advertise
+// application/json on the wire.
+//
+// The handler used to call w.WriteHeader(201) and only then let writeJSON set
+// Content-Type. WriteHeader commits the headers, so Go's content sniffer
+// labelled the task JSON as "text/plain; charset=utf-8"; the Android app's
+// converter rejects text/plain, so a download that had actually been queued was
+// reported to the user as "服务器返回了非JSON响应".
+//
+// A real server is used on purpose: httptest.ResponseRecorder shares the
+// handler's header map, so it would report application/json even with the bug.
+func TestOnlineDownloadCreatedResponseIsJSON(t *testing.T) {
+	h, _, _ := setupOnlineHandler(t, nil)
+	admin := model.User{ID: "u2", IsAdmin: true}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h.download(w, r.WithContext(request.WithUser(r.Context(), admin)))
+	}))
+	defer srv.Close()
+
+	body := `{"source":"hicn","platform":"kuwo","songId":"501","name":"大梦归","artist":"周深"}`
+	resp, err := http.Post(srv.URL, "application/json", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("expected 201, got %d", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("created response must be JSON, got Content-Type %q", ct)
+	}
+	var task model.DownloadTask
+	if err := json.NewDecoder(resp.Body).Decode(&task); err != nil {
+		t.Fatalf("response body should be a JSON task: %v", err)
+	}
+	if task.ID == "" {
+		t.Error("response should carry the created task id")
+	}
+}
