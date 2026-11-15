@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,7 +21,18 @@ func init() {
 const (
 	hicnDefaultBaseURL = "https://flac.music.hi.cn"
 	hicnURLCacheTTL    = time.Hour
+	hicnMaxAttempts    = 3
 )
+
+// hicnUserAgents rotates per request to look like ordinary browser traffic.
+var hicnUserAgents = []string{
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36 Edg/125.0.0.0",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+	"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:127.0) Gecko/20100101 Firefox/127.0",
+}
 
 // hicnSource implements Source against the flac.music.hi.cn aggregation site.
 //
@@ -258,53 +270,87 @@ func (s *hicnSource) GetLyrics(ctx context.Context, song SongRef) (string, error
 
 // post performs a form-encoded POST against the upstream ajax endpoint,
 // enforcing a minimum interval between calls and decoding the response envelope.
+// Transient failures (network, 429, 5xx) are retried with exponential backoff.
 func (s *hicnSource) post(ctx context.Context, act string, params map[string]string) (json.RawMessage, error) {
 	form := url.Values{}
 	for k, v := range params {
 		form.Set(k, v)
 	}
 
+	var lastErr error
+	for attempt := 0; attempt < hicnMaxAttempts; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(1<<uint(attempt)) * time.Second // 2s, 4s
+			backoff += time.Duration(rand.Int63n(int64(backoff/2) + 1))
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+		data, retryable, err := s.postOnce(ctx, act, form)
+		if err == nil {
+			return data, nil
+		}
+		lastErr = err
+		if !retryable {
+			return nil, err
+		}
+	}
+	return nil, fmt.Errorf("online/hicn: %s failed after %d attempts: %w", act, hicnMaxAttempts, lastErr)
+}
+
+// postOnce performs a single request. The second return value reports whether
+// the failure is transient (worth retrying).
+func (s *hicnSource) postOnce(ctx context.Context, act string, form url.Values) (json.RawMessage, bool, error) {
 	if err := s.throttle(ctx); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	endpoint := s.baseURL + "/ajax.php?act=" + url.QueryEscape(act)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("online/hicn: build request: %w", err)
+		return nil, false, fmt.Errorf("online/hicn: build request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded;charset=UTF-8")
 	req.Header.Set("Referer", s.baseURL+"/")
-	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+	req.Header.Set("Origin", s.baseURL)
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("User-Agent", hicnUserAgents[rand.Intn(len(hicnUserAgents))])
 
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("online/hicn: request %s: %w", act, err)
+		return nil, true, fmt.Errorf("online/hicn: request %s: %w", act, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return nil, fmt.Errorf("online/hicn: read response: %w", err)
+		return nil, true, fmt.Errorf("online/hicn: read response: %w", err)
+	}
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+		return nil, true, fmt.Errorf("online/hicn: %s returned status %d", act, resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("online/hicn: %s returned status %d", act, resp.StatusCode)
+		return nil, false, fmt.Errorf("online/hicn: %s returned status %d", act, resp.StatusCode)
 	}
 
 	var env hicnEnvelope
 	if err := json.Unmarshal(body, &env); err != nil {
-		return nil, fmt.Errorf("online/hicn: parse envelope: %w", err)
+		return nil, false, fmt.Errorf("online/hicn: parse envelope: %w", err)
 	}
 	if env.Code != 0 {
-		return nil, fmt.Errorf("online/hicn: %s failed: code=%d msg=%s", act, env.Code, env.Msg)
+		return nil, false, fmt.Errorf("online/hicn: %s failed: code=%d msg=%s", act, env.Code, env.Msg)
 	}
-	return env.Data, nil
+	return env.Data, false, nil
 }
 
-// throttle enforces the minimum interval between upstream calls.
+// throttle enforces a jittered minimum interval between upstream calls
+// (spacing ∈ [minInterval, 1.5×minInterval)) to avoid predictable request patterns.
 func (s *hicnSource) throttle(ctx context.Context) error {
+	interval := s.minInterval + time.Duration(rand.Int63n(int64(s.minInterval/2)+1))
 	s.mu.Lock()
-	wait := s.minInterval - time.Since(s.lastCall)
+	wait := interval - time.Since(s.lastCall)
 	if wait > 0 {
 		s.mu.Unlock()
 		select {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"strconv"
@@ -36,6 +37,11 @@ type Manager struct {
 
 	queue chan string
 	wg    sync.WaitGroup
+
+	// TaskJitter is the base delay spread randomly between queued tasks
+	// (actual delay ∈ [J/2, 3J/2)) to avoid hammering the upstream source
+	// during batch downloads. Set 0 to disable.
+	TaskJitter time.Duration
 }
 
 // NewManager creates a download task manager. tmpDir is where partial
@@ -47,11 +53,12 @@ func NewManager(tasks model.DownloadTaskRepository, tmpDir string, processor Pos
 		}
 	}
 	return &Manager{
-		tasks:     tasks,
-		tmpDir:    tmpDir,
-		processor: processor,
-		client:    &http.Client{Timeout: 30 * time.Minute},
-		queue:     make(chan string, 1024),
+		tasks:      tasks,
+		tmpDir:     tmpDir,
+		processor:  processor,
+		client:     &http.Client{Timeout: 30 * time.Minute},
+		queue:      make(chan string, 1024),
+		TaskJitter: 5 * time.Second,
 	}
 }
 
@@ -123,6 +130,16 @@ func (m *Manager) worker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case taskID := <-m.queue:
+			// Batch-friendly pacing: when more tasks are already waiting, pause a
+			// random amount between tasks so downloads don't fire back-to-back.
+			if len(m.queue) > 0 && m.TaskJitter > 0 {
+				d := m.TaskJitter/2 + time.Duration(rand.Int63n(int64(m.TaskJitter)))
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(d):
+				}
+			}
 			m.process(ctx, taskID)
 		}
 	}

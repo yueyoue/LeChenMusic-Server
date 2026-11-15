@@ -120,8 +120,8 @@ func (ing *Ingestor) Process(ctx context.Context, task *model.DownloadTask, tmpP
 	cleanupStage := func() { _ = os.Remove(stagePath) }
 
 	meta := EmbeddedMeta{
-		Title:  task.SongName,
-		Artist: task.Artist,
+		Title:  CleanSongTitle(task.SongName),
+		Artist: NormalizeArtist(task.Artist),
 		Album:  task.AlbumName,
 	}
 	if meta.Album == "" {
@@ -167,7 +167,7 @@ func (ing *Ingestor) Process(ctx context.Context, task *model.DownloadTask, tmpP
 
 // targetPath computes <libRoot>/<Artist>/<Album>/<Title>.<ext>, avoiding collisions.
 func (ing *Ingestor) targetPath(task *model.DownloadTask, ext string) (string, error) {
-	artist := SanitizeFilename(task.Artist)
+	artist := SanitizeFilename(NormalizeArtist(task.Artist))
 	if artist == "" {
 		artist = "Unknown Artist"
 	}
@@ -175,7 +175,7 @@ func (ing *Ingestor) targetPath(task *model.DownloadTask, ext string) (string, e
 	if album == "" {
 		album = "Unknown Album"
 	}
-	title := SanitizeFilename(task.SongName)
+	title := SanitizeFilename(CleanSongTitle(task.SongName))
 	if title == "" {
 		title = task.ID
 	}

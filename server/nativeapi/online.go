@@ -61,6 +61,7 @@ func newOnlineHandler(ds model.DataStore, pls playlistsvc.Playlists) *onlineHand
 	})
 
 	manager := onlinesvc.NewManager(ds.DownloadTask(ctx), filepath.Join(conf.Server.DataFolder.String(), "downloads", "tmp"), ingest.Process)
+	manager.TaskJitter = conf.Server.OnlineDownload.TaskJitter
 	if ds.DownloadTask(ctx) != nil {
 		manager.OnSettled(func(ctx context.Context, task *model.DownloadTask, err error) {
 			action := model.OpLogDownloadDone
@@ -97,9 +98,9 @@ func newLibraryMatcher(ds model.DataStore) onlinesvc.MatcherFunc {
 		if err != nil {
 			return false, err
 		}
-		want := onlinesvc.NormalizeSongKey(title, artist)
+		want := onlinesvc.NormalizeSongKey(onlinesvc.CleanSongTitle(title), onlinesvc.NormalizeArtist(artist))
 		for _, mf := range mfs {
-			if onlinesvc.NormalizeSongKey(mf.Title, mf.Artist) == want {
+			if onlinesvc.NormalizeSongKey(onlinesvc.CleanSongTitle(mf.Title), onlinesvc.NormalizeArtist(mf.Artist)) == want {
 				return true, nil
 			}
 		}
@@ -200,6 +201,10 @@ func (h *onlineHandler) download(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "songId and name are required", http.StatusBadRequest)
 		return
 	}
+	// Store clean metadata: short title (no media-annotation suffixes) and
+	// artists split/rejoined with the library separator.
+	req.Name = onlinesvc.CleanSongTitle(req.Name)
+	req.Artist = onlinesvc.NormalizeArtist(req.Artist)
 	if req.Source == "" {
 		req.Source = "hicn"
 	}

@@ -47,8 +47,8 @@ func (ing *Ingestor) Rescrape(ctx context.Context, task *model.DownloadTask, req
 	}
 
 	meta := EmbeddedMeta{
-		Title:       firstNonEmpty(req.Title, current.Title, task.SongName),
-		Artist:      firstNonEmpty(req.Artist, current.Artist, task.Artist),
+		Title:       CleanSongTitle(firstNonEmpty(req.Title, current.Title, task.SongName)),
+		Artist:      NormalizeArtist(firstNonEmpty(req.Artist, current.Artist, task.Artist)),
 		Album:       firstNonEmpty(req.Album, current.Album, task.AlbumName),
 		Year:        current.Year,
 		TrackNumber: current.TrackNumber,

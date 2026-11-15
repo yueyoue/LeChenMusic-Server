@@ -161,16 +161,6 @@ const Menu = ({ dense = false }) => {
         sidebarIsOpen={open}
         dense={dense}
       />
-      {permissions === 'admin' && (
-        <MenuItemLink
-          to="/online-downloads"
-          activeClassName={classes.active}
-          primaryText="📥 下载管理"
-          leftIcon={<span style={{ fontSize: 16 }}>📥</span>}
-          sidebarIsOpen={open}
-          dense={dense}
-        />
-      )}
       <SubMenu
         handleToggle={() => handleToggle('menuAudiobook')}
         isOpen={state.menuAudiobook}

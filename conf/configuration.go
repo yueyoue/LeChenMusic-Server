@@ -109,7 +109,7 @@ type configOptions struct {
 	Prometheus                      prometheusOptions          `json:",omitzero"`
 	Scanner                         scannerOptions             `json:",omitzero"`
 	OpenList                        map[string]OpenListOptions `json:",omitzero"`
-	OnlineDownload                  onlineDownloadOptions     `json:",omitzero"`
+	OnlineDownload                  onlineDownloadOptions      `json:",omitzero"`
 	Jukebox                         jukeboxOptions             `json:",omitzero"`
 	Backup                          backupOptions              `json:",omitzero"`
 	PID                             pidOptions                 `json:",omitzero"`
@@ -198,11 +198,12 @@ type OpenListOptions struct {
 
 // onlineDownloadOptions configures the "search & download missing songs" feature.
 type onlineDownloadOptions struct {
-	Enabled    bool   // master switch
-	Permission string // "open" | "admin-or-approved" | "quota"
-	DailyQuota int    // max downloads per user per day (0 = unlimited), used when Permission == "quota"
-	Quality    string // "" = FLAC-preferred chain; or "flac/2000", "mp3/320", "mp3/128"
-	LibPath    string // "" = MusicFolder
+	Enabled    bool          // master switch
+	Permission string        // "open" | "admin-or-approved" | "quota"
+	DailyQuota int           // max downloads per user per day (0 = unlimited), used when Permission == "quota"
+	Quality    string        // "" = FLAC-preferred chain; or "flac/2000", "mp3/320", "mp3/128"
+	LibPath    string        // "" = MusicFolder
+	TaskJitter time.Duration // base random delay between queued tasks (anti-ban pacing)
 }
 
 type scannerOptions struct {
@@ -920,6 +921,7 @@ func setViperDefaults() {
 	viper.SetDefault("onlinedownload.dailyquota", 0)
 	viper.SetDefault("onlinedownload.quality", "")
 	viper.SetDefault("onlinedownload.libpath", "")
+	viper.SetDefault("onlinedownload.taskjitter", 5*time.Second)
 	viper.SetDefault("scanner.watcherwait", consts.DefaultWatcherWait)
 	viper.SetDefault("scanner.scanonstartup", true)
 	viper.SetDefault("scanner.artistjoiner", consts.ArtistJoiner)

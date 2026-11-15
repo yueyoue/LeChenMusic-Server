@@ -1,0 +1,299 @@
+import React, { useState } from 'react'
+import {
+  Typography, Box, Card, CardContent, makeStyles, Button,
+  Tooltip, Chip, TextField, Switch, FormControlLabel, MenuItem, LinearProgress,
+} from '@material-ui/core'
+import SearchIcon from '@material-ui/icons/Search'
+import GetAppIcon from '@material-ui/icons/GetApp'
+import MusicNoteIcon from '@material-ui/icons/MusicNote'
+import PlayArrowIcon from '@material-ui/icons/PlayArrow'
+import { Alert } from '@material-ui/lab'
+import httpClient from '../dataProvider/httpClient'
+import { REST_URL } from '../consts'
+
+// 「搜歌下载」区：单输入框批量搜索（每行一首，回车分割）+ 分组结果 + 一键批量下载。
+// 批量搜索/下载请求之间加随机间隔，降低上游风控概率。
+
+const useStyles = makeStyles((theme) => ({
+  formCard: { marginBottom: 16 },
+  formRow: { display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginTop: 12 },
+  hint: { fontSize: 12, color: theme.palette.text.secondary, marginTop: 8 },
+  groupCard: { marginBottom: 16 },
+  groupHeader: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 },
+  groupTitle: { fontWeight: 700, fontSize: 15 },
+  resultRow: { display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', borderTop: `1px solid ${theme.palette.divider}` },
+  cover: { width: 52, height: 52, borderRadius: 4, objectFit: 'cover', background: '#222', flexShrink: 0 },
+  resultMain: { flex: 1, minWidth: 0 },
+  songName: { fontWeight: 600, fontSize: 14 },
+  sub: { fontSize: 12, color: theme.palette.text.secondary },
+  chip: { marginRight: 6, marginBottom: 4 },
+  inLibrary: { opacity: 0.55 },
+  empty: { textAlign: 'center', padding: 40, color: theme.palette.text.secondary },
+  batchNote: { fontSize: 12, color: '#888' },
+}))
+
+const QUALITY_OPTIONS = [
+  { value: '', label: '默认（无损优先）' },
+  { value: 'flac/2000', label: 'FLAC 2000k' },
+  { value: 'mp3/320', label: 'MP3 320k' },
+  { value: 'mp3/128', label: 'MP3 128k' },
+]
+
+const fmtDuration = (s) => {
+  if (!s || s <= 0) return ''
+  const m = Math.floor(s / 60)
+  const ss = String(s % 60).padStart(2, '0')
+  return `${m}:${ss}`
+}
+
+const qualityLabel = (q) => {
+  const fmt = (q.format || '').toUpperCase()
+  const parts = [fmt, q.bitrate ? `${q.bitrate}k` : ''].filter(Boolean)
+  const head = parts.join(' ')
+  return q.size ? `${head} ${q.size}` : head
+}
+
+// 随机间隔：800–1800ms，批量请求之间使用，避免固定节奏触发风控
+const jitter = () => 800 + Math.floor(Math.random() * 1000)
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// parseQueries 把多行输入解析为 [{name, artist}]。
+// 每行格式：`歌名 - 歌手` / `歌名-歌手` / `歌名 歌手` / 只有歌名。
+export const parseQueries = (text) => {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const dash = line.match(/^(.*?)[-—–－]\s*(.+)$/)
+      if (dash && dash[1].trim()) {
+        return { name: dash[1].trim(), artist: dash[2].trim() }
+      }
+      const sp = line.match(/^(\S+)\s+(.+)$/)
+      if (sp) {
+        return { name: sp[1].trim(), artist: sp[2].trim() }
+      }
+      return { name: line, artist: '' }
+    })
+}
+
+const OnlineSearchSection = ({ onTasksChanged }) => {
+  const classes = useStyles()
+  const [text, setText] = useState('')
+  const [fuzzy, setFuzzy] = useState(false)
+  const [quality, setQuality] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+  const [groups, setGroups] = useState([])
+  const [error, setError] = useState('')
+  const [toast, setToast] = useState('')
+
+  const handleSearch = async () => {
+    const queries = parseQueries(text)
+    if (queries.length === 0) return
+    setSearching(true)
+    setError('')
+    setGroups(queries.map((q) => ({ query: q, songs: [], total: 0, state: 'pending' })))
+    try {
+      for (let i = 0; i < queries.length; i += 1) {
+        const q = queries[i]
+        try {
+          const keyword = [q.name, q.artist].filter(Boolean).join(' ')
+          const res = await httpClient(
+            `${REST_URL}/online/search?keyword=${encodeURIComponent(keyword)}&page=1&size=20`,
+          )
+          const songs = res.json?.songs || []
+          setGroups((gs) => gs.map((g, idx) => (idx === i
+            ? { ...g, songs, total: res.json?.total || 0, state: 'done' }
+            : g)))
+        } catch (e) {
+          setGroups((gs) => gs.map((g, idx) => (idx === i
+            ? { ...g, state: 'error', error: e.message || '搜索失败' }
+            : g)))
+        }
+        // 多首之间随机间隔，降低风控概率
+        if (i < queries.length - 1) await sleep(jitter())
+      }
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const downloadOne = async (song) => {
+    await httpClient(`${REST_URL}/online/download`, {
+      method: 'POST',
+      body: JSON.stringify({
+        source: song.source,
+        platform: song.platform,
+        songId: song.id,
+        name: song.name,
+        artist: song.artist,
+        album: song.albumName,
+        coverUrl: song.coverUrl,
+        quality,
+        fuzzy,
+        time: song.time,
+        sign: song.sign,
+      }),
+    })
+  }
+
+  const handleDownload = async (song) => {
+    setError('')
+    try {
+      await downloadOne(song)
+      setToast(`《${song.name}》已加入下载队列`)
+      if (onTasksChanged) setTimeout(onTasksChanged, 600)
+    } catch (e) {
+      setError('下载失败：' + (e.message || ''))
+    }
+  }
+
+  // 批量下载：每组挑一首（优先未收录），请求之间随机间隔
+  const handleDownloadAll = async () => {
+    const picks = []
+    let skipped = 0
+    groups.forEach((g) => {
+      const pick = g.songs.find((s) => !s.inLibrary) || (fuzzy ? g.songs[0] : null)
+      if (pick) picks.push({ pick, query: g.query })
+      else skipped += 1
+    })
+    if (picks.length === 0) {
+      setError(skipped > 0 ? '所选歌曲均已在曲库（可开启模糊匹配下载其他版本）' : '请先搜索歌曲')
+      return
+    }
+    setDownloading(true)
+    setError('')
+    let ok = 0
+    try {
+      for (let i = 0; i < picks.length; i += 1) {
+        try {
+          await downloadOne(picks[i].pick)
+          ok += 1
+        } catch (e) {
+          // 单首失败不中断批量，继续后面的
+        }
+        if (i < picks.length - 1) await sleep(jitter())
+      }
+      const skippedNote = skipped > 0 ? `，${skipped} 首已在曲库跳过` : ''
+      setToast(`批量下载完成：${ok}/${picks.length} 首已加入队列${skippedNote}`)
+      if (onTasksChanged) setTimeout(onTasksChanged, 600)
+    } finally {
+      setDownloading(false)
+    }
+  }
+
+  return (
+    <>
+      {toast && <Alert severity="success" style={{ marginBottom: 12 }} onClose={() => setToast('')}>{toast}</Alert>}
+      {error && <Alert severity="error" style={{ marginBottom: 12 }} onClose={() => setError('')}>{error}</Alert>}
+
+      <Card className={classes.formCard} elevation={1}>
+        <CardContent>
+          <TextField
+            label="搜歌（每行一首，回车分割）"
+            placeholder={'相思风雨中 - 张学友\n海阔天空 BEYOND\n吻别\n……格式：歌名 - 歌手，或歌名 空格 歌手，也可只写歌名'}
+            multiline
+            rows={4}
+            fullWidth
+            variant="outlined"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+          <Box className={classes.formRow}>
+            <TextField select label="音质" size="small" variant="outlined" value={quality}
+              onChange={(e) => setQuality(e.target.value)} style={{ minWidth: 160 }}>
+              {QUALITY_OPTIONS.map((o) => (
+                <MenuItem key={o.value} value={o.value}>{o.label}</MenuItem>
+              ))}
+            </TextField>
+            <FormControlLabel
+              control={<Switch checked={fuzzy} onChange={(e) => setFuzzy(e.target.checked)} color="primary" />}
+              label="模糊匹配（允许下载其他版本）"
+            />
+            <Button variant="contained" color="primary" startIcon={<SearchIcon />}
+              onClick={handleSearch} disabled={searching || downloading}>
+              {searching ? '搜索中…' : '搜索'}
+            </Button>
+            <Button variant="contained" color="secondary" startIcon={<GetAppIcon />}
+              onClick={handleDownloadAll} disabled={searching || downloading || groups.length === 0}>
+              {downloading ? '批量下载中…' : '批量下载'}
+            </Button>
+            <Typography className={classes.batchNote}>
+              批量搜索/下载自动随机间隔，降低被风控概率
+            </Typography>
+          </Box>
+          <Typography className={classes.hint}>
+            提示：标题带「电视剧插曲」「Live」等后缀会自动清洗为干净标题；多歌手会按曲库格式（A • B）入库。
+          </Typography>
+        </CardContent>
+      </Card>
+
+      {searching && groups.length > 0 && <LinearProgress style={{ marginBottom: 12 }} />}
+
+      {groups.length === 0 ? (
+        <Box className={classes.empty}>
+          <SearchIcon style={{ fontSize: 48, opacity: 0.3 }} />
+          <Typography style={{ marginTop: 12 }}>输入歌曲开始搜索，支持一次搜多首</Typography>
+        </Box>
+      ) : (
+        groups.map((g, gi) => (
+          <Card className={classes.groupCard} elevation={0} key={`g${gi}`}>
+            <CardContent style={{ paddingBottom: 8 }}>
+              <Box className={classes.groupHeader}>
+                <Typography className={classes.groupTitle}>
+                  《{g.query.name}》{g.query.artist ? ` - ${g.query.artist}` : ''}
+                </Typography>
+                <Chip size="small" variant="outlined"
+                  label={g.state === 'pending' ? '排队中' : g.state === 'error' ? '搜索失败' : `共 ${g.total} 条`} />
+              </Box>
+              {g.state === 'error' && <Alert severity="warning">{g.error}</Alert>}
+              {g.state === 'done' && g.songs.length === 0 && (
+                <Typography className={classes.sub}>没有找到匹配的歌曲，试试开启「模糊匹配」</Typography>
+              )}
+              {(g.songs || []).map((song) => (
+                <Box className={classes.resultRow} key={`${song.source}-${song.id}`}>
+                  {song.coverUrl ? (
+                    <img className={classes.cover} src={song.coverUrl} alt="" />
+                  ) : (
+                    <Box className={classes.cover} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <MusicNoteIcon style={{ color: '#666' }} />
+                    </Box>
+                  )}
+                  <Box className={[classes.resultMain, song.inLibrary ? classes.inLibrary : ''].join(' ')}>
+                    <Typography className={classes.songName} noWrap>{song.name}</Typography>
+                    <Typography className={classes.sub} noWrap>
+                      {song.artist}{song.albumName ? ` · ${song.albumName}` : ''}
+                    </Typography>
+                    <Box style={{ marginTop: 4 }}>
+                      <Chip size="small" label={song.platform || song.source} className={classes.chip} />
+                      {song.duration > 0 && (
+                        <Chip size="small" variant="outlined" label={fmtDuration(song.duration)} className={classes.chip} />
+                      )}
+                      {(song.qualities || []).slice(0, 3).map((q) => (
+                        <Chip key={`${q.format}-${q.bitrate}-${q.level || ''}`} size="small" variant="outlined"
+                          label={qualityLabel(q)} className={classes.chip} />
+                      ))}
+                      {song.inLibrary && (
+                        <Chip size="small" color="primary" label="已在曲库" className={classes.chip} />
+                      )}
+                    </Box>
+                  </Box>
+                  <Tooltip title={song.inLibrary && !fuzzy ? '曲库已存在，需开启模糊匹配' : '加入下载队列'}>
+                    <span>
+                      <Button variant="contained" size="small" color="primary" startIcon={<GetAppIcon />}
+                        disabled={downloading}
+                        onClick={() => handleDownload(song)}>下载</Button>
+                    </span>
+                  </Tooltip>
+                </Box>
+              ))}
+            </CardContent>
+          </Card>
+        ))
+      )}
+    </>
+  )
+}
+
+export default OnlineSearchSection
