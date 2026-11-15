@@ -2,11 +2,14 @@ import React, { useState } from 'react'
 import {
   Typography, Box, Card, CardContent, makeStyles, Button,
   Tooltip, Chip, TextField, Switch, FormControlLabel, MenuItem, LinearProgress,
+  Radio, Collapse,
 } from '@material-ui/core'
 import SearchIcon from '@material-ui/icons/Search'
 import GetAppIcon from '@material-ui/icons/GetApp'
 import MusicNoteIcon from '@material-ui/icons/MusicNote'
 import PlayArrowIcon from '@material-ui/icons/PlayArrow'
+import ExpandMoreIcon from '@material-ui/icons/ExpandMore'
+import ExpandLessIcon from '@material-ui/icons/ExpandLess'
 import { Alert } from '@material-ui/lab'
 import httpClient from '../dataProvider/httpClient'
 import { REST_URL } from '../consts'
@@ -30,6 +33,8 @@ const useStyles = makeStyles((theme) => ({
   inLibrary: { opacity: 0.55 },
   empty: { textAlign: 'center', padding: 40, color: theme.palette.text.secondary },
   batchNote: { fontSize: 12, color: '#888' },
+  expandBtn: { marginTop: 6 },
+  pickRow: { display: 'flex', alignItems: 'center', gap: 4 },
 }))
 
 const QUALITY_OPTIONS = [
@@ -77,6 +82,16 @@ const parseQueries = (text) => {
     })
 }
 
+const songKey = (song) => `${song.source}-${song.id}`
+
+// 默认选中：优先未收录的首个结果，否则（模糊模式）选首个，再否则不选
+const defaultPick = (songs, fuzzy) => {
+  const s = songs.find((x) => !x.inLibrary) || (fuzzy ? songs[0] : null)
+  return s ? songKey(s) : null
+}
+
+const MAX_VISIBLE = 3 // 每组默认只显示前 3 条，避免批量搜索时列表过长
+
 const OnlineSearchSection = ({ onTasksChanged }) => {
   const classes = useStyles()
   const [text, setText] = useState('')
@@ -85,6 +100,8 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
   const [searching, setSearching] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [groups, setGroups] = useState([])
+  // groups: [{ query, songs, total, state, error, pick, expanded }]
+  //   pick = 选中版本的 `${source}-${id}`（批量下载时使用）；expanded = 是否展开全部结果
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
 
@@ -104,7 +121,14 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
           )
           const songs = res.json?.songs || []
           setGroups((gs) => gs.map((g, idx) => (idx === i
-            ? { ...g, songs, total: res.json?.total || 0, state: 'done' }
+            ? {
+              ...g,
+              songs,
+              total: res.json?.total || 0,
+              state: 'done',
+              pick: defaultPick(songs, fuzzy),
+              expanded: false,
+            }
             : g)))
         } catch (e) {
           setGroups((gs) => gs.map((g, idx) => (idx === i
@@ -149,17 +173,25 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
     }
   }
 
-  // 批量下载：每组挑一首（优先未收录），请求之间随机间隔
+  const setPick = (gi, key) => {
+    setGroups((gs) => gs.map((g, idx) => (idx === gi ? { ...g, pick: key } : g)))
+  }
+
+  const toggleExpand = (gi) => {
+    setGroups((gs) => gs.map((g, idx) => (idx === gi ? { ...g, expanded: !g.expanded } : g)))
+  }
+
+  // 批量下载：每组下载「选中版本」（单选按钮指定，默认自动选未收录的首个）
   const handleDownloadAll = async () => {
     const picks = []
     let skipped = 0
     groups.forEach((g) => {
-      const pick = g.songs.find((s) => !s.inLibrary) || (fuzzy ? g.songs[0] : null)
+      const pick = (g.songs || []).find((s) => songKey(s) === g.pick)
       if (pick) picks.push({ pick, query: g.query })
       else skipped += 1
     })
     if (picks.length === 0) {
-      setError(skipped > 0 ? '所选歌曲均已在曲库（可开启模糊匹配下载其他版本）' : '请先搜索歌曲')
+      setError(skipped > 0 ? '所选歌曲均已在曲库（可开启模糊匹配下载其他版本，或点选其他版本）' : '请先搜索歌曲')
       return
     }
     setDownloading(true)
@@ -251,8 +283,16 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
               {g.state === 'done' && g.songs.length === 0 && (
                 <Typography className={classes.sub}>没有找到匹配的歌曲，试试开启「模糊匹配」</Typography>
               )}
-              {(g.songs || []).map((song) => (
-                <Box className={classes.resultRow} key={`${song.source}-${song.id}`}>
+              {(g.songs || []).slice(0, g.expanded ? undefined : MAX_VISIBLE).map((song) => (
+                <Box className={classes.resultRow} key={songKey(song)}>
+                  <Box className={classes.pickRow}>
+                    <Radio
+                      checked={g.pick === songKey(song)}
+                      onChange={() => setPick(gi, songKey(song))}
+                      color="primary"
+                      size="small"
+                    />
+                  </Box>
                   {song.coverUrl ? (
                     <img className={classes.cover} src={song.coverUrl} alt="" />
                   ) : (
@@ -277,6 +317,9 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
                       {song.inLibrary && (
                         <Chip size="small" color="primary" label="已在曲库" className={classes.chip} />
                       )}
+                      {g.pick === songKey(song) && (
+                        <Chip size="small" color="secondary" label="将下载" className={classes.chip} />
+                      )}
                     </Box>
                   </Box>
                   <Tooltip title={song.inLibrary && !fuzzy ? '曲库已存在，需开启模糊匹配' : '加入下载队列'}>
@@ -288,6 +331,23 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
                   </Tooltip>
                 </Box>
               ))}
+              {(g.songs || []).length > MAX_VISIBLE && (
+                <Button
+                  size="small"
+                  className={classes.expandBtn}
+                  startIcon={g.expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                  onClick={() => toggleExpand(gi)}
+                >
+                  {g.expanded ? '收起' : `展开全部 ${g.songs.length} 条`}
+                </Button>
+              )}
+              {g.state === 'done' && g.songs.length > 0 && (
+                <Typography className={classes.batchNote} style={{ marginTop: 4 }}>
+                  {g.pick
+                    ? '点选左侧单选按钮可切换批量下载的版本'
+                    : '未选中任何版本（均已在曲库），批量下载时将跳过'}
+                </Typography>
+              )}
             </CardContent>
           </Card>
         ))

@@ -54,6 +54,9 @@ const SongScrapePage = () => {
   const [selected, setSelected] = useState(new Set())
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
+  const [pageInput, setPageInput] = useState('')
+  const [scrapeLog, setScrapeLog] = useState([]) // 本次会话的刮削结果日志（含失败原因）
+  const [logOpen, setLogOpen] = useState(false)
 
   // 批量进度
   const [batch, setBatch] = useState(null) // { done, total, current }
@@ -120,6 +123,11 @@ const SongScrapePage = () => {
     return res.json
   }
 
+  // 记录一条刮削日志（成功/失败+原因），供页面底部「刮削日志」面板查看
+  const pushLog = (entry) => {
+    setScrapeLog((prev) => [{ time: new Date().toLocaleTimeString(), ...entry }, ...prev].slice(0, 200))
+  }
+
   // 单曲刮削（对话框）
   const openDialog = (item) => {
     setDialog({
@@ -144,10 +152,17 @@ const SongScrapePage = () => {
       })
       setDialog((d) => ({ ...d, result: res.result, busy: false }))
       setToast(`《${res.result?.info?.title || dialog.item.title}》刮削完成`)
+      pushLog({
+        song: dialog.item.title,
+        ok: true,
+        detail: `匹配=${res.result?.matched ? '是' : '否'} 封面=${res.result?.coverFetched ? '✓' : '✗'} 歌词=${res.result?.lyricsFetched ? '✓' : '✗'}`,
+      })
       fetchSongs()
     } catch (e) {
       setDialog((d) => ({ ...d, busy: false }))
       setError('刮削失败：' + (e.message || ''))
+      pushLog({ song: dialog.item.title, ok: false, detail: e.message || '未知错误' })
+      setLogOpen(true)
     }
   }
 
@@ -166,14 +181,17 @@ const SongScrapePage = () => {
       try {
         await scrapeOne(ids[i], {})
         ok += 1
+        pushLog({ song: item ? `${item.title} - ${item.artist}` : ids[i], ok: true, detail: '批量刮削成功' })
       } catch (e) {
         failed.push(item ? item.title : ids[i])
+        pushLog({ song: item ? `${item.title} - ${item.artist}` : ids[i], ok: false, detail: e.message || '未知错误' })
       }
       if (i < ids.length - 1) await sleep(jitter())
     }
     setBatch(null)
     const failNote = failed.length > 0 ? `，失败 ${failed.length} 首（${failed.slice(0, 3).join('、')}${failed.length > 3 ? '…' : ''}）` : ''
     setToast(`批量刮削完成：${ok}/${ids.length} 首成功${failNote}`)
+    if (failed.length > 0) setLogOpen(true)
     setSelected(new Set())
     fetchSongs()
   }
@@ -277,9 +295,69 @@ const SongScrapePage = () => {
         <Box className={classes.pager}>
           <Typography className={classes.fieldLabel}>第 {query.page} / {pages} 页</Typography>
           <Button size="small" disabled={query.page <= 1}
+            onClick={() => setQuery({ ...query, page: 1 })}>首页</Button>
+          <Button size="small" disabled={query.page <= 1}
             onClick={() => setQuery({ ...query, page: query.page - 1 })}>上一页</Button>
+          <TextField
+            size="small"
+            variant="outlined"
+            style={{ width: 88 }}
+            placeholder="页码"
+            value={pageInput}
+            onChange={(e) => setPageInput(e.target.value.replace(/[^0-9]/g, ''))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const p = parseInt(pageInput, 10)
+                if (p >= 1 && p <= pages) setQuery({ ...query, page: p })
+                setPageInput('')
+              }
+            }}
+          />
+          <Button size="small" variant="outlined" color="primary"
+            onClick={() => {
+              const p = parseInt(pageInput, 10)
+              if (p >= 1 && p <= pages) setQuery({ ...query, page: p })
+              setPageInput('')
+            }}>跳转</Button>
           <Button size="small" disabled={query.page >= pages}
             onClick={() => setQuery({ ...query, page: query.page + 1 })}>下一页</Button>
+          <Button size="small" disabled={query.page >= pages}
+            onClick={() => setQuery({ ...query, page: pages })}>末页</Button>
+        </Box>
+      )}
+
+      {/* 本次会话的刮削日志：失败自动展开，方便定位原因 */}
+      {scrapeLog.length > 0 && (
+        <Box style={{ marginTop: 24 }}>
+          <Button size="small" variant="outlined" onClick={() => setLogOpen(!logOpen)}>
+            {logOpen ? '收起' : '展开'}刮削日志（{scrapeLog.length} 条）
+          </Button>
+          <Collapse in={logOpen}>
+            <Paper style={{ marginTop: 8, maxHeight: 320, overflow: 'auto' }} variant="outlined">
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>时间</TableCell>
+                    <TableCell>歌曲</TableCell>
+                    <TableCell>结果</TableCell>
+                    <TableCell>详情 / 失败原因</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {scrapeLog.map((l, i) => (
+                    <TableRow key={`${l.time}-${i}`}>
+                      <TableCell style={{ whiteSpace: 'nowrap' }}>{l.time}</TableCell>
+                      <TableCell>{l.song}</TableCell>
+                      <TableCell>
+                        <Chip size="small" color={l.ok ? 'primary' : 'secondary'} label={l.ok ? '成功' : '失败'} />
+                      </TableCell>
+                      <TableCell style={{ color: l.ok ? undefined : '#d32f2f' }}>{l.detail}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Paper>
+          </Collapse>
         </Box>
       )}
 

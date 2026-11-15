@@ -29,6 +29,7 @@ const LOG_TYPES = [
   { value: 'download_failed', label: '下载失败' },
   { value: 'delete', label: '删除歌曲' },
   { value: 'rescrape', label: '重新刮削' },
+  { value: 'song_scrape', label: '歌曲刮削' },
 ]
 
 const fmtTime = (v) => (v && !v.startsWith('0001-') ? new Date(v).toLocaleString() : '-')
@@ -40,6 +41,7 @@ const opLabel = (action) => {
     case 'download_failed': return '下载失败'
     case 'delete': return '删除歌曲'
     case 'rescrape': return '重新刮削'
+    case 'song_scrape': return '歌曲刮削'
     default: return action
   }
 }

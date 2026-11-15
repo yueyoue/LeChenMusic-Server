@@ -209,7 +209,11 @@ func formatExt(format, fallbackPath string) string {
 }
 
 // fetchCover downloads cover art and sniffs its MIME type.
+// Known thumbnail URL patterns (e.g. kuwo /120/px) are upgraded to a
+// high-resolution variant before fetching — search results ship small
+// thumbnails that would otherwise get embedded into the audio file.
 func (ing *Ingestor) fetchCover(ctx context.Context, url string) ([]byte, string, error) {
+	url = hiResCoverURL(url)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, "", err

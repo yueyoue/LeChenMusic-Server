@@ -2,12 +2,14 @@ package nativeapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"path/filepath"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/conf"
 	"github.com/navidrome/navidrome/log"
+	"github.com/navidrome/navidrome/model"
 	"github.com/navidrome/navidrome/model/request"
 	onlinesvc "github.com/navidrome/navidrome/server/online"
 )
@@ -56,9 +58,18 @@ func (h *scrapeHandler) scrapeSong(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&req) // empty body is fine
 
 	log.Info(ctx, "Song scrape started", "user", user.UserName, "song", mf.Title, "artist", mf.Artist)
-	result, err := h.ingest.ScrapeSong(ctx, mf.Path, req)
+	// mf.Path is library-relative; the scrape rewriter needs the real
+	// on-disk path (LibraryPath + Path), otherwise os.Stat fails and the
+	// request 500s with "file not available".
+	absPath := mf.AbsolutePath()
+	if absPath == "" {
+		http.Error(w, "cannot resolve file path on disk", http.StatusConflict)
+		return
+	}
+	result, err := h.ingest.ScrapeSong(ctx, absPath, req)
 	if err != nil {
 		log.Warn(ctx, "Song scrape failed", "song", mf.Title, err)
+		writeOnlineOpLog(ctx, h.ds, user.ID, model.OpLogSongScrape, mf.Title, mf.Artist, "刮削失败: "+err.Error(), false)
 		http.Error(w, "scrape failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -69,6 +80,8 @@ func (h *scrapeHandler) scrapeSong(w http.ResponseWriter, r *http.Request) {
 	log.Info(ctx, "Song scrape done",
 		"song", result.Info.Title, "matched", result.Matched,
 		"cover", result.CoverFetched, "lyrics", result.LyricsFetched)
+	detail := fmt.Sprintf("匹配=%v 封面=%v 歌词=%v", result.Matched, result.CoverFetched, result.LyricsFetched)
+	writeOnlineOpLog(ctx, h.ds, user.ID, model.OpLogSongScrape, result.Info.Title, result.Info.Artist, detail, true)
 	writeJSON(w, map[string]any{
 		"result": result,
 		"path":   filepath.Base(mf.Path),

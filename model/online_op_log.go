@@ -9,6 +9,7 @@ const (
 	OpLogDownloadFailed = "download_failed"
 	OpLogDelete         = "delete"
 	OpLogRescrape       = "rescrape"
+	OpLogSongScrape     = "song_scrape"
 )
 
 // OnlineOpLog records one operation in the online download & scraping
