@@ -124,17 +124,19 @@ func (ing *Ingestor) bestMatch(ctx context.Context, title, artist string) *Song 
 		return nil
 	}
 
-	wantTitle := NormalizeSongKey(title, "")
-	wantKey := NormalizeSongKey(title, artist)
+	wantTitle := NormalizeSongKey(CleanSongTitle(title), "")
+	wantKey := NormalizeSongKey(CleanSongTitle(title), NormalizeArtist(artist))
 	artistTokens := artistTokens(artist)
 
 	best, bestScore := (*Song)(nil), 0
 	for i := range res.Songs {
 		s := &res.Songs[i]
+		sTitle := NormalizeSongKey(CleanSongTitle(s.Name), "")
+		sKey := NormalizeSongKey(CleanSongTitle(s.Name), NormalizeArtist(s.Artist))
 		score := 0
-		if NormalizeSongKey(s.Name, s.Artist) == wantKey {
+		if sKey == wantKey {
 			score = 100
-		} else if NormalizeSongKey(s.Name, "") == wantTitle {
+		} else if sTitle == wantTitle {
 			score = 60
 			for _, tok := range artistTokens {
 				if tok != "" && strings.Contains(strings.ToLower(s.Artist), strings.ToLower(tok)) {
