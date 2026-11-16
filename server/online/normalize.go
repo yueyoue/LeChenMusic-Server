@@ -51,11 +51,10 @@ func CleanSongTitle(title string) string {
 var artistSeparators = regexp.MustCompile(`\s*([&、,，;；/|×xX]| x )\s*`)
 
 // NormalizeArtist splits a multi-artist string into individual artists and
-// rejoins them with " / " (the separator the scanner splits on, which is then
-// displayed with the library's " • " joiner). Examples:
+// rejoins them with " • " (the library's display joiner). Examples:
 //
-//	"张学友&汤宝如"          → "张学友 / 汤宝如"      (displayed: 张学友 • 汤宝如)
-//	"凤凰传奇 • 林志炫 • 何炅" → "凤凰传奇 / 林志炫 / 何炅"
+//	"张学友&汤宝如"          → "张学友 • 汤宝如"
+//	"凤凰传奇 • 林志炫 • 何炅" → "凤凰传奇 • 林志炫 • 何炅"
 //	"BEYOND"                → "BEYOND" (unchanged)
 func NormalizeArtist(artist string) string {
 	a := strings.TrimSpace(artist)
@@ -79,7 +78,46 @@ func NormalizeArtist(artist string) string {
 	if len(out) == 0 {
 		return strings.TrimSpace(artist)
 	}
-	return strings.Join(out, " / ")
+	return strings.Join(out, " • ")
+}
+
+// ArtistTokens returns the individual artist names of a credit string,
+// normalized for comparison (lowercase, no whitespace/punctuation).
+func ArtistTokens(artist string) []string {
+	norm := NormalizeArtist(artist)
+	if norm == "" {
+		return nil
+	}
+	parts := strings.FieldsFunc(norm, func(r rune) bool {
+		return r == '•' || r == '/'
+	})
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = NormalizeSongKey(p, ""); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// ArtistsMatch reports whether two artist credits share at least one artist
+// (tolerant to multi-artist formatting differences: "&", "•", "/", 、 …).
+// If either side has no recognizable artist it is treated as a match so an
+// unknown credit never blocks the comparison.
+func ArtistsMatch(a, b string) bool {
+	ta := ArtistTokens(a)
+	tb := ArtistTokens(b)
+	if len(ta) == 0 || len(tb) == 0 {
+		return true
+	}
+	for _, x := range ta {
+		for _, y := range tb {
+			if x == y {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // albumArtistSeparators splits album credits only on unambiguous separators:
@@ -88,8 +126,8 @@ func NormalizeArtist(artist string) string {
 var albumArtistSeparators = regexp.MustCompile(`\s*([&、,，;；/|×])\s*`)
 
 // NormalizeAlbumArtist cleans an album-level artist credit: "•" becomes the
-// library joiner, multi-artist credits are rejoined with " / " (the separator
-// the scanner splits on) and duplicates are dropped.
+// library joiner, multi-artist credits are rejoined with " • " and duplicates
+// are dropped.
 func NormalizeAlbumArtist(artist string) string {
 	a := strings.TrimSpace(artist)
 	if a == "" {
@@ -111,5 +149,5 @@ func NormalizeAlbumArtist(artist string) string {
 	if len(out) == 0 {
 		return strings.TrimSpace(artist)
 	}
-	return strings.Join(out, " / ")
+	return strings.Join(out, " • ")
 }

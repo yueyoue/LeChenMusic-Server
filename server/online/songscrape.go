@@ -120,7 +120,7 @@ func (ing *Ingestor) ScrapeSong(ctx context.Context, filePath string, req SongSc
 // bestMatch searches the online source and returns the best-scoring song,
 // requiring at least a title match. Returns nil when nothing matches.
 func (ing *Ingestor) bestMatch(ctx context.Context, title, artist string) *Song {
-	keyword := strings.TrimSpace(title + " " + strings.ReplaceAll(artist, " / ", " "))
+	keyword := strings.TrimSpace(title + " " + strings.NewReplacer(" / ", " ", " • ", " ", "&", " ").Replace(artist))
 	if keyword == "" {
 		return nil
 	}
@@ -134,7 +134,7 @@ func (ing *Ingestor) bestMatch(ctx context.Context, title, artist string) *Song 
 
 	wantTitle := NormalizeSongKey(CleanSongTitle(title), "")
 	wantKey := NormalizeSongKey(CleanSongTitle(title), NormalizeArtist(artist))
-	artistTokens := artistTokens(artist)
+	wantTokens := ArtistTokens(artist)
 
 	best, bestScore := (*Song)(nil), 0
 	for i := range res.Songs {
@@ -146,9 +146,12 @@ func (ing *Ingestor) bestMatch(ctx context.Context, title, artist string) *Song 
 			score = 100
 		} else if sTitle == wantTitle {
 			score = 60
-			for _, tok := range artistTokens {
-				if tok != "" && strings.Contains(strings.ToLower(s.Artist), strings.ToLower(tok)) {
-					score += 15
+			for _, tok := range wantTokens {
+				for _, st := range ArtistTokens(s.Artist) {
+					if tok == st {
+						score += 15
+						break
+					}
 				}
 			}
 		}
@@ -160,16 +163,4 @@ func (ing *Ingestor) bestMatch(ctx context.Context, title, artist string) *Song 
 		return nil
 	}
 	return best
-}
-
-// artistTokens splits a normalized artist string into individual names.
-func artistTokens(artist string) []string {
-	parts := strings.Split(artist, " / ")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p = strings.TrimSpace(p); p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }

@@ -104,7 +104,7 @@ const MAX_VISIBLE = 3 // 每组默认只显示前 3 条，避免批量搜索时�
 const OnlineSearchSection = ({ onTasksChanged }) => {
   const classes = useStyles()
   const [text, setText] = useState('')
-  const [fuzzy, setFuzzy] = useState(false)
+  const [fuzzy, setFuzzy] = useState(true)
   const [quality, setQuality] = useState('')
   const [searching, setSearching] = useState(false)
   const [downloading, setDownloading] = useState(false)
@@ -223,8 +223,9 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
     }
   }
 
+  // 再次点击已选版本即取消选择（批量下载会跳过该首）
   const setPick = (gi, key) => {
-    setGroups((gs) => gs.map((g, idx) => (idx === gi ? { ...g, pick: key } : g)))
+    setGroups((gs) => gs.map((g, idx) => (idx === gi ? { ...g, pick: g.pick === key ? null : key } : g)))
   }
 
   const toggleExpand = (gi) => {
@@ -354,6 +355,7 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
           </Box>
           <Typography className={classes.hint}>
             提示：标题带「电视剧插曲」「Live」等后缀会自动清洗为干净标题；多歌手会按曲库格式（A • B）入库。
+            每组点选要下载的版本，再次点击可取消，批量下载会自动跳过未选中的歌曲。
           </Typography>
         </CardContent>
       </Card>
@@ -385,7 +387,7 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
                   <Box className={classes.pickRow}>
                     <Radio
                       checked={g.pick === songKey(song)}
-                      onChange={() => setPick(gi, songKey(song))}
+                      onClick={() => setPick(gi, songKey(song))}
                       color="primary"
                       size="small"
                     />

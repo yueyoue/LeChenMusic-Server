@@ -218,7 +218,7 @@ func parseKuwoAlbumInfo(body string) *AlbumInfo {
 }
 
 // kuwoAlbumArtist reads the album-level artist credit. Multi-artist credits are
-// joined with the library's " / " separator.
+// joined with the library's " • " separator.
 func kuwoAlbumArtist(body string) string {
 	m := kuwoArtistBlock.FindStringSubmatch(body)
 	if m == nil {
@@ -241,7 +241,7 @@ func kuwoAlbumArtist(body string) string {
 			names = append(names, name)
 		}
 	}
-	return strings.Join(dedupStrings(names), " / ")
+	return strings.Join(dedupStrings(names), " • ")
 }
 
 // kuwoAlbumName reads the album title from the album page header.
@@ -364,7 +364,7 @@ func (ing *Ingestor) lookupAlbumID(ctx context.Context, songID, name, artist str
 		return ""
 	}
 	name, artist = CleanSongTitle(name), NormalizeArtist(artist)
-	keyword := strings.TrimSpace(name + " " + strings.ReplaceAll(artist, " / ", " "))
+	keyword := strings.TrimSpace(name + " " + strings.NewReplacer(" / ", " ", " • ", " ", "&", " ").Replace(artist))
 	if keyword == "" {
 		return ""
 	}

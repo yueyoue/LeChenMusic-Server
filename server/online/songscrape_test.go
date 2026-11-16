@@ -34,7 +34,7 @@ func TestBestMatch(t *testing.T) {
 	ing := NewIngestor(t.TempDir(), stub, nil)
 
 	// Exact normalized match (id 1 matches even with the long raw title).
-	got := ing.bestMatch(context.Background(), "相思风雨中", "张学友 / 汤宝如")
+	got := ing.bestMatch(context.Background(), "相思风雨中", "张学友 • 汤宝如")
 	if got == nil || got.ID != "1" {
 		t.Fatalf("expected match id 1, got %+v", got)
 	}
@@ -87,7 +87,7 @@ func TestScrapeSongRewritesLibraryFile(t *testing.T) {
 	if res.Info.Title != "相思风雨中" {
 		t.Errorf("expected cleaned title, got %q", res.Info.Title)
 	}
-	if res.Info.Artist != "张学友 / 汤宝如" {
+	if res.Info.Artist != "张学友 • 汤宝如" {
 		t.Errorf("expected normalized artist, got %q", res.Info.Artist)
 	}
 	if res.Info.Album != "梦中的你" {

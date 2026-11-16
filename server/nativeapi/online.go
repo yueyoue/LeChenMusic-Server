@@ -86,17 +86,26 @@ func newLibraryMatcher(ds model.DataStore) onlinesvc.MatcherFunc {
 		if title == "" {
 			return false, nil
 		}
-		filters := squirrel.And{squirrel.Like{"title": "%" + title + "%"}}
-		if a := strings.TrimSpace(artist); a != "" {
-			filters = append(filters, squirrel.Like{"artist": "%" + a + "%"})
+		// Title-only pre-filter: the artist credit differs between sources and
+		// the library ("苏永康&彭佳丽" vs "苏永康 • 彭佳丽"), so an artist LIKE
+		// here would silently miss existing songs. Artist matching happens in Go.
+		clean := onlinesvc.CleanSongTitle(title)
+		filters := squirrel.Or{squirrel.Like{"title": "%" + title + "%"}}
+		if clean != title {
+			filters = append(filters, squirrel.Like{"title": "%" + clean + "%"})
 		}
-		mfs, err := ds.MediaFile(ctx).GetAll(model.QueryOptions{Filters: filters, Max: 100})
+		mfs, err := ds.MediaFile(ctx).GetAll(model.QueryOptions{Filters: filters, Max: 200})
 		if err != nil {
 			return false, err
 		}
-		want := onlinesvc.NormalizeSongKey(onlinesvc.CleanSongTitle(title), onlinesvc.NormalizeArtist(artist))
+		wantTitle := onlinesvc.NormalizeSongKey(clean, "")
 		for _, mf := range mfs {
-			if onlinesvc.NormalizeSongKey(onlinesvc.CleanSongTitle(mf.Title), onlinesvc.NormalizeArtist(mf.Artist)) == want {
+			if onlinesvc.NormalizeSongKey(onlinesvc.CleanSongTitle(mf.Title), "") != wantTitle {
+				continue
+			}
+			// Same title: any shared artist counts as the same song
+			// (a search for "苏永康" must match the library's "苏永康 • 彭佳丽").
+			if onlinesvc.ArtistsMatch(artist, mf.Artist) {
 				return true, nil
 			}
 		}
