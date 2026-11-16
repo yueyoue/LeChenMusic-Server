@@ -3,7 +3,10 @@
 // platform, resolve a direct media URL and fetch lyrics.
 package online
 
-import "context"
+import (
+	"context"
+	"sync"
+)
 
 // Quality describes an audio quality option (format + bitrate).
 type Quality struct {
@@ -106,21 +109,32 @@ func GetDefaultSource() Source {
 }
 
 // Registry holds all registered download sources.
-var sources = make(map[string]Source)
+// Guarded by sourcesMu: the download worker reads the registry from its own
+// goroutine while tests (and init hooks) register sources concurrently.
+var (
+	sources   = make(map[string]Source)
+	sourcesMu sync.RWMutex
+)
 
 // Register adds a source to the registry.
 func Register(s Source) {
+	sourcesMu.Lock()
+	defer sourcesMu.Unlock()
 	sources[s.Name()] = s
 }
 
 // Get returns a source by name.
 func Get(name string) (Source, bool) {
+	sourcesMu.RLock()
+	defer sourcesMu.RUnlock()
 	s, ok := sources[name]
 	return s, ok
 }
 
 // GetAll returns all registered sources.
 func GetAll() []Source {
+	sourcesMu.RLock()
+	defer sourcesMu.RUnlock()
 	result := make([]Source, 0, len(sources))
 	for _, s := range sources {
 		result = append(result, s)
