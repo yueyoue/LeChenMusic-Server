@@ -32,6 +32,7 @@ func (api *Router) addOnlineRoute(r chi.Router) {
 	h := newOnlineHandler(api.ds, api.playlists)
 	r.Route("/online", func(r chi.Router) {
 		r.Get("/search", h.search)
+		r.Post("/preview", h.preview)
 		r.Post("/download", h.download)
 		r.Get("/tasks", h.listTasks)
 		r.Post("/tasks/{id}/retry", h.retryTask)
@@ -307,6 +308,91 @@ func (h *onlineHandler) search(w http.ResponseWriter, r *http.Request) {
 			InLibrary:   inLibrary || downloaded,
 			Downloading: downloading,
 		})
+	}
+	writeJSON(w, resp)
+}
+
+// onlinePreviewRequest asks for a short-lived playable URL for one upstream song.
+type onlinePreviewRequest struct {
+	Source   string `json:"source"`
+	Platform string `json:"platform"`
+	SongID   string `json:"songId"`
+	Time     int64  `json:"time"`
+	Sign     string `json:"sign"`
+	Quality  string `json:"quality"` // e.g. "mp3/128"; empty = preview default (low bitrate)
+}
+
+// onlinePreviewResponse is a playable direct media URL.
+type onlinePreviewResponse struct {
+	URL      string `json:"url"`
+	Format   string `json:"format"`
+	Bitrate  int    `json:"bitrate"`
+	Duration int    `json:"duration,omitempty"`
+	Expires  int64  `json:"expires,omitempty"` // unix seconds hint for clients
+}
+
+// previewQuality prefers a moderate bitrate for 试听. IMPORTANT: upstream
+// (hicn/kuwo) treats bitrate=128 as "trial clip" and returns a generic 12s
+// placeholder instead of the real track — so previews (and downloads) must
+// request 320k, which transparently downgrades to a real 128k full track
+// when 320k is unavailable.
+func previewQuality(qStr string) onlinesvc.Quality {
+	if qStr != "" {
+		if q := onlinesvc.ParseQuality(qStr); !q.IsZero() {
+			if q.Bitrate == 128 {
+				q.Bitrate = 320 // 128 = upstream trial-clip placeholder, never the real song
+			}
+			return q
+		}
+	}
+	return onlinesvc.Quality{Format: "mp3", Bitrate: 320}
+}
+
+// preview: POST /api/online/preview — resolve a playable direct URL for 试听.
+// The URL is temporary and anonymous-CDN-backed: clients can stream it directly
+// with <audio>/MediaPlayer, no proxy needed. Requires login (any user may audition).
+func (h *onlineHandler) preview(w http.ResponseWriter, r *http.Request) {
+	if !conf.Server.OnlineDownload.Enabled {
+		http.Error(w, "Online download is disabled", http.StatusForbidden)
+		return
+	}
+	var req onlinePreviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.SongID == "" {
+		http.Error(w, "songId is required", http.StatusBadRequest)
+		return
+	}
+	if req.Source == "" {
+		req.Source = "hicn"
+	}
+	src := h.sourceByName(req.Source)
+	if src == nil {
+		http.Error(w, "unknown download source", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	media, err := src.ResolveURL(ctx, onlinesvc.SongRef{
+		Source:   req.Source,
+		Platform: req.Platform,
+		ID:       req.SongID,
+		Time:     req.Time,
+		Sign:     req.Sign,
+	}, previewQuality(req.Quality))
+	if err != nil {
+		log.Warn(ctx, "online: preview resolve failed", "songId", req.SongID, err)
+		http.Error(w, "preview failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	resp := onlinePreviewResponse{
+		URL:      media.URL,
+		Format:   media.Format,
+		Bitrate:  media.Bitrate,
+		Duration: media.Duration,
+		Expires:  time.Now().Add(30 * time.Minute).Unix(),
 	}
 	writeJSON(w, resp)
 }

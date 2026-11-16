@@ -193,6 +193,13 @@ func (s *hicnSource) ResolveURL(ctx context.Context, song SongRef, quality Quali
 	if quality.IsZero() {
 		quality = DefaultQualityChain[0]
 	}
+	// Upstream quirk: bitrate=128 is the "trial listening" tier — it returns a
+	// generic 12-second placeholder clip (the same audio for every song), never
+	// the real track. A 320k request transparently downgrades to a real 128k
+	// full track when 320k is unavailable, so always ask for 320 instead.
+	if quality.Format == "mp3" && quality.Bitrate == 128 {
+		quality.Bitrate = 320
+	}
 
 	if cached, ok := s.urlCache.Load(urlCacheKey(song, quality)); ok {
 		if entry, ok := cached.(cachedURL); ok && time.Now().Before(entry.expires) {

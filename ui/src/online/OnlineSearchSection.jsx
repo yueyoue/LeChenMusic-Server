@@ -41,7 +41,7 @@ const QUALITY_OPTIONS = [
   { value: '', label: '默认（无损优先）' },
   { value: 'flac/2000', label: 'FLAC 2000k' },
   { value: 'mp3/320', label: 'MP3 320k' },
-  { value: 'mp3/128', label: 'MP3 128k' },
+  // 注：不再提供 128k 选项——上游把 128k 当“试听档”返回 12 秒占位片段而非真曲
 ]
 
 const fmtDuration = (s) => {
@@ -113,6 +113,9 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
   //   pick = 选中版本的 `${source}-${id}`（批量下载时使用）；expanded = 是否展开全部结果
   const [error, setError] = useState('')
   const [toast, setToast] = useState('')
+  // 试听：全局同时只播一首；audioRef 单例，playingKey 记录当前试听的歌曲
+  const [playingKey, setPlayingKey] = useState('')
+  const audioRef = React.useRef(null)
   // 下载权限（服务端 settings 接口）：非管理员在「仅管理员可下载」模式下禁用下载按钮
   const [access, setAccess] = useState(null)
 
@@ -132,6 +135,55 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
   }, [])
 
   const canDownload = !access || access.canDownload !== false
+
+  // ---- 试听 ----
+  const stopPreview = () => {
+    const a = audioRef.current
+    if (a) {
+      a.pause()
+      a.src = ''
+    }
+    setPlayingKey('')
+  }
+
+  useEffect(() => () => stopPreview(), [])
+
+  // 解析试听直链并播放；再点同一首 = 停止。128k 是上游占位片段，统一用320k（真曲）。
+  const handlePreview = async (song) => {
+    const key = songKey(song)
+    if (playingKey === key) {
+      stopPreview()
+      return
+    }
+    stopPreview()
+    try {
+      const res = await httpClient(`${REST_URL}/online/preview`, {
+        method: 'POST',
+        body: JSON.stringify({
+          source: song.source,
+          platform: song.platform,
+          songId: song.id,
+          time: song.time,
+          sign: song.sign,
+        }),
+      })
+      const url = res.json?.url
+      if (!url) throw new Error('未获取到试听地址')
+      const a = audioRef.current || new Audio()
+      a.src = url
+      a.onended = () => setPlayingKey('')
+      a.onerror = () => {
+        setPlayingKey('')
+        setError('试听播放失败（网络或链接过期）')
+      }
+      audioRef.current = a
+      await a.play()
+      setPlayingKey(key)
+    } catch (e) {
+      stopPreview()
+      setError('试听失败：' + errorText(e))
+    }
+  }
 
   const handleSearch = async () => {
     const queries = parseQueries(text)
@@ -425,15 +477,28 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
                       )}
                     </Box>
                   </Box>
-                  <Tooltip title={downloadBlockReason(song)}>
-                    <span>
-                      <Button variant="contained" size="small" color="primary" startIcon={<GetAppIcon />}
-                        disabled={downloading || !canDownload || song.downloading || (song.inLibrary && !fuzzy)}
-                        onClick={() => handleDownload(song)}>
-                        {song.downloading ? '已下载' : '下载'}
+                  <Box style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
+                    <Tooltip title={playingKey === songKey(song) ? '停止试听' : '试听（在线播放）'}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        color={playingKey === songKey(song) ? 'secondary' : 'default'}
+                        startIcon={<PlayArrowIcon />}
+                        onClick={() => handlePreview(song)}
+                      >
+                        {playingKey === songKey(song) ? '停止' : '试听'}
                       </Button>
-                    </span>
-                  </Tooltip>
+                    </Tooltip>
+                    <Tooltip title={downloadBlockReason(song)}>
+                      <span>
+                        <Button variant="contained" size="small" color="primary" startIcon={<GetAppIcon />}
+                          disabled={downloading || !canDownload || song.downloading || (song.inLibrary && !fuzzy)}
+                          onClick={() => handleDownload(song)}>
+                          {song.downloading ? '已下载' : '下载'}
+                        </Button>
+                      </span>
+                    </Tooltip>
+                  </Box>
                 </Box>
               ))}
               {(g.songs || []).length > MAX_VISIBLE && (

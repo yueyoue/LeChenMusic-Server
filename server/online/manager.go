@@ -225,7 +225,7 @@ func (m *Manager) run(ctx context.Context, task *model.DownloadTask) error {
 // resolveWithFallback tries the requested quality first (if any), then the
 // default chain: FLAC → MP3 320k → MP3 128k.
 func (m *Manager) resolveWithFallback(ctx context.Context, src Source, task *model.DownloadTask) (*ResolvedMedia, Quality, error) {
-	want := parseQuality(task.RequestedQuality)
+	want := ParseQuality(task.RequestedQuality)
 	chain := make([]Quality, 0, 4)
 	if !want.IsZero() {
 		chain = append(chain, want)
@@ -310,8 +310,8 @@ func taskRef(task *model.DownloadTask) SongRef {
 	}
 }
 
-// parseQuality parses "flac/2000" into a Quality. Empty string → zero Quality.
-func parseQuality(s string) Quality {
+// ParseQuality parses "flac/2000" into a Quality. Empty string → zero Quality.
+func ParseQuality(s string) Quality {
 	s = strings.TrimSpace(s)
 	if s == "" {
 		return Quality{}

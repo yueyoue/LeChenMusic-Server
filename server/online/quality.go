@@ -1,11 +1,15 @@
 package online
 
 // DefaultQualityChain is the preferred order used when the user does not pin a
-// specific quality: FLAC first, then MP3 320k, then MP3 128k.
+// specific quality: FLAC first, then MP3 320k.
+//
+// NOTE: mp3/128 is deliberately absent — upstream (hicn/kuwo) answers
+// bitrate=128 with a generic 12-second trial-clip placeholder (same audio for
+// every song), never the real track. A 320k request transparently downgrades
+// to a real 128k full track when 320k is unavailable, so it covers that case.
 var DefaultQualityChain = []Quality{
 	{Format: "flac", Bitrate: 2000},
 	{Format: "mp3", Bitrate: 320},
-	{Format: "mp3", Bitrate: 128},
 }
 
 // PickQuality selects the best quality option for a song.
