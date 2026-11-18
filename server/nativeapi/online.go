@@ -20,6 +20,37 @@ import (
 	onlinesvc "github.com/navidrome/navidrome/server/online"
 )
 
+// 请求方标识：网页管理端在 httpClient 里统一带上该头，APP 不带。
+// 上游被拦（口令页/风控页/非 JSON）时，只有管理端拿到可操作的中文提示，
+// APP 普通用户只看到一句中性失败信息。
+const (
+	onlineClientHeader     = "X-Online-Client"
+	onlineClientWebAdmin   = "web-admin"
+	onlineUpstreamGeneric  = onlinesvc.UpstreamBlockedNeutralText
+	onlineUpstreamErrorKey = "UPSTREAM_BLOCKED"
+)
+
+// writeSourceError renders an upstream failure, keeping the operator-facing
+// hint away from ordinary APP users.
+func writeSourceError(w http.ResponseWriter, r *http.Request, err error, fallback string) {
+	kind, blocked := onlinesvc.IsUpstreamBlocked(err)
+	if !blocked {
+		http.Error(w, fallback+err.Error(), http.StatusBadGateway)
+		return
+	}
+	message := onlineUpstreamGeneric
+	if r.Header.Get(onlineClientHeader) == onlineClientWebAdmin {
+		message = onlinesvc.UpstreamBlockedHint(kind)
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusBadGateway)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"error": message,
+		"code":  onlineUpstreamErrorKey,
+		"kind":  kind,
+	})
+}
+
 // onlineHandler serves the "search & download missing songs" API under /api/online.
 type onlineHandler struct {
 	ds        model.DataStore
@@ -68,6 +99,11 @@ func newOnlineHandler(ds model.DataStore, pls playlistsvc.Playlists) *onlineHand
 				action = model.OpLogDownloadFailed
 				success = false
 				detail = err.Error()
+				// 操作日志只对管理员可见（adminOnlyMiddleware），因此这里放运维视角的
+				// 说明（含“需要换源”的判断），任务行本身仍是用户可见的中性文案。
+				if kind, blocked := onlinesvc.IsUpstreamBlocked(err); blocked {
+					detail = onlinesvc.UpstreamBlockedHint(kind)
+				}
 			}
 			writeOnlineOpLog(ctx, ds, task.UserID, action, task.SongName, task.Artist, detail, success)
 		})
@@ -288,7 +324,7 @@ func (h *onlineHandler) search(w http.ResponseWriter, r *http.Request) {
 	result, err := src.SearchSong(ctx, onlinesvc.SearchRequest{Keyword: keyword, Page: page, PageSize: size})
 	if err != nil {
 		log.Warn(ctx, "online: search failed", "keyword", keyword, err)
-		http.Error(w, "search failed: "+err.Error(), http.StatusBadGateway)
+		writeSourceError(w, r, err, "search failed: ")
 		return
 	}
 
@@ -391,7 +427,7 @@ func (h *onlineHandler) preview(w http.ResponseWriter, r *http.Request) {
 	media, err := onlinesvc.ResolveValidated(ctx, src, ref, quality, req.Duration, 3)
 	if err != nil {
 		log.Warn(ctx, "online: preview resolve failed", "songId", req.SongID, err)
-		http.Error(w, "preview failed: "+err.Error(), http.StatusBadGateway)
+		writeSourceError(w, r, err, "preview failed: ")
 		return
 	}
 	resp := onlinePreviewResponse{

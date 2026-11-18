@@ -165,7 +165,7 @@ func (m *Manager) process(ctx context.Context, taskID string) {
 	runErr := m.run(ctx, task)
 	if runErr != nil {
 		task.Status = model.DownloadStatusFailed
-		task.Error = runErr.Error()
+		task.Error = taskErrorText(ctx, runErr)
 		task.FinishedAt = time.Now()
 		if updateErr := m.tasks.Update(task); updateErr != nil {
 			log.Error(ctx, "Could not mark download task as failed", "task", taskID, updateErr)
@@ -175,6 +175,22 @@ func (m *Manager) process(ctx context.Context, taskID string) {
 	if m.settled != nil {
 		m.settled(ctx, task, runErr)
 	}
+}
+
+// taskErrorText maps an error to the text stored on the task row.
+//
+// Task rows are rendered by the APP too, where ordinary users should not see the
+// operator-facing “上游要口令/被风控” wording; that detail stays in the server log
+// and in the web-admin operation log (see upstream_blocked.go and the op-log
+// writer in server/nativeapi). Blocked errors therefore collapse to one neutral
+// sentence, everything else keeps its original message so troubleshooting isn't
+// degraded.
+func taskErrorText(ctx context.Context, err error) string {
+	if kind, ok := IsUpstreamBlocked(err); ok {
+		log.Warn(ctx, "Download task blocked by upstream", "kind", kind, err)
+		return UpstreamBlockedNeutralText
+	}
+	return err.Error()
 }
 
 // maxPlaceholderRetries bounds re-resolve attempts when the upstream answers

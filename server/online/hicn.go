@@ -22,7 +22,15 @@ const (
 	hicnDefaultBaseURL = "https://flac.music.hi.cn"
 	hicnURLCacheTTL    = time.Hour
 	hicnMaxAttempts    = 3
+
+	// hicnBlockedCooldown 是识别到上游拦截（口令页/风控页/非 JSON）后的全局冷却时间：
+	// 期间不再发任何请求，直接失败，避免继续撞击上游风控把临时拦截变成长期封禁。
+	hicnBlockedCooldown = 10 * time.Minute
 )
+
+// hicnRateLimitCooldown 是上游显式 429 后的较短冷却。写成变量只为让测试能缩短它，
+// 生产环境不要改。
+var hicnRateLimitCooldown = 30 * time.Second
 
 // hicnUserAgents rotates per request to look like ordinary browser traffic.
 var hicnUserAgents = []string{
@@ -52,6 +60,8 @@ type hicnSource struct {
 
 	mu       sync.Mutex
 	lastCall time.Time
+	// cooldownUntil 是上游拦截后的全局冷却截止时间（零值表示未冷却）。
+	cooldownUntil time.Time
 
 	urlCache sync.Map // cache key -> cachedURL
 }
@@ -301,6 +311,11 @@ func (s *hicnSource) post(ctx context.Context, act string, params map[string]str
 		if attempt > 0 {
 			backoff := time.Duration(1<<uint(attempt)) * time.Second // 2s, 4s
 			backoff += time.Duration(rand.Int63n(int64(backoff/2) + 1))
+			// 429 会写入一段短冷却；重试前先等冷却结束，否则下一次 postOnce 会被
+			// 冷却判定直接拒绝，把一次可恢复的限流放大成整次操作失败。
+			if wait := s.cooldownRemaining(); wait > 0 && wait <= 2*hicnRateLimitCooldown {
+				backoff = wait + 200*time.Millisecond + time.Duration(rand.Int63n(int64(800*time.Millisecond)))
+			}
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -322,6 +337,9 @@ func (s *hicnSource) post(ctx context.Context, act string, params map[string]str
 // postOnce performs a single request. The second return value reports whether
 // the failure is transient (worth retrying).
 func (s *hicnSource) postOnce(ctx context.Context, act string, form url.Values) (json.RawMessage, bool, error) {
+	if err := s.cooldownError(act); err != nil {
+		return nil, false, err
+	}
 	if err := s.throttle(ctx); err != nil {
 		return nil, false, err
 	}
@@ -347,27 +365,91 @@ func (s *hicnSource) postOnce(ctx context.Context, act string, form url.Values) 
 	if err != nil {
 		return nil, true, fmt.Errorf("online/hicn: read response: %w", err)
 	}
-	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500 {
+	// 上游被拦时返回的是 HTML 页或纯文本（口令页、网关拦截页），必须先按“非 JSON
+	// 内容”分类，否则 json.Unmarshal 只会抛出难以定位的 parse 错误。
+	blockedKind, blocked := classifyBlockedResponse(body)
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		s.setCooldown(hicnRateLimitCooldown)
+		return nil, true, fmt.Errorf("online/hicn: %s returned status %d", act, resp.StatusCode)
+	}
+	if resp.StatusCode >= 500 {
 		return nil, true, fmt.Errorf("online/hicn: %s returned status %d", act, resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
+		if blocked {
+			return nil, false, s.blocked(act, blockedKind, body)
+		}
 		return nil, false, fmt.Errorf("online/hicn: %s returned status %d", act, resp.StatusCode)
+	}
+	if blocked {
+		return nil, false, s.blocked(act, blockedKind, body)
 	}
 
 	var env hicnEnvelope
 	if err := json.Unmarshal(body, &env); err != nil {
-		return nil, false, fmt.Errorf("online/hicn: parse envelope: %w", err)
+		// 正文以 '{' 开头却解析失败：上游返回了截断或改版后的内容，同样算上游异常，
+		// 避免被误读成“本地解析 bug”。
+		return nil, false, &UpstreamBlockedError{
+			Source: "hicn", Action: act, Kind: BlockedKindNonJSON,
+			Detail: "invalid JSON: " + snippet(body),
+		}
 	}
 	if env.Code != 0 {
+		if kind, ok := blockedKindFromText(env.Msg); ok {
+			return nil, false, s.blocked(act, kind, []byte(env.Msg))
+		}
 		return nil, false, fmt.Errorf("online/hicn: %s failed: code=%d msg=%s", act, env.Code, env.Msg)
 	}
 	return env.Data, false, nil
 }
 
+// blocked records the cooldown and builds the typed error for an upstream block.
+func (s *hicnSource) blocked(act, kind string, body []byte) error {
+	s.setCooldown(hicnBlockedCooldown)
+	return &UpstreamBlockedError{Source: "hicn", Action: act, Kind: kind, Detail: snippet(body)}
+}
+
+// setCooldown blocks all upstream calls for d, so a temporary gate doesn't become
+// a persistent ban through our own retries.
+func (s *hicnSource) setCooldown(d time.Duration) {
+	s.mu.Lock()
+	s.cooldownUntil = time.Now().Add(d)
+	s.mu.Unlock()
+}
+
+// cooldownRemaining reports how long the source stays in cooldown (0 = not cooling).
+func (s *hicnSource) cooldownRemaining() time.Duration {
+	s.mu.Lock()
+	until := s.cooldownUntil
+	s.mu.Unlock()
+	if remaining := time.Until(until); remaining > 0 {
+		return remaining
+	}
+	return 0
+}
+
+// cooldownError returns a typed block error while cooling down; callers then fail
+// fast instead of touching the network.
+func (s *hicnSource) cooldownError(act string) error {
+	s.mu.Lock()
+	until := s.cooldownUntil
+	s.mu.Unlock()
+	if remaining := time.Until(until); remaining > 0 {
+		return &UpstreamBlockedError{
+			Source: "hicn", Action: act, Kind: BlockedKindCooldown,
+			Detail: "cooldown " + remaining.Round(time.Second).String() + " left (until " + until.Format(time.RFC3339) + ")",
+		}
+	}
+	return nil
+}
+
 // throttle enforces a jittered minimum interval between upstream calls
-// (spacing ∈ [minInterval, 1.5×minInterval)) to avoid predictable request patterns.
+// (spacing ∈ [minInterval, 1.75×minInterval), i.e. 2s–3.5s by default) so the
+// cadence never looks like a fixed-rate crawler.
 func (s *hicnSource) throttle(ctx context.Context) error {
-	interval := s.minInterval + time.Duration(rand.Int63n(int64(s.minInterval/2)+1))
+	spread := int64(s.minInterval/4)*3 + 1
+	interval := s.minInterval + time.Duration(rand.Int63n(spread))
 	s.mu.Lock()
 	wait := interval - time.Since(s.lastCall)
 	if wait > 0 {

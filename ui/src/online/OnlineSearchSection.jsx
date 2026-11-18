@@ -210,10 +210,12 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
               pick: defaultPick(songs, fuzzy),
               expanded: false,
             }
-            : g)))
+: g)))
         } catch (e) {
+          // errorText 会取出服务端 JSON 里的 error 字段：上游被拦时管理端能看到
+          // “要口令/被风控，需要换源”的说明，而不是只有一句 “Bad Gateway”。
           setGroups((gs) => gs.map((g, idx) => (idx === i
-            ? { ...g, state: 'error', error: e.message || '搜索失败' }
+            ? { ...g, state: 'error', error: errorText(e) || '搜索失败' }
             : g)))
         }
         // 多首之间随机间隔，降低风控概率
