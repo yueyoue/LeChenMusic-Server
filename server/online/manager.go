@@ -2,6 +2,7 @@ package online
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -42,6 +43,10 @@ type Manager struct {
 	// (actual delay ∈ [J/2, 3J/2)) to avoid hammering the upstream source
 	// during batch downloads. Set 0 to disable.
 	TaskJitter time.Duration
+
+	// PlaceholderRetryDelay is the base pause before re-resolving after an
+	// ad/placeholder response (attempt n waits n× this). Set 0 for no pause.
+	PlaceholderRetryDelay time.Duration
 }
 
 // NewManager creates a download task manager. tmpDir is where partial
@@ -53,12 +58,13 @@ func NewManager(tasks model.DownloadTaskRepository, tmpDir string, processor Pos
 		}
 	}
 	return &Manager{
-		tasks:      tasks,
-		tmpDir:     tmpDir,
-		processor:  processor,
-		client:     &http.Client{Timeout: 30 * time.Minute},
-		queue:      make(chan string, 1024),
-		TaskJitter: 5 * time.Second,
+		tasks:                 tasks,
+		tmpDir:                tmpDir,
+		processor:             processor,
+		client:                &http.Client{Timeout: 30 * time.Minute},
+		queue:                 make(chan string, 1024),
+		TaskJitter:            5 * time.Second,
+		PlaceholderRetryDelay: 3 * time.Second,
 	}
 }
 
@@ -171,7 +177,17 @@ func (m *Manager) process(ctx context.Context, taskID string) {
 	}
 }
 
+// maxPlaceholderRetries bounds re-resolve attempts when the upstream answers
+// with ad/placeholder audio instead of the real track.
+const maxPlaceholderRetries = 3
+
 // run executes one task through: resolve → download → post-process.
+//
+// The upstream occasionally serves a fixed ~12.8s spoken ad (酷我"看广告免费
+// 畅听" voice clip) as the "song". Every stage screens for it (resolve-time
+// plausibility check + post-download duration probe); a hit re-resolves with a
+// fresh direct URL up to maxPlaceholderRetries times, and persistent ad audio
+// fails the task with a clear error instead of being ingested into the library.
 func (m *Manager) run(ctx context.Context, task *model.DownloadTask) error {
 	src, ok := Get(task.Source)
 	if !ok {
@@ -183,6 +199,38 @@ func (m *Manager) run(ctx context.Context, task *model.DownloadTask) error {
 		return err
 	}
 
+	var lastErr error
+	for attempt := 1; ; attempt++ {
+		lastErr = m.attempt(ctx, src, task)
+		if lastErr == nil {
+			return nil
+		}
+		if !errors.Is(lastErr, ErrPlaceholderMedia) {
+			return lastErr
+		}
+		if attempt >= maxPlaceholderRetries {
+			break
+		}
+		log.Warn(ctx, "Download got ad/placeholder audio, re-resolving", "task", task.ID, "attempt", attempt, lastErr)
+		m.invalidateResolvedURLs(src, task)
+		// Back off a little: placeholder responses look rate-triggered.
+		if m.PlaceholderRetryDelay > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(attempt) * m.PlaceholderRetryDelay):
+			}
+		}
+		task.Status = model.DownloadStatusResolving
+		if err := m.tasks.Update(task); err != nil {
+			return err
+		}
+	}
+	return fmt.Errorf("%w: 重试 %d 次仍被拦截，未入库，请稍后再试（%v）", ErrPlaceholderMedia, maxPlaceholderRetries, lastErr)
+}
+
+// attempt runs one resolve → download → validate → post-process pass.
+func (m *Manager) attempt(ctx context.Context, src Source, task *model.DownloadTask) error {
 	media, quality, err := m.resolveWithFallback(ctx, src, task)
 	if err != nil {
 		return fmt.Errorf("resolve media URL: %w", err)
@@ -204,6 +252,13 @@ func (m *Manager) run(ctx context.Context, task *model.DownloadTask) error {
 		return fmt.Errorf("download: %w", err)
 	}
 
+	// Post-download gate: the bytes on disk must look like the real track. This
+	// catches ad/placeholder audio even when the resolve response looked fine.
+	if err := ValidateDownloadedAudio(tmpPath, task.Duration); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+
 	task.Status = model.DownloadStatusTagging
 	if err := m.tasks.Update(task); err != nil {
 		_ = os.Remove(tmpPath)
@@ -222,8 +277,22 @@ func (m *Manager) run(ctx context.Context, task *model.DownloadTask) error {
 	return m.tasks.Update(task)
 }
 
+// invalidateResolvedURLs drops cached direct URLs for the task's song so the
+// next attempt re-resolves instead of replaying a cached (possibly ad) URL.
+func (m *Manager) invalidateResolvedURLs(src Source, task *model.DownloadTask) {
+	ref := taskRef(task)
+	if want := ParseQuality(task.RequestedQuality); !want.IsZero() {
+		InvalidateResolvedURL(src, ref, want)
+	}
+	for _, q := range DefaultQualityChain {
+		InvalidateResolvedURL(src, ref, q)
+	}
+}
+
 // resolveWithFallback tries the requested quality first (if any), then the
-// default chain: FLAC → MP3 320k → MP3 128k.
+// default chain: FLAC → MP3 320k → MP3 128k. Every resolved URL is screened
+// for upstream ad/placeholder signatures; implausible results are dropped and
+// the next quality is tried.
 func (m *Manager) resolveWithFallback(ctx context.Context, src Source, task *model.DownloadTask) (*ResolvedMedia, Quality, error) {
 	want := ParseQuality(task.RequestedQuality)
 	chain := make([]Quality, 0, 4)
@@ -238,12 +307,23 @@ func (m *Manager) resolveWithFallback(ctx context.Context, src Source, task *mod
 
 	ref := taskRef(task)
 	var lastErr error
+	sawPlaceholder := false
 	for _, q := range chain {
 		media, err := src.ResolveURL(ctx, ref, q)
 		if err == nil {
+			if verr := ResolvePlausible(media, task.Duration); verr != nil {
+				log.Warn(ctx, "online: rejecting implausible resolved media", "task", task.ID, "quality", FormatQuality(q), verr)
+				InvalidateResolvedURL(src, ref, q)
+				lastErr = verr
+				sawPlaceholder = true
+				continue
+			}
 			return media, q, nil
 		}
 		lastErr = err
+	}
+	if sawPlaceholder && !errors.Is(lastErr, ErrPlaceholderMedia) {
+		lastErr = fmt.Errorf("%w: %v", ErrPlaceholderMedia, lastErr)
 	}
 	return nil, Quality{}, lastErr
 }

@@ -165,6 +165,7 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
           songId: song.id,
           time: song.time,
           sign: song.sign,
+          duration: song.duration, // 期望时长：服务端据此拦截上游广告占位音频
         }),
       })
       const url = res.json?.url
@@ -235,6 +236,7 @@ const OnlineSearchSection = ({ onTasksChanged }) => {
         album: song.albumName,
         albumId: song.albumId,
         coverUrl: song.coverUrl,
+        duration: song.duration, // 期望时长：服务端据此拦截上游广告占位音频
         quality,
         fuzzy,
         time: song.time,

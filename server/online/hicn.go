@@ -233,8 +233,18 @@ func (s *hicnSource) ResolveURL(ctx context.Context, song SongRef, quality Quali
 		Bitrate:  payload.Bitrate,
 		Duration: payload.Duration,
 	}
-	s.urlCache.Store(urlCacheKey(song, quality), cachedURL{media: media, expires: time.Now().Add(hicnURLCacheTTL)})
+	// Never cache ad/placeholder-looking responses: a retry must re-resolve
+	// against the upstream instead of replaying the same junk URL.
+	if ResolvePlausible(media, 0) == nil {
+		s.urlCache.Store(urlCacheKey(song, quality), cachedURL{media: media, expires: time.Now().Add(hicnURLCacheTTL)})
+	}
 	return media, nil
+}
+
+// InvalidateURL implements URLInvalidator: drop a cached direct URL so the next
+// resolve fetches a fresh one (used when a cached URL turns out to be ad audio).
+func (s *hicnSource) InvalidateURL(song SongRef, q Quality) {
+	s.urlCache.Delete(urlCacheKey(song, q))
 }
 
 func urlCacheKey(song SongRef, q Quality) string {

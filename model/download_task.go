@@ -21,6 +21,7 @@ type DownloadTask struct {
 	SongID           string    `structs:"song_id"           json:"songId"            db:"song_id"`
 	SongName         string    `structs:"song_name"         json:"songName"          db:"song_name"`
 	Artist           string    `structs:"artist"            json:"artist"            db:"artist"`
+	Duration         int       `structs:"duration"          json:"duration"          db:"duration"` // expected song length (seconds) from the source; guards against ad/placeholder audio
 	AlbumName        string    `structs:"album_name"        json:"albumName"         db:"album_name"`
 	AlbumID          string    `structs:"album_id"          json:"albumId"           db:"album_id"` // upstream album id: resolves album artist + release year
 	CoverURL         string    `structs:"cover_url"         json:"coverUrl"          db:"cover_url"`

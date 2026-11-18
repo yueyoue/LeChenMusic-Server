@@ -136,8 +136,9 @@ type onlineDownloadRequest struct {
 	Album    string `json:"album"`
 	AlbumID  string `json:"albumId"` // upstream album id: album artist + release year
 	CoverURL string `json:"coverUrl"`
-	Quality  string `json:"quality"` // e.g. "flac/2000"; empty = default
-	Fuzzy    bool   `json:"fuzzy"`   // allow downloading other versions even if a match exists
+	Duration int    `json:"duration"` // expected song length (seconds) from the search result
+	Quality  string `json:"quality"`  // e.g. "flac/2000"; empty = default
+	Fuzzy    bool   `json:"fuzzy"`    // allow downloading other versions even if a match exists
 	Time     int64  `json:"time"`
 	Sign     string `json:"sign"`
 }
@@ -319,7 +320,8 @@ type onlinePreviewRequest struct {
 	SongID   string `json:"songId"`
 	Time     int64  `json:"time"`
 	Sign     string `json:"sign"`
-	Quality  string `json:"quality"` // e.g. "mp3/128"; empty = preview default (low bitrate)
+	Duration int    `json:"duration"` // expected song length (seconds) from the search result
+	Quality  string `json:"quality"`  // e.g. "mp3/128"; empty = preview default (low bitrate)
 }
 
 // onlinePreviewResponse is a playable direct media URL.
@@ -375,13 +377,18 @@ func (h *onlineHandler) preview(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	media, err := src.ResolveURL(ctx, onlinesvc.SongRef{
+	quality := previewQuality(req.Quality)
+	ref := onlinesvc.SongRef{
 		Source:   req.Source,
 		Platform: req.Platform,
 		ID:       req.SongID,
 		Time:     req.Time,
 		Sign:     req.Sign,
-	}, previewQuality(req.Quality))
+	}
+	// ResolveValidated screens upstream ad/placeholder responses (the "看广告
+	// 免费畅听" voice clip served as any song) and re-resolves before giving up,
+	// so a 试听 never plays the ad by accident.
+	media, err := onlinesvc.ResolveValidated(ctx, src, ref, quality, req.Duration, 3)
 	if err != nil {
 		log.Warn(ctx, "online: preview resolve failed", "songId", req.SongID, err)
 		http.Error(w, "preview failed: "+err.Error(), http.StatusBadGateway)
@@ -484,6 +491,7 @@ func (h *onlineHandler) download(w http.ResponseWriter, r *http.Request) {
 		AlbumName:        req.Album,
 		AlbumID:          onlinesvc.NormalizeAlbumID(req.AlbumID),
 		CoverURL:         req.CoverURL,
+		Duration:         req.Duration,
 		RequestedQuality: quality,
 		UpstreamTime:     req.Time,
 		Sign:             req.Sign,
