@@ -73,6 +73,16 @@ func (r *userDeviceRepository) GetByUser(userID string) (model.UserDevices, erro
 	return res, err
 }
 
+func (r *userDeviceRepository) GetAll() (model.UserDevices, error) {
+	sq := r.newSelect().
+		From("user_device").
+		OrderBy("last_seen_at DESC").
+		Columns("*")
+	var res model.UserDevices
+	err := r.queryAll(sq, &res)
+	return res, err
+}
+
 func (r *userDeviceRepository) VersionStats() ([]model.VersionStat, error) {
 	var results []model.VersionStat
 	err := r.db.NewQuery(`

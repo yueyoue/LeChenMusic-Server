@@ -29,6 +29,8 @@ type UserDeviceRepository interface {
 	Upsert(device *UserDevice) error
 	// GetByUser returns all devices for a specific user.
 	GetByUser(userID string) (UserDevices, error)
+	// GetAll returns all devices for all users, most recently seen first.
+	GetAll() (UserDevices, error)
 	// VersionStats returns the number of distinct users per app version.
 	VersionStats() ([]VersionStat, error)
 }

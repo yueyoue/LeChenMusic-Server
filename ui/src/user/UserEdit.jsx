@@ -23,6 +23,7 @@ import {
 import { Typography } from '@material-ui/core'
 import { Title } from '../common'
 import DeleteUserButton from './DeleteUserButton'
+import UserStatsPanel from './UserStatsPanel'
 import { LibrarySelectionField } from './LibrarySelectionField.jsx'
 import { validateUserForm } from './userValidation'
 
@@ -176,6 +177,8 @@ const UserEdit = (props) => {
         <DateField variant="body1" source="lastAccessAt" showTime />
         <DateField variant="body1" source="updatedAt" showTime />
         <DateField variant="body1" source="createdAt" showTime />
+
+        {permissions === 'admin' && props.id && <UserStatsPanel userId={props.id} />}
       </SimpleForm>
     </Edit>
   )

@@ -30,6 +30,7 @@ const formatDuration = (seconds) => {
 const UserList = (props) => {
   const isXsmall = useMediaQuery((theme) => theme.breakpoints.down('xs'))
   const [userStats, setUserStats] = useState({})
+  const [deviceMap, setDeviceMap] = useState({})
 
   useEffect(() => {
     httpClient(`${REST_URL}/stats/users`)
@@ -41,6 +42,16 @@ const UserList = (props) => {
         setUserStats(statsMap)
       })
       .catch(() => {})
+    httpClient(`${REST_URL}/stats/devices`)
+      .then((res) => {
+        // 接口已按 last_seen_at 降序返回，每个用户首条即最近活跃的设备
+        const map = {}
+        ;(res.json?.data || []).forEach((d) => {
+          if (!map[d.userId]) map[d.userId] = d
+        })
+        setDeviceMap(map)
+      })
+      .catch(() => {})
   }, [])
 
   const ListeningDurationField = ({ record }) => {
@@ -48,6 +59,34 @@ const UserList = (props) => {
     return (
       <Typography variant="body2" style={{ fontSize: 13 }}>
         {stats ? formatDuration(stats.totalDuration) : '-'}
+      </Typography>
+    )
+  }
+
+  const AppVersionField = ({ record }) => {
+    const device = deviceMap[record.id]
+    if (!device) {
+      return (
+        <Typography variant="body2" style={{ fontSize: 13 }}>
+          -
+        </Typography>
+      )
+    }
+    const lastSeen = device.lastSeenAt
+      ? new Date(device.lastSeenAt).toLocaleString()
+      : ''
+    return (
+      <Typography
+        variant="body2"
+        style={{ fontSize: 13 }}
+        title={`${device.deviceInfo || ''}\n最后活跃: ${lastSeen}`}
+      >
+        {device.appVersion || '-'}
+        {lastSeen && (
+          <span style={{ color: '#999', marginLeft: 6, fontSize: 11 }}>
+            {new Date(device.lastSeenAt).toLocaleDateString()}
+          </span>
+        )}
       </Typography>
     )
   }
@@ -67,7 +106,8 @@ const UserList = (props) => {
             const stats = userStats[record.id]
             const duration = stats ? formatDuration(stats.totalDuration) : ''
             const lastLogin = record.lastLoginAt ? new Date(record.lastLoginAt).toLocaleString() : ''
-            return duration && lastLogin ? `${duration} · ${lastLogin}` : duration || lastLogin
+            const version = deviceMap[record.id]?.appVersion
+            return [version && `v${version}`, duration, lastLogin].filter(Boolean).join(' · ')
           }}
           tertiaryText={(record) => (record.isAdmin ? '[admin]️' : '')}
         />
@@ -77,6 +117,7 @@ const UserList = (props) => {
           <TextField source="name" />
           <BooleanField source="isAdmin" />
           <ListeningDurationField label="听歌时长" />
+          <AppVersionField label="APP版本" />
           <DateField source="lastLoginAt" sortByOrder={'DESC'} />
           <DateField source="lastAccessAt" sortByOrder={'DESC'} />
           <DateField source="updatedAt" sortByOrder={'DESC'} />
