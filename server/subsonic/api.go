@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 
 	"github.com/deluan/rest"
 	"github.com/go-chi/chi/v5"
@@ -93,6 +94,19 @@ func (api *Router) routes() http.Handler {
 	}
 
 	r.Use(postFormToQueryParams)
+
+	// 未匹配到的 /rest/* 路径（例如客户端少写一段、多写一个斜杠）也返回 Subsonic 格式的
+	// 失败响应，而不是 Go 默认的纯文本 "404 page not found"。客户端按 JSON/XML 解析时
+	// 至少能拿到可读的错误信息，不会把 404 误报成「服务器未运行」。
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
+		resp := newResponse()
+		resp.Status = responses.StatusFailed
+		resp.Error = &responses.Error{
+			Code:    responses.ErrorGeneric,
+			Message: "unknown subsonic endpoint: " + r.URL.Path,
+		}
+		sendResponseWithStatus(w, r, resp, http.StatusNotFound)
+	})
 
 	// Public
 	h(r, "getOpenSubsonicExtensions", api.GetOpenSubsonicExtensions)
@@ -353,6 +367,11 @@ func sendResponse(w http.ResponseWriter, r *http.Request, payload *responses.Sub
 func sendResponseWithStatus(w http.ResponseWriter, r *http.Request, payload *responses.Subsonic, status int) {
 	p := req.Params(r)
 	f, _ := p.String("f")
+	// 客户端只声明 Accept: application/json 而没有携带 f 参数时，也按 JSON 返回。
+	// 否则会得到 200 + XML，按 JSON 解析的客户端会把「连上了」误判成「服务器地址错误」。
+	if f == "" && strings.Contains(r.Header.Get("Accept"), "application/json") {
+		f = "json"
+	}
 	var response []byte
 	var err error
 	switch f {

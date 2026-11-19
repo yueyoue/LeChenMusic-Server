@@ -191,6 +191,63 @@ var _ = Describe("sendResponse", func() {
 	})
 })
 
+var _ = Describe("sendResponseWithStatus", func() {
+	var (
+		w       *httptest.ResponseRecorder
+		r       *http.Request
+		payload *responses.Subsonic
+	)
+
+	BeforeEach(func() {
+		w = httptest.NewRecorder()
+		r = httptest.NewRequest("GET", "/rest/ping", nil)
+		payload = &responses.Subsonic{Status: responses.StatusOK, Version: Version}
+	})
+
+	When("客户端只声明 Accept: application/json 而没有携带 f 参数", func() {
+		It("按 JSON 返回，避免按 JSON 解析的客户端解析失败", func() {
+			r.Header.Set("Accept", "application/json")
+
+			sendResponseWithStatus(w, r, payload, http.StatusOK)
+
+			Expect(w.Header().Get("Content-Type")).To(Equal("application/json"))
+			var wrapper responses.JsonWrapper
+			Expect(json.Unmarshal(w.Body.Bytes(), &wrapper)).To(Succeed())
+			Expect(wrapper.Subsonic.Status).To(Equal(responses.StatusOK))
+		})
+	})
+
+	When("客户端既没有 f 参数也没有 Accept 头", func() {
+		It("保持原有的 XML 默认行为", func() {
+			sendResponseWithStatus(w, r, payload, http.StatusOK)
+
+			Expect(w.Header().Get("Content-Type")).To(Equal("application/xml"))
+			var subsonicResponse responses.Subsonic
+			Expect(xml.Unmarshal(w.Body.Bytes(), &subsonicResponse)).To(Succeed())
+			Expect(subsonicResponse.Status).To(Equal(responses.StatusOK))
+		})
+	})
+})
+
+var _ = Describe("rest router 未知路径", func() {
+	It("返回 Subsonic 格式的 404，而不是纯文本 404 page not found", func() {
+		handler := (&Router{}).routes()
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("GET", "/rest/thisEndpointDoesNotExist?f=json&u=user&p=pass&v=1.16.1&c=test", nil)
+
+		handler.ServeHTTP(w, r)
+
+		Expect(w.Code).To(Equal(http.StatusNotFound))
+		Expect(w.Header().Get("Content-Type")).To(Equal("application/json"))
+		var wrapper responses.JsonWrapper
+		Expect(json.Unmarshal(w.Body.Bytes(), &wrapper)).To(Succeed())
+		Expect(wrapper.Subsonic.Status).To(Equal(responses.StatusFailed))
+		Expect(wrapper.Subsonic.Error).ToNot(BeNil())
+		Expect(wrapper.Subsonic.Error.Code).To(Equal(responses.ErrorGeneric))
+		Expect(wrapper.Subsonic.Error.Message).To(ContainSubstring("unknown subsonic endpoint"))
+	})
+})
+
 var _ = Describe("mapToSubsonicError", func() {
 	DescribeTable("maps repository errors to the correct Subsonic error code",
 		func(err error, expectedCode int32) {
