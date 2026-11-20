@@ -80,6 +80,11 @@ vi.mock('./DeleteUserButton', () => ({
   default: () => <button data-testid="delete-user-button">Delete</button>,
 }))
 
+vi.mock('./UserStatsPanel', () => ({
+  __esModule: true,
+  default: () => <div data-testid="user-stats-panel" />,
+}))
+
 vi.mock('../common', () => ({
   Title: ({ subTitle }) => <div data-testid="title">{subTitle}</div>,
 }))
@@ -116,6 +121,18 @@ describe('<UserEdit />', () => {
 
     // Should render isAdmin checkbox for admin users
     expect(screen.getByTestId('boolean-input-isAdmin')).toBeInTheDocument()
+  })
+
+  it('should render the user stats panel for admin users', () => {
+    render(<UserEdit id="user1" permissions="admin" />)
+
+    expect(screen.getByTestId('user-stats-panel')).toBeInTheDocument()
+  })
+
+  it('should not render the user stats panel for non-admin users', () => {
+    render(<UserEdit id="user1" permissions="user" />)
+
+    expect(screen.queryByTestId('user-stats-panel')).not.toBeInTheDocument()
   })
 
   it('should render date fields', () => {

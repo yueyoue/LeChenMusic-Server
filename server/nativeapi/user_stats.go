@@ -3,6 +3,7 @@ package nativeapi
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/navidrome/navidrome/log"
@@ -24,6 +25,9 @@ func (api *Router) addUserStatsRoute(r chi.Router) {
 
 		// Admin-only queries
 		r.Get("/users", h.listUserStats)
+		r.Get("/users/{userID}/devices", h.listUserDevices)
+		r.Get("/users/{userID}/play-logs", h.listUserPlayLogs)
+		r.Get("/devices", h.listAllDevices)
 		r.Get("/versions", h.listVersionStats)
 	})
 }
@@ -171,6 +175,63 @@ func (h *userStatsHandler) listUserStats(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	statsWriteJSON(w, map[string]any{"data": stats})
+}
+
+// GET /api/stats/devices  (admin only) — all devices for all users, most recently seen first.
+// The admin user list uses this to show each user's current app version in one request.
+func (h *userStatsHandler) listAllDevices(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		http.Error(w, "Admin access required", http.StatusForbidden)
+		return
+	}
+	devices, err := h.ds.UserDevice(r.Context()).GetAll()
+	if err != nil {
+		log.Error(r.Context(), "Failed to get devices", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	statsWriteJSON(w, map[string]any{"data": devices})
+}
+
+// GET /api/stats/users/{userID}/devices  (admin only)
+func (h *userStatsHandler) listUserDevices(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		http.Error(w, "Admin access required", http.StatusForbidden)
+		return
+	}
+	userID := chi.URLParam(r, "userID")
+	devices, err := h.ds.UserDevice(r.Context()).GetByUser(userID)
+	if err != nil {
+		log.Error(r.Context(), "Failed to get user devices", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	statsWriteJSON(w, map[string]any{"data": devices})
+}
+
+// GET /api/stats/users/{userID}/play-logs?limit=N  (admin only)
+func (h *userStatsHandler) listUserPlayLogs(w http.ResponseWriter, r *http.Request) {
+	if !isAdmin(r) {
+		http.Error(w, "Admin access required", http.StatusForbidden)
+		return
+	}
+	userID := chi.URLParam(r, "userID")
+	limit := 20
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	logs, err := h.ds.PlayLog(r.Context()).GetByUser(userID, limit)
+	if err != nil {
+		log.Error(r.Context(), "Failed to get user play logs", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	statsWriteJSON(w, map[string]any{"data": logs})
 }
 
 // GET /api/stats/versions  (admin only)
