@@ -79,6 +79,17 @@ func TestValidateDownloadedAudioAcceptsRealFile(t *testing.T) {
 	}
 }
 
+func TestValidateDownloadedAudioIgnoresCorruptDurationProbe(t *testing.T) {
+	// Field case: a 274s song whose STREAMINFO total-samples is damaged, so the
+	// probe reports 286089s (≈79h). A 42-byte file cannot hold 79 hours of audio,
+	// so the probe—not the file—is wrong; the download must be accepted.
+	path := t.TempDir() + "/corrupt.flac"
+	writeTestFile(t, path, flacWithDuration(t, 44100, 286089*44100))
+	if err := ValidateDownloadedAudio(path, 274); err != nil {
+		t.Fatalf("corrupt duration probe must not reject a valid download: %v", err)
+	}
+}
+
 func TestValidateDownloadedAudioSkipsUnknownContainer(t *testing.T) {
 	path := t.TempDir() + "/song.bin"
 	writeTestFile(t, path, []byte("not audio"))

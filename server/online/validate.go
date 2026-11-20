@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 )
 
 // 上游广告/占位音频防护（见 docs/在线搜歌下载功能-开发文档.md 第 18 节）。
@@ -35,6 +36,29 @@ func durationTolerance(expected int) int {
 		t = 20
 	}
 	return t
+}
+
+// minPlausibleBytesPerSecond is the floor for the size/duration cross-check:
+// no real audio stream averages below 4kbps, so a probe result implying less
+// proves the probe (not the file) is wrong.
+const minPlausibleBytesPerSecond = 4000 / 8 // 4 kbps
+
+// durationFitsFileSize cross-checks a probed duration against the file size on
+// disk. A song can't average below ~4kbps, so a duration that implies a lower
+// rate means the duration probe is corrupt (e.g. a damaged FLAC STREAMINFO
+// reporting 79 hours for a 4-minute file) rather than that the file is bad.
+//
+// It returns true when it cannot judge (unreadable/empty file), leaving the
+// duration check itself in charge.
+func durationFitsFileSize(path string, seconds int) bool {
+	if seconds <= 0 {
+		return false
+	}
+	stat, err := os.Stat(path)
+	if err != nil || stat.Size() <= 0 {
+		return true
+	}
+	return stat.Size() >= int64(seconds)*minPlausibleBytesPerSecond
 }
 
 // ResolvePlausible reports whether a resolved media URL looks like the real
@@ -79,6 +103,12 @@ func ValidateDownloadedAudio(path string, expectedDuration int) error {
 		return nil
 	}
 	seconds := int(probed.Seconds() + 0.5)
+	if !durationFitsFileSize(path, seconds) {
+		// 探测出的时长与文件体积自相矛盾（例如 STREAMINFO 的总采样数损坏），
+		// 说明是探测结果失真而不是“文件太短/太长”。放行，交给解析阶段的
+		// bitrate/时长校验兜底，避免把正常歌曲误判成广告占位。
+		return nil
+	}
 	if expectedDuration > 0 {
 		diff := seconds - expectedDuration
 		if diff < 0 {

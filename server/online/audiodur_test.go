@@ -17,13 +17,17 @@ func flacWithDuration(t *testing.T, sampleRate uint32, totalSamples uint64) []by
 	info := make([]byte, 34)
 	binary.BigEndian.PutUint16(info[0:2], 16)   // min block size
 	binary.BigEndian.PutUint16(info[2:4], 4096) // max block size
+// 20-bit sample rate, then 3-bit channels-1 (=1, stereo), then the high
+	// bit of bps-1 (15 → 16-bit samples).
 	info[10] = byte(sampleRate >> 12)
 	info[11] = byte(sampleRate >> 4)
-	info[12] = byte(sampleRate&0x0F)<<4 | byte(totalSamples>>32)&0x0F
-	info[13] = byte(totalSamples >> 24)
-	info[14] = byte(totalSamples >> 16)
-	info[15] = byte(totalSamples >> 8)
-	info[16] = byte(totalSamples)
+	info[12] = byte(sampleRate&0x0F)<<4 | 0x02
+	// info[13]: low nibble = bps-1 low bits, high nibble = total samples bits 35..32.
+	info[13] = 0xF0 | byte(totalSamples>>32)&0x0F
+	info[14] = byte(totalSamples >> 24)
+	info[15] = byte(totalSamples >> 16)
+	info[16] = byte(totalSamples >> 8)
+	info[17] = byte(totalSamples)
 	buf = append(buf, info...)
 	buf = append(buf, 0xFF, 0xF8) // minimal frame sync so the stream looks alive
 	return buf
@@ -109,6 +113,31 @@ func TestAudioDurationUnsupportedContainer(t *testing.T) {
 	writeTestFile(t, path, []byte("RIFF....WAVEfmt "))
 	if _, err := AudioDuration(path); err == nil {
 		t.Error("expected error for unsupported container")
+	}
+}
+
+// TestAudioDurationFLACRealWorldStreamInfo pins the decoder to a STREAMINFO
+// block captured from a real download (Kuwo FLAC, 44.1kHz/16bit/stereo).
+//
+// The 36-bit total-samples field was previously read one byte too early
+// (info[12] instead of info[13]), which turned this 274s track into 286089s
+// and made the download pipeline reject valid songs as "ad placeholder audio".
+func TestAudioDurationFLACRealWorldStreamInfo(t *testing.T) {
+	const header = "fLaC" + "\x00\x00\x00\x22" + // STREAMINFO, not last, len 34
+		"\x10\x00\x10\x00\x00\x00\x10\x00\x35\xd7\x0a\xc4" +
+		"\x42\xf0\x00\xb8\x90\x00\xd3\x63\x2f\xc8\x1d\x1c" +
+		"\xc9\x9c\x8b\xbc\x4c\x5d\xb8\xae\x82\x42"
+	data := append([]byte(header), 0xFF, 0xF8)
+
+	path := t.TempDir() + "/real.flac"
+	writeTestFile(t, path, data)
+
+	d, err := AudioDuration(path)
+	if err != nil {
+		t.Fatalf("AudioDuration: %v", err)
+	}
+	if d < 274*time.Second || d > 275*time.Second {
+		t.Fatalf("expected ~274s, got %v", d)
 	}
 }
 

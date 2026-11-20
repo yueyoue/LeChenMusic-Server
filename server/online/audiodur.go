@@ -76,12 +76,26 @@ func flacDuration(f *os.File) (time.Duration, error) {
 }
 
 // flacStreamInfoDuration decodes the 34-byte STREAMINFO payload.
-// Layout after 8 bytes of block sizes: 20 bit sample rate, 3 bit channels-1,
-// 5 bit bits-per-sample-1, 36 bit total samples, 16 byte MD5.
+//
+// Bit layout (FLAC format spec, after 8 bytes of block sizes):
+//
+//	info[0..1]   min block size
+//	info[2..3]   max block size
+//	info[4..6]   min frame size
+//	info[7..9]   max frame size
+//	info[10..12] 20 bit sample rate | 3 bit channels-1 | 1 bit bps-1 high bit
+//	info[13]     4 bit bps-1 low bits | 4 bit total-samples high bits
+//	info[14..17] remaining 32 bits of total samples
+//	info[18..33] MD5
+//
+// The 36-bit total-samples field straddles info[13] (high nibble) and
+// info[14..17]; reading its high nibble from info[12] instead shifts the value
+// by 32 bits and turns a 4-minute track into a ~79-hour one (the 286089s
+// false "ad placeholder" rejection seen in the field).
 func flacStreamInfoDuration(info []byte) (time.Duration, error) {
 	sampleRate := uint32(info[10])<<12 | uint32(info[11])<<4 | uint32(info[12])>>4
-	total := uint64(info[12]&0x0F)<<32 | uint64(info[13])<<24 |
-		uint64(info[14])<<16 | uint64(info[15])<<8 | uint64(info[16])
+	total := uint64(info[13]&0x0F)<<32 | uint64(info[14])<<24 |
+		uint64(info[15])<<16 | uint64(info[16])<<8 | uint64(info[17])
 	if sampleRate == 0 || total == 0 {
 		return 0, errors.New("flac duration: unknown sample rate/length")
 	}
